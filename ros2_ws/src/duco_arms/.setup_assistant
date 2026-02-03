@@ -1,0 +1,25 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: duco_support
+    relative_path: urdf/dual_arms.urdf
+  srdf:
+    relative_path: config/dual_arms.srdf
+  package_settings:
+    author_name: han
+    author_email: hansl_nuaa@163.com
+    generated_timestamp: 1718775787
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
+  modified_urdf:
+    xacros:
+      - control_xacro
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity

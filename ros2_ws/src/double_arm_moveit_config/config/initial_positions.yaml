@@ -1,0 +1,17 @@
+# Default initial positions for double_arm's ros2_control fake system
+
+initial_positions:
+  left_arm_J1: 0
+  left_arm_J2: 0
+  left_arm_J3: 0
+  left_arm_J4: 0
+  left_arm_J5: 0
+  left_arm_J6: 0
+  left_arm_J7: 0
+  right_arm_J1: 0
+  right_arm_J2: 0
+  right_arm_J3: 0
+  right_arm_J4: 0
+  right_arm_J5: 0
+  right_arm_J6: 0
+  right_arm_J7: 0

@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="gcr25_1800">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="3.016E-05 0.00555152 0.0594168"
+        rpy="0 0 0" />
+      <mass
+        value="3.749" />
+      <inertia
+        ixx="0.01876853"
+        ixy="3.385E-05"
+        ixz="-5.56E-06"
+        iyy="0.02193191"
+        iyz="-0.00047489"
+        izz="0.03036275" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.86667 0.8902 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="link_1">
+    <inertial>
+      <origin
+        xyz="-0.001858 0.004336 -0.03224"
+        rpy="0 0 0" />
+      <mass
+        value="14.329" />
+      <inertia
+        ixx="6.7793598E-05"
+        ixy="1.098666E-06"
+        ixz="-1.834036E-06"
+        iyy="6.2073899E-05"
+        iyz="4.856218E-06"
+        izz="7.1073E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.86667 0.8902 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arm_1_joint_1"
+    type="revolute">
+    <origin
+      xyz="0 0 0.235"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="link_1" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1415926535"
+      upper="3.1415926535"
+      effort="850"
+      velocity="2.094395102" />
+  </joint>
+  <link
+    name="link_2">
+    <inertial>
+      <origin
+        xyz="0.35721 1.6E-05 0.024567"
+        rpy="0 0 0" />
+      <mass
+        value="28.899" />
+      <inertia
+        ixx="0.00011843"
+        ixy="5.2512E-08"
+        ixz="4.5878594E-05"
+        iyy="0.0047051459"
+        iyz="-3.261958E-05"
+        izz="0.0047030105" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.86667 0.8902 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arm_1_joint_2"
+    type="revolute">
+    <origin
+      xyz="0 0.1693 0"
+      rpy="1.5708 -1.5708 3.1416" />
+    <parent
+      link="link_1" />
+    <child
+      link="link_2" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1415926535"
+      upper="3.1415926535"
+      effort="850"
+      velocity="1.745329252" />
+  </joint>
+  <link
+    name="link_3">
+    <inertial>
+      <origin
+        xyz="0.48726 2.4E-05 -0.1223"
+        rpy="0 0 0" />
+      <mass
+        value="7.154" />
+      <inertia
+        ixx="1.6256E-05"
+        ixy="-7.718E-09"
+        ixz="2.782118E-06"
+        iyy="0.00076213094"
+        iyz="4.2577E-08"
+        izz="0.00076015139" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.86667 0.8902 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arm_1_joint_3"
+    type="revolute">
+    <origin
+      xyz="0.8775 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="link_2" />
+    <child
+      link="link_3" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1415926535"
+      upper="3.1415926535"
+      effort="440"
+      velocity="2.6179938" />
+  </joint>
+  <link
+    name="link_4">
+    <inertial>
+      <origin
+        xyz="-5.8E-05 -0.01869 -0.003118"
+        rpy="0 0 0" />
+      <mass
+        value="3.087" />
+      <inertia
+        ixx="5.7212E-06"
+        ixy="-1.9644E-07"
+        ixz="1.3952E-08"
+        iyy="3.7351E-06"
+        iyz="-9.081E-09"
+        izz="5.5762E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_4.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.86667 0.8902 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_4.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arm_1_joint_4"
+    type="revolute">
+    <origin
+      xyz="0.788 0 0"
+      rpy="0 0 1.5708" />
+    <parent
+      link="link_3" />
+    <child
+      link="link_4" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1415926535"
+      upper="3.1415926535"
+      effort="115"
+      velocity="3.926990817" />
+  </joint>
+  <link
+    name="link_5">
+    <inertial>
+      <origin
+        xyz="5.8E-05 0.01869 -0.003118"
+        rpy="0 0 0" />
+      <mass
+        value="3.087" />
+      <inertia
+        ixx="5.7212E-06"
+        ixy="1.9644E-07"
+        ixz="-1.3952E-08"
+        iyy="3.7351E-06"
+        iyz="-9.081E-09"
+        izz="5.5762E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_5.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.86667 0.8902 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_5.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arm_1_joint_5"
+    type="revolute">
+    <origin
+      xyz="0 -0.1345 0"
+      rpy="1.5708 0 0" />
+    <parent
+      link="link_4" />
+    <child
+      link="link_5" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1415926535"
+      upper="3.1415926535"
+      effort="115"
+      velocity="3.926990817" />
+  </joint>
+  <link
+    name="link_6">
+    <inertial>
+      <origin
+        xyz="-0.000199 0.000637 -0.02506"
+        rpy="0 0 0" />
+      <mass
+        value="0.515" />
+      <inertia
+        ixx="5.0571E-07"
+        ixy="4.421E-09"
+        ixz="1.496E-09"
+        iyy="5.0199E-07"
+        iyz="-1.65E-10"
+        izz="8.0593E-07" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_6.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.86667 0.8902 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/GCR25_1800/link_6.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arm_1_joint_6"
+    type="revolute">
+    <origin
+      xyz="0 0.121 0"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="link_5" />
+    <child
+      link="link_6" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1415926535"
+      upper="3.1415926535"
+      effort="115"
+      velocity="3.926990817" />
+  </joint>
+</robot>

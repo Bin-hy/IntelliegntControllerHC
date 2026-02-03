@@ -1,0 +1,22 @@
+float64[7]  joint_expect_position
+float64[7]  joint_expect_velocity
+float64[7]  joint_expect_accelera
+float64[7]  joint_actual_position
+float64[7]  joint_actual_velocity
+float64[7]  joint_actual_accelera
+float64[7]  joint_actual_current
+float64[7]  joint_temperature
+float64[7] driver_temperature
+float64[7] cart_expect_position
+float64[7] cart_expect_velocity
+float64[7] cart_expect_accelera
+float64[7] cart_actual_position
+float64[7] cart_actual_velocity
+float64[7] cart_actual_accelera
+bool[7]   slave_ready
+bool collision
+int8 collision_axis
+bool emc_stop_signal
+int8 robot_state
+int32 robot_error
+

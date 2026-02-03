@@ -1,0 +1,1081 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="double_arm">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.0378202497379902 0.00248487961164133 0.235824771434935"
+        rpy="0 0 0" />
+      <mass
+        value="3.26814602021379" />
+      <inertia
+        ixx="0.0686802700834278"
+        ixy="-0.00558757381311196"
+        ixz="-0.0124399744728354"
+        iyy="0.0942047033211713"
+        iyz="-0.00213877089871519"
+        izz="0.0683886371186053" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="neck_pitch_link">
+    <inertial>
+      <origin
+        xyz="0.0264425376360982 0.00808473670875362 -0.0133575957764713"
+        rpy="0 0 0" />
+      <mass
+        value="0.0101228976110487" />
+      <inertia
+        ixx="8.3750097041473E-06"
+        ixy="-1.22602867323743E-06"
+        ixz="1.81377027364789E-06"
+        iyy="7.20989607162345E-06"
+        iyz="1.16034623116595E-06"
+        izz="8.25180050049213E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/neck_pitch_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.43921568627451 0.501960784313725 0.501960784313725 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/neck_pitch_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="neck_pitch"
+    type="fixed">
+    <origin
+      xyz="-0.0285 0.0005 0.387"
+      rpy="-1.5708 -1.5667 1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="neck_pitch_link" />
+    <axis
+      xyz="0 0 0" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="neck_roll_link">
+    <inertial>
+      <origin
+        xyz="-0.000868414696194691 0.0181941945111824 0.0876709502607623"
+        rpy="0 0 0" />
+      <mass
+        value="0.481789297187813" />
+      <inertia
+        ixx="0.00266074015425306"
+        ixy="1.93357724778041E-05"
+        ixz="-2.42550182009217E-05"
+        iyy="0.00230034101054033"
+        iyz="0.000440239747889259"
+        izz="0.00216216997271251" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/neck_roll_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/neck_roll_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="neck_roll"
+    type="fixed">
+    <origin
+      xyz="0.038 0 -0.0285"
+      rpy="0 -1.5708 0" />
+    <parent
+      link="neck_pitch_link" />
+    <child
+      link="neck_roll_link" />
+    <axis
+      xyz="0 0 0" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="left_arm_link0">
+    <inertial>
+      <origin
+        xyz="-4.49663221894266E-05 -2.05935876568253E-06 -0.00772651169223726"
+        rpy="0 0 0" />
+      <mass
+        value="0.429473358917669" />
+      <inertia
+        ixx="0.00044615691860442"
+        ixy="-8.50043240122652E-08"
+        ixz="-8.51232041761971E-07"
+        iyy="0.000445537823103336"
+        iyz="-8.58078002632038E-08"
+        izz="0.000368840259750462" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link0.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link0.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_J0"
+    type="fixed">
+    <origin
+      xyz="0.143 0 0.296"
+      rpy="1.5708 0 1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="left_arm_link0" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_arm_link1">
+    <inertial>
+      <origin
+        xyz="4.83035276329282E-05 -0.00461629016521919 -0.00387592390917818"
+        rpy="0 0 0" />
+      <mass
+        value="1.37762980165397" />
+      <inertia
+        ixx="0.0016977188431714"
+        ixy="-4.94570057467487E-06"
+        ixz="-4.4748448560165E-06"
+        iyy="0.0014896344288354"
+        iyz="3.82862045959219E-05"
+        izz="0.00156016994943049" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.796078431372549 0.823529411764706 0.937254901960784 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_J1"
+    type="revolute">
+    <origin
+      xyz="0 0 0.0897"
+      rpy="0 0 0" />
+    <parent
+      link="left_arm_link0" />
+    <child
+      link="left_arm_link1" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="left_arm_link2">
+    <inertial>
+      <origin
+        xyz="-6.13611997681042E-05 0.100524325700007 -0.000555195552561782"
+        rpy="0 0 0" />
+      <mass
+        value="1.1075956211445" />
+      <inertia
+        ixx="0.00206987964853319"
+        ixy="-2.5727561704548E-06"
+        ixz="4.05578647073776E-07"
+        iyy="0.00119017895465369"
+        iyz="-2.49279411483697E-05"
+        izz="0.00181064971147027" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_J2"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 0 0" />
+    <parent
+      link="left_arm_link1" />
+    <child
+      link="left_arm_link2" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="left_arm_link3">
+    <inertial>
+      <origin
+        xyz="-0.018911633993998 0.000296691098943369 -0.0142245486290822"
+        rpy="0 0 0" />
+      <mass
+        value="1.07898685239744" />
+      <inertia
+        ixx="0.0023591957930661"
+        ixy="9.6736809145384E-07"
+        ixz="0.000297260924663732"
+        iyy="0.00227242621553985"
+        iyz="-4.83798233930201E-06"
+        izz="0.000974554276687362" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_J3"
+    type="revolute">
+    <origin
+      xyz="0 0.3005 0"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="left_arm_link2" />
+    <child
+      link="left_arm_link3" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="left_arm_link4">
+    <inertial>
+      <origin
+        xyz="0.0208389992277257 0.0730742315283586 -0.00789651788386114"
+        rpy="0 0 0" />
+      <mass
+        value="0.229809055360262" />
+      <inertia
+        ixx="0.000279518891441388"
+        ixy="-2.33266154163524E-05"
+        ixz="-1.71930869358015E-05"
+        iyy="0.000193356671709157"
+        iyz="-7.04131247181475E-05"
+        izz="0.000276692641160306" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link4.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link4.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_J4"
+    type="revolute">
+    <origin
+      xyz="-0.0225 0 0"
+      rpy="1.5708 0 0" />
+    <parent
+      link="left_arm_link3" />
+    <child
+      link="left_arm_link4" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="left_arm_link5">
+    <inertial>
+      <origin
+        xyz="0.00148159672131504 -0.00328676794112681 -0.0850235099273732"
+        rpy="0 0 0" />
+      <mass
+        value="0.2095145401104" />
+      <inertia
+        ixx="0.000194078608252324"
+        ixy="-2.46700631773096E-06"
+        ixz="-1.38013294410615E-05"
+        iyy="0.000169842954409334"
+        iyz="-1.05018782644311E-05"
+        izz="0.000129153246030747" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link5.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link5.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_J5"
+    type="revolute">
+    <origin
+      xyz="0.0225 0.25 0"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="left_arm_link4" />
+    <child
+      link="left_arm_link5" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="left_arm_link6">
+    <inertial>
+      <origin
+        xyz="-3.17973833828811E-05 -0.000510250008096734 -7.98321817644387E-05"
+        rpy="0 0 0" />
+      <mass
+        value="0.157452997694605" />
+      <inertia
+        ixx="8.76692567231686E-05"
+        ixy="1.3184727951352E-07"
+        ixz="-2.42911944943532E-08"
+        iyy="6.53234875819123E-05"
+        iyz="1.38683624781029E-07"
+        izz="9.09421100990473E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link6.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 0 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link6.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_J6"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 -1.5708 0" />
+    <parent
+      link="left_arm_link5" />
+    <child
+      link="left_arm_link6" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="left_arm_link7">
+    <inertial>
+      <origin
+        xyz="0.0525955873709749 9.54054269169946E-05 0.00541833613104666"
+        rpy="0 0 0" />
+      <mass
+        value="0.157621885180453" />
+      <inertia
+        ixx="0.000111322740938638"
+        ixy="4.41001105077036E-09"
+        ixz="1.37632433124292E-05"
+        iyy="8.23830403703832E-05"
+        iyz="-2.16413703694605E-07"
+        izz="7.62644977217794E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link7.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.43921568627451 0.501960784313725 0.501960784313725 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/left_arm_link7.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_J7"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 0 0" />
+    <parent
+      link="left_arm_link6" />
+    <child
+      link="left_arm_link7" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="right_arm_link0">
+    <inertial>
+      <origin
+        xyz="-4.49644073452025E-05 -2.05780637008157E-06 -0.00772650845468376"
+        rpy="0 0 0" />
+      <mass
+        value="0.429473325876526" />
+      <inertia
+        ixx="0.000446156842871368"
+        ixy="-8.49869634007724E-08"
+        ixz="-8.51194933230475E-07"
+        iyy="0.000445537740229448"
+        iyz="-8.57776886586398E-08"
+        izz="0.000368840224895942" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link0.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link0.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_J0"
+    type="fixed">
+    <origin
+      xyz="-0.143 0 0.296"
+      rpy="1.5708 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="right_arm_link0" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_arm_link1">
+    <inertial>
+      <origin
+        xyz="4.83035276329768E-05 -0.00461629016521914 -0.00387592390917813"
+        rpy="0 0 0" />
+      <mass
+        value="0.510233259871843" />
+      <inertia
+        ixx="0.000628784756730148"
+        ixy="-1.83174095358344E-06"
+        ixz="-1.65734994667268E-06"
+        iyy="0.000551716455124223"
+        iyz="1.41800757762675E-05"
+        izz="0.000577840722011292" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_J1"
+    type="revolute">
+    <origin
+      xyz="0 0 0.0897"
+      rpy="0 0 0" />
+    <parent
+      link="right_arm_link0" />
+    <child
+      link="right_arm_link1" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="right_arm_link2">
+    <inertial>
+      <origin
+        xyz="-6.13611222286328E-05 0.100524325686774 -0.000555195530869801"
+        rpy="0 0 0" />
+      <mass
+        value="1.10759562151248" />
+      <inertia
+        ixx="0.00206987964892811"
+        ixy="-2.57275650029226E-06"
+        ixz="4.05578643405701E-07"
+        iyy="0.00119017895541491"
+        iyz="-2.49279411434746E-05"
+        izz="0.00181064971074143" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_J2"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 0 0" />
+    <parent
+      link="right_arm_link1" />
+    <child
+      link="right_arm_link2" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="right_arm_link3">
+    <inertial>
+      <origin
+        xyz="-0.0188034164202653 -0.00113806163829183 -0.0144875281301353"
+        rpy="0 0 0" />
+      <mass
+        value="0.390738219005927" />
+      <inertia
+        ixx="0.000835408137245896"
+        ixy="-3.2651861787711E-06"
+        ixz="0.00010908994856849"
+        iyy="0.000833488874128403"
+        iyz="1.29633969952862E-05"
+        izz="0.000325975358183885" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_J3"
+    type="revolute">
+    <origin
+      xyz="0 0.3005 0"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="right_arm_link2" />
+    <child
+      link="right_arm_link3" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="right_arm_link4">
+    <inertial>
+      <origin
+        xyz="0.0207462175228632 0.0730757838138242 0.00789254529456673"
+        rpy="0 0 0" />
+      <mass
+        value="0.229813521726857" />
+      <inertia
+        ixx="0.000279491178108515"
+        ixy="-2.37794886938613E-05"
+        ixz="1.71400031327494E-05"
+        iyy="0.000193281905668606"
+        iyz="7.04035924752123E-05"
+        izz="0.000276590330064731" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link4.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link4.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_J4"
+    type="revolute">
+    <origin
+      xyz="-0.0225 0 0"
+      rpy="1.5708 0 0" />
+    <parent
+      link="right_arm_link3" />
+    <child
+      link="right_arm_link4" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="right_arm_link5">
+    <inertial>
+      <origin
+        xyz="-0.00144109942633979 0.00338133753341241 -0.0852537713058311"
+        rpy="0 0 0" />
+      <mass
+        value="0.208873354359598" />
+      <inertia
+        ixx="0.000189692532027574"
+        ixy="-2.18667657578522E-06"
+        ixz="1.31418056416785E-05"
+        iyy="0.000165881638570448"
+        iyz="8.98869330968672E-06"
+        izz="0.000128339886366414" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link5.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link5.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_J5"
+    type="revolute">
+    <origin
+      xyz="0.0225 0.25 0"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="right_arm_link4" />
+    <child
+      link="right_arm_link5" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="right_arm_link6">
+    <inertial>
+      <origin
+        xyz="-3.17973742574029E-05 0.000510249988058209 0.00107983216296176"
+        rpy="0 0 0" />
+      <mass
+        value="0.157452997493096" />
+      <inertia
+        ixx="8.76692566244096E-05"
+        ixy="-1.31847303472727E-07"
+        ixz="2.42911717377624E-08"
+        iyy="6.5323487525043E-05"
+        iyz="1.38683674159897E-07"
+        izz="9.09421100358791E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link6.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link6.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_J6"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 -1.5708 0" />
+    <parent
+      link="right_arm_link5" />
+    <child
+      link="right_arm_link6" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+  <link
+    name="right_arm_link7">
+    <inertial>
+      <origin
+        xyz="0.0525955966355082 0.000904600106993225 -0.0054183235413045"
+        rpy="0 0 0" />
+      <mass
+        value="0.157621813942239" />
+      <inertia
+        ixx="0.000111322727384927"
+        ixy="-4.40694645075752E-09"
+        ixz="-1.37632376674442E-05"
+        iyy="8.2383001794795E-05"
+        iyz="-2.16395257823518E-07"
+        izz="7.62645161164362E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link7.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.43921568627451 0.501960784313725 0.501960784313725 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://duco_support/meshes/double_arm/right_arm_link7.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_J7"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 0 0" />
+    <parent
+      link="right_arm_link6" />
+    <child
+      link="right_arm_link7" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.1416"
+      upper="3.1416"
+      effort="300"
+      velocity="1.7453" />
+  </joint>
+</robot>

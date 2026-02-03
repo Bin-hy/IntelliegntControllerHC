@@ -1,0 +1,16 @@
+string command
+int8 arm_num
+
+#IO 类型
+int8 type  # 0:gen io  1:tool io
+#IO 端口
+int8 port  #GEN IO 0--15  TOOL IO 0--1
+#SetIO 值
+bool value
+
+bool block
+
+---
+string response
+
+
