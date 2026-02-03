@@ -19,6 +19,8 @@ find_package(sensor_msgs REQUIRED)
 # find_package(pcl_conversions REQUIRED)
 # find_package(PCL REQUIRED COMPONENTS io)
 find_package(geometry_msgs REQUIRED)# uncomment the following section in order to fill in
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -40,6 +42,8 @@ ament_target_dependencies(robot_control rclcpp rclcpp_action control_msgs sensor
             sensor_msgs
             # moveit_ros_planning_interface
             geometry_msgs
+            tf2
+            tf2_geometry_msgs
             # pcl_conversions PCL
             )
 

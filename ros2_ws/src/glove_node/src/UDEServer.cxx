@@ -92,7 +92,7 @@ void UDEGloveSDK::recv_func(int sock_fd_)
 
                 Json::Value device = value[member_names[i]];
                 Json::Value parameter = device["Parameter"];
-                for(unsigned int index = 0; index < (int)parameter.size(); ++index)
+                for(unsigned int index = 0; index < parameter.size(); ++index)
                 {
                     string Name = parameter[index]["Name"].asString();
                     if(Name[1] == '_' && (Name[0] == 'l' || Name[0] == 'r'))  //controller value

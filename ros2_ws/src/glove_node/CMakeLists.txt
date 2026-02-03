@@ -23,6 +23,7 @@ add_executable(glove_node
 
 target_link_libraries(glove_node
   ${JSONCPP_LIBRARIES}
+  jsoncpp
 )
 
 ament_target_dependencies(glove_node
