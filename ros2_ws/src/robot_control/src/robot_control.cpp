@@ -1,20 +1,20 @@
 #include "robot_control/robot_control.h"
 #include "robot_control/DucoCobot.h"
-#include <moveit/move_group_interface/move_group_interface.h>
-#include <moveit/planning_scene_interface/planning_scene_interface.h>
-#include <moveit_msgs/msg/display_robot_state.h>
-#include <moveit_msgs/msg/display_trajectory.h>
-#include <moveit_msgs/msg/attached_collision_object.h>
-#include <moveit_msgs/msg/collision_object.h>
+// #include <moveit/move_group_interface/move_group_interface.h>
+// #include <moveit/planning_scene_interface/planning_scene_interface.h>
+// #include <moveit_msgs/msg/display_robot_state.h>
+// #include <moveit_msgs/msg/display_trajectory.h>
+// #include <moveit_msgs/msg/attached_collision_object.h>
+// #include <moveit_msgs/msg/collision_object.h>
 #include <geometry_msgs/msg/pose.hpp>
-#include <moveit/planning_scene_interface/planning_scene_interface.h>
-#include <moveit/robot_state/conversions.h>
-#include <moveit/kinematic_constraints/utils.h>
+// #include <moveit/planning_scene_interface/planning_scene_interface.h>
+// #include <moveit/robot_state/conversions.h>
+// #include <moveit/kinematic_constraints/utils.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include <moveit_msgs/msg/orientation_constraint.hpp>
-#include <moveit_msgs/msg/constraints.hpp>
+// #include <moveit_msgs/msg/orientation_constraint.hpp>
+// #include <moveit_msgs/msg/constraints.hpp>
 
 geometry_msgs::msg::Pose createPose(double x, double y, double z, double roll, double pitch, double yaw) {
     geometry_msgs::msg::Pose pose;

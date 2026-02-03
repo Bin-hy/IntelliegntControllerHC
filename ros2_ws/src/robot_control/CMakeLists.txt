@@ -14,10 +14,10 @@ find_package(rclcpp_action)
 find_package(control_msgs)
 find_package(sensor_msgs)
 find_package(duco_msg)
-find_package(moveit_ros_planning_interface REQUIRED)
+# find_package(moveit_ros_planning_interface REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(pcl_conversions REQUIRED)
-find_package(PCL REQUIRED COMPONENTS io)
+# find_package(pcl_conversions REQUIRED)
+# find_package(PCL REQUIRED COMPONENTS io)
 find_package(geometry_msgs REQUIRED)# uncomment the following section in order to fill in
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -38,9 +38,10 @@ endif()
 add_executable(robot_control src/robot_control.cpp)
 ament_target_dependencies(robot_control rclcpp rclcpp_action control_msgs sensor_msgs duco_msg
             sensor_msgs
-            moveit_ros_planning_interface
+            # moveit_ros_planning_interface
             geometry_msgs
-            pcl_conversions PCL)
+            # pcl_conversions PCL
+            )
 
 target_link_libraries(robot_control ${CMAKE_CURRENT_SOURCE_DIR}/lib/libDucoCobotAPI.a)
 
