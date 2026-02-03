@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ui_app</name>
+  <version>0.1.0</version>
+  <description>Qt UI for industrial control system</description>
+  <maintainer email="dev@example.com">Dev</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>duco_msg</depend>
+
+  <!-- Qt5 dependencies are system dependencies, not rosdep managed usually in simple setup, but good to list -->
+  
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

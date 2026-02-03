@@ -1,0 +1,4 @@
+int32 joint_id
+int32 velocity
+---
+int32 result

@@ -1,0 +1,4 @@
+int32 joint_id
+int32 enable
+---
+int32 result
