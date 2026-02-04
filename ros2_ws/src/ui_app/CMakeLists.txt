@@ -10,6 +10,11 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(common_msgs REQUIRED)
 find_package(duco_msg REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(OpenCV REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
 
 set(CMAKE_AUTOMOC ON)
@@ -37,6 +42,11 @@ ament_target_dependencies(ui_app
   rclcpp
   std_msgs
   duco_msg
+  sensor_msgs
+  cv_bridge
+  std_srvs
+  image_transport
+  OpenCV
 )
 
 install(TARGETS ui_app

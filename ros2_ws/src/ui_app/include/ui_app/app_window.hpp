@@ -22,6 +22,7 @@ private:
   QWidget* createControlTab();
   QWidget* createMoveTab();
   QWidget* createIOTab();
+  QWidget* createCameraTab();
   void updateUI();
 
   std::shared_ptr<RosNode> node_;
@@ -44,6 +45,11 @@ private:
   QComboBox* combo_io_type_;
   QSpinBox* spin_io_port_;
   QCheckBox* chk_io_value_;
+
+  // Camera Tab UI
+  QLabel* label_color_stream_;
+  QLabel* label_depth_stream_;
+  QPushButton* btn_save_image_;
 };
 
 #endif // APP_WINDOW_HPP

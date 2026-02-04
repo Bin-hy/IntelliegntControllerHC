@@ -12,6 +12,10 @@
   <depend>std_msgs</depend>
   <depend>duco_msg</depend>
   <depend>common_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>std_srvs</depend>
+  <depend>image_transport</depend>
 
   <!-- Qt5 dependencies are system dependencies, not rosdep managed usually in simple setup, but good to list -->
   

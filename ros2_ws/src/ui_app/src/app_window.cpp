@@ -27,6 +27,7 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent)
     tabs->addTab(createControlTab(), "Power & Status");
     tabs->addTab(createMoveTab(), "Motion Control");
     tabs->addTab(createIOTab(), "IO Control");
+    tabs->addTab(createCameraTab(), "Vision System");
     main_layout->addWidget(tabs);
     
     setLayout(main_layout);
@@ -210,9 +211,63 @@ QWidget* AppWindow::createIOTab() {
 void AppWindow::updateUI() {
       label_count_->setText("Heartbeat: " + QString::number(node_->count_.load()));
       
-      std::lock_guard<std::mutex> lock(node_->data_mutex_);
-      
-      if (!node_->last_robot_state_str_.empty()) {
-          text_robot_state_->setText(QString::fromStdString(node_->last_robot_state_str_));
+      {
+          std::lock_guard<std::mutex> lock(node_->data_mutex_);
+          if (!node_->last_robot_state_str_.empty()) {
+              text_robot_state_->setText(QString::fromStdString(node_->last_robot_state_str_));
+          }
       }
+
+      {
+          std::lock_guard<std::mutex> lock(node_->image_mutex_);
+          if (!node_->last_color_image_.empty()) {
+              cv::Mat rgb;
+              cv::cvtColor(node_->last_color_image_, rgb, cv::COLOR_BGR2RGB);
+              QImage img(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888);
+              label_color_stream_->setPixmap(QPixmap::fromImage(img).scaled(label_color_stream_->size(), Qt::KeepAspectRatio));
+          }
+          if (!node_->last_depth_image_.empty()) {
+              QImage img(node_->last_depth_image_.data, node_->last_depth_image_.cols, node_->last_depth_image_.rows, node_->last_depth_image_.step, QImage::Format_Grayscale8);
+              label_depth_stream_->setPixmap(QPixmap::fromImage(img).scaled(label_depth_stream_->size(), Qt::KeepAspectRatio));
+          }
+      }
+}
+QWidget* AppWindow::createCameraTab() {
+    auto * widget = new QWidget();
+    auto * layout = new QVBoxLayout();
+    
+    // Video Streams
+    auto * group_video = new QGroupBox("Video Streams");
+    auto * layout_video = new QHBoxLayout();
+    
+    label_color_stream_ = new QLabel("Waiting for Color Stream...");
+    label_color_stream_->setMinimumSize(320, 240);
+    label_color_stream_->setAlignment(Qt::AlignCenter);
+    label_color_stream_->setStyleSheet("border: 1px solid black; background-color: #333; color: white;");
+
+    label_depth_stream_ = new QLabel("Waiting for Depth Stream...");
+    label_depth_stream_->setMinimumSize(320, 240);
+    label_depth_stream_->setAlignment(Qt::AlignCenter);
+    label_depth_stream_->setStyleSheet("border: 1px solid black; background-color: #333; color: white;");
+
+    layout_video->addWidget(label_color_stream_);
+    layout_video->addWidget(label_depth_stream_);
+    group_video->setLayout(layout_video);
+    layout->addWidget(group_video);
+    
+    // Controls
+    auto * group_ctrl = new QGroupBox("Controls");
+    auto * layout_ctrl = new QHBoxLayout();
+    btn_save_image_ = new QPushButton("Snapshot / Save Image");
+    btn_save_image_->setStyleSheet("font-weight: bold; padding: 10px;");
+    layout_ctrl->addWidget(btn_save_image_);
+    group_ctrl->setLayout(layout_ctrl);
+    layout->addWidget(group_ctrl);
+    
+    connect(btn_save_image_, &QPushButton::clicked, this, [this](){
+        node_->save_image();
+    });
+
+    widget->setLayout(layout);
+    return widget;
 }

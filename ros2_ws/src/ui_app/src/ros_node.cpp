@@ -12,11 +12,18 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     sub_robot_state_ = create_subscription<duco_msg::msg::DucoRobotState>(
       "/duco_robot/robot_state", 30, std::bind(&RosNode::robot_state_callback, this, std::placeholders::_1));
 
+    // Subscribers: Camera
+    sub_color_ = create_subscription<sensor_msgs::msg::Image>(
+      "/camera/color/image_raw", 10, std::bind(&RosNode::color_callback, this, std::placeholders::_1));
+    sub_depth_ = create_subscription<sensor_msgs::msg::Image>(
+      "/camera/depth/image_raw", 10, std::bind(&RosNode::depth_callback, this, std::placeholders::_1));
+
     // Service Clients
     // Refactored to point to SystemController instead of direct Duco Driver
     client_control_ = create_client<duco_msg::srv::RobotControl>("/ui/request_control");
     client_io_ = create_client<duco_msg::srv::RobotIoControl>("/ui/request_io");
     client_move_ = create_client<duco_msg::srv::RobotMove>("/ui/request_move");
+    client_save_image_ = create_client<std_srvs::srv::Trigger>("/save_image");
 
     // Timer
     timer_ = create_wall_timer(std::chrono::seconds(1), [this](){
@@ -130,4 +137,46 @@ void RosNode::robot_state_callback(const duco_msg::msg::DucoRobotState::SharedPt
       }
       
       last_robot_state_str_ = ss.str();
+}
+void RosNode::color_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
+  std::lock_guard<std::mutex> lock(image_mutex_);
+  try {
+    last_color_image_ = cv_bridge::toCvCopy(msg, "bgr8")->image;
+  } catch (cv_bridge::Exception& e) {
+    RCLCPP_ERROR(get_logger(), "cv_bridge exception: %s", e.what());
+  }
+}
+
+void RosNode::depth_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
+  std::lock_guard<std::mutex> lock(image_mutex_);
+  try {
+    // Convert to mono8 or appropriate format for display
+    // Depth is typically 16UC1. Convert to 8-bit for simple display.
+    cv::Mat depth_image = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_16UC1)->image;
+    cv::normalize(depth_image, last_depth_image_, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+  } catch (cv_bridge::Exception& e) {
+    RCLCPP_ERROR(get_logger(), "cv_bridge exception: %s", e.what());
+  }
+}
+
+void RosNode::save_image() {
+    if (!client_save_image_->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(get_logger(), "Save Image service not available");
+        return;
+    }
+    auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+    
+    auto future = client_save_image_->async_send_request(request, 
+      [this](rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future) {
+        try {
+          auto response = future.get();
+          if (response->success) {
+            RCLCPP_INFO(get_logger(), "Save Image Result: %s", response->message.c_str());
+          } else {
+            RCLCPP_WARN(get_logger(), "Save Image Failed: %s", response->message.c_str());
+          }
+        } catch (const std::exception &e) {
+          RCLCPP_ERROR(get_logger(), "Save Image Call Failed: %s", e.what());
+        }
+      });
 }
