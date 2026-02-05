@@ -12,6 +12,7 @@
 #include <QComboBox>
 #include <QCheckBox>
 #include <QTimer>
+#include <QScrollArea>
 
 AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent) 
     : QWidget(parent), node_(std::move(node)) 
@@ -208,6 +209,151 @@ QWidget* AppWindow::createIOTab() {
       return widget;
 }
 
+QWidget* AppWindow::createCameraTab() {
+    auto * widget = new QWidget();
+    auto * layout = new QVBoxLayout();
+    
+    // --- Configuration Area ---
+    auto * group_config = new QGroupBox("Camera Selection");
+    auto * layout_config = new QHBoxLayout();
+    
+    layout_config->addWidget(new QLabel("Camera Namespace:"));
+    combo_camera_ = new QComboBox();
+    combo_camera_->setEditable(true); // Allow typing custom ns
+    combo_camera_->addItem("camera");
+    combo_camera_->setMinimumWidth(150);
+    layout_config->addWidget(combo_camera_);
+
+    btn_scan_ = new QPushButton("Scan Cameras");
+    layout_config->addWidget(btn_scan_);
+
+    layout_config->addStretch();
+    group_config->setLayout(layout_config);
+    layout->addWidget(group_config);
+
+    // --- Stream Selection ---
+    auto * group_sensors = new QGroupBox("Active Sensors");
+    auto * layout_sensors = new QHBoxLayout();
+    check_color_ = new QCheckBox("Color Stream");
+    check_depth_ = new QCheckBox("Depth Stream");
+    check_ir_left_ = new QCheckBox("IR Left");
+    check_ir_right_ = new QCheckBox("IR Right");
+    
+    // Defaults: Color and Depth checked
+    check_color_->setChecked(true);
+    check_depth_->setChecked(true);
+    check_ir_left_->setChecked(false);
+    check_ir_right_->setChecked(false);
+
+    layout_sensors->addWidget(check_color_);
+    layout_sensors->addWidget(check_depth_);
+    layout_sensors->addWidget(check_ir_left_);
+    layout_sensors->addWidget(check_ir_right_);
+    layout_sensors->addStretch();
+    group_sensors->setLayout(layout_sensors);
+    layout->addWidget(group_sensors);
+
+    // --- Video Grid ---
+    // Use a ScrollArea in case screens are small
+    auto * scroll = new QScrollArea();
+    scroll->setWidgetResizable(true);
+    container_video_ = new QWidget();
+    auto * grid_video = new QGridLayout(container_video_);
+    
+    // Create Widgets (hidden by default if not checked)
+    widget_color_ = createVideoWidget("Color Stream", label_color_stream_, [this](){
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), true, false, false, false);
+    });
+    widget_depth_ = createVideoWidget("Depth Stream", label_depth_stream_, [this](){
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, true, false, false);
+    });
+    widget_ir_left_ = createVideoWidget("IR Left Stream", label_ir_left_stream_, [this](){
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, true, false);
+    });
+    widget_ir_right_ = createVideoWidget("IR Right Stream", label_ir_right_stream_, [this](){
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, false, true);
+    });
+
+    // Add to grid (2x2)
+    grid_video->addWidget(widget_color_, 0, 0);
+    grid_video->addWidget(widget_depth_, 0, 1);
+    grid_video->addWidget(widget_ir_left_, 1, 0);
+    grid_video->addWidget(widget_ir_right_, 1, 1);
+    
+    scroll->setWidget(container_video_);
+    layout->addWidget(scroll);
+
+    // --- Connections ---
+    connect(btn_scan_, &QPushButton::clicked, this, &AppWindow::refreshCameraList);
+    
+    auto update_config = [this]() { onCameraConfigChanged(); };
+    connect(combo_camera_, &QComboBox::currentTextChanged, this, update_config);
+    connect(check_color_, &QCheckBox::stateChanged, this, update_config);
+    connect(check_depth_, &QCheckBox::stateChanged, this, update_config);
+    connect(check_ir_left_, &QCheckBox::stateChanged, this, update_config);
+    connect(check_ir_right_, &QCheckBox::stateChanged, this, update_config);
+
+    // Initial sync
+    onCameraConfigChanged();
+
+    widget->setLayout(layout);
+    return widget;
+}
+
+QWidget* AppWindow::createVideoWidget(const QString& title, QLabel*& label_ptr, std::function<void()> save_callback) {
+    auto * group = new QGroupBox(title);
+    auto * layout = new QVBoxLayout();
+    
+    label_ptr = new QLabel("No Signal");
+    label_ptr->setMinimumSize(320, 240);
+    label_ptr->setAlignment(Qt::AlignCenter);
+    label_ptr->setStyleSheet("border: 1px solid #555; background-color: #222; color: #aaa;");
+    layout->addWidget(label_ptr);
+
+    auto * btn = new QPushButton("Capture / Save");
+    layout->addWidget(btn);
+    
+    // Connect save button
+    QObject::connect(btn, &QPushButton::clicked, btn, [save_callback](){
+        if(save_callback) save_callback();
+    });
+
+    group->setLayout(layout);
+    return group;
+}
+
+void AppWindow::refreshCameraList() {
+    auto cameras = node_->scan_cameras();
+    combo_camera_->blockSignals(true); // Prevent triggering config change during update
+    combo_camera_->clear();
+    for(const auto& cam : cameras) {
+        combo_camera_->addItem(QString::fromStdString(cam));
+    }
+    combo_camera_->blockSignals(false);
+    // Trigger update if selection changed (or just force it)
+    if (combo_camera_->count() > 0) {
+        combo_camera_->setCurrentIndex(0);
+        onCameraConfigChanged(); 
+    }
+}
+
+void AppWindow::onCameraConfigChanged() {
+    std::string cam_ns = combo_camera_->currentText().toStdString();
+    bool c = check_color_->isChecked();
+    bool d = check_depth_->isChecked();
+    bool ir_l = check_ir_left_->isChecked();
+    bool ir_r = check_ir_right_->isChecked();
+
+    // Update Node Subscriptions
+    node_->update_camera_subscriptions(cam_ns, c, d, ir_l, ir_r);
+
+    // Update UI Visibility
+    widget_color_->setVisible(c);
+    widget_depth_->setVisible(d);
+    widget_ir_left_->setVisible(ir_l);
+    widget_ir_right_->setVisible(ir_r);
+}
+
 void AppWindow::updateUI() {
       label_count_->setText("Heartbeat: " + QString::number(node_->count_.load()));
       
@@ -220,54 +366,28 @@ void AppWindow::updateUI() {
 
       {
           std::lock_guard<std::mutex> lock(node_->image_mutex_);
-          if (!node_->last_color_image_.empty()) {
-              cv::Mat rgb;
-              cv::cvtColor(node_->last_color_image_, rgb, cv::COLOR_BGR2RGB);
-              QImage img(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888);
-              label_color_stream_->setPixmap(QPixmap::fromImage(img).scaled(label_color_stream_->size(), Qt::KeepAspectRatio));
-          }
-          if (!node_->last_depth_image_.empty()) {
-              QImage img(node_->last_depth_image_.data, node_->last_depth_image_.cols, node_->last_depth_image_.rows, node_->last_depth_image_.step, QImage::Format_Grayscale8);
-              label_depth_stream_->setPixmap(QPixmap::fromImage(img).scaled(label_depth_stream_->size(), Qt::KeepAspectRatio));
-          }
+          
+          auto update_label = [](QLabel* label, const cv::Mat& mat, bool is_rgb) {
+              if (!label || !label->isVisible()) return;
+              if (mat.empty()) {
+                  // label->setText("No Data"); // Keep last frame or "No Signal" text
+                  return; 
+              }
+              QImage img;
+              if (is_rgb) {
+                  cv::Mat rgb;
+                  cv::cvtColor(mat, rgb, cv::COLOR_BGR2RGB);
+                  img = QImage(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888).copy();
+              } else {
+                  // Grayscale (Depth / IR)
+                  img = QImage(mat.data, mat.cols, mat.rows, mat.step, QImage::Format_Grayscale8).copy();
+              }
+              label->setPixmap(QPixmap::fromImage(img).scaled(label->size(), Qt::KeepAspectRatio));
+          };
+
+          update_label(label_color_stream_, node_->last_color_image_, true);
+          update_label(label_depth_stream_, node_->last_depth_image_, false);
+          update_label(label_ir_left_stream_, node_->last_ir_left_image_, false);
+          update_label(label_ir_right_stream_, node_->last_ir_right_image_, false);
       }
-}
-QWidget* AppWindow::createCameraTab() {
-    auto * widget = new QWidget();
-    auto * layout = new QVBoxLayout();
-    
-    // Video Streams
-    auto * group_video = new QGroupBox("Video Streams");
-    auto * layout_video = new QHBoxLayout();
-    
-    label_color_stream_ = new QLabel("Waiting for Color Stream...");
-    label_color_stream_->setMinimumSize(320, 240);
-    label_color_stream_->setAlignment(Qt::AlignCenter);
-    label_color_stream_->setStyleSheet("border: 1px solid black; background-color: #333; color: white;");
-
-    label_depth_stream_ = new QLabel("Waiting for Depth Stream...");
-    label_depth_stream_->setMinimumSize(320, 240);
-    label_depth_stream_->setAlignment(Qt::AlignCenter);
-    label_depth_stream_->setStyleSheet("border: 1px solid black; background-color: #333; color: white;");
-
-    layout_video->addWidget(label_color_stream_);
-    layout_video->addWidget(label_depth_stream_);
-    group_video->setLayout(layout_video);
-    layout->addWidget(group_video);
-    
-    // Controls
-    auto * group_ctrl = new QGroupBox("Controls");
-    auto * layout_ctrl = new QHBoxLayout();
-    btn_save_image_ = new QPushButton("Snapshot / Save Image");
-    btn_save_image_->setStyleSheet("font-weight: bold; padding: 10px;");
-    layout_ctrl->addWidget(btn_save_image_);
-    group_ctrl->setLayout(layout_ctrl);
-    layout->addWidget(group_ctrl);
-    
-    connect(btn_save_image_, &QPushButton::clicked, this, [this](){
-        node_->save_image();
-    });
-
-    widget->setLayout(layout);
-    return widget;
 }

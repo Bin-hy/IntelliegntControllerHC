@@ -1,3 +1,9 @@
+# 启动所有
+```bash
+cd ~/IntelliegntControllerHC/ros2_ws
+source install/setup.bash
+ros2 launch ui_app unified.launch.py
+```
 1.  **Qt 多线程冲突 (`QSocketNotifier`)**:
     ROS2 的 `rclcpp::spin()` 默认会监听 DDS 的 socket 文件描述符。你之前的代码在主线程创建了 Qt Application，却在一个独立的 `std::thread` 中运行 ROS `spin()`。这会导致 ROS 的 socket 信号和 Qt 的事件循环（Event Loop）发生冲突，特别是当两者都试图管理底层的 I/O 事件时。
 

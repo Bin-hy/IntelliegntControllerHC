@@ -13,6 +13,8 @@ find_package(duco_msg REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(vision_server REQUIRED)
+include_directories(/home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/include/vision_server)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
@@ -36,6 +38,7 @@ target_link_libraries(ui_app
   Qt5::Widgets
   Qt5::Core
   Qt5::Gui
+  /home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/lib/libvision_server__rosidl_typesupport_cpp.so
 )
 
 ament_target_dependencies(ui_app
@@ -54,6 +57,10 @@ install(TARGETS ui_app
 
 install(DIRECTORY include/
   DESTINATION include
+)
+
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
 ament_package()

@@ -13,9 +13,15 @@ find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/SaveImage.srv"
+)
 
 add_executable(image_saver_node src/image_saver_node.cpp)
 ament_target_dependencies(image_saver_node rclcpp sensor_msgs cv_bridge image_transport std_srvs OpenCV)
+rosidl_target_interfaces(image_saver_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 install(TARGETS
   image_saver_node
@@ -26,6 +32,7 @@ install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
 
+ament_export_dependencies(rosidl_default_runtime)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
