@@ -1,0 +1,4 @@
+# 6个关节位置
+int32[6] positions
+---
+int32 result

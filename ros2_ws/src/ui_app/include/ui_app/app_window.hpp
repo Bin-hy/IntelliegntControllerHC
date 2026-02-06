@@ -13,6 +13,7 @@ class QDoubleSpinBox;
 class QSpinBox;
 class QComboBox;
 class QCheckBox;
+class PointCloudWidget;
 
 class AppWindow : public QWidget {
 public:
@@ -53,12 +54,14 @@ private:
 
   // Camera Tab UI
   QComboBox* combo_camera_;
+  QComboBox* combo_pc_topic_;
   QPushButton* btn_scan_;
   
   QCheckBox* check_color_;
   QCheckBox* check_depth_;
   QCheckBox* check_ir_left_;
   QCheckBox* check_ir_right_;
+  QCheckBox* check_point_cloud_;
 
   QWidget* widget_color_;
   QWidget* widget_depth_;
@@ -69,6 +72,7 @@ private:
   QLabel* label_depth_stream_;
   QLabel* label_ir_left_stream_;
   QLabel* label_ir_right_stream_;
+  PointCloudWidget* widget_point_cloud_;
   QWidget* container_video_;
 
   // LHand UI

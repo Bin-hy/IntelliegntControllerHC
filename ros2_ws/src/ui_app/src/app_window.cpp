@@ -1,4 +1,5 @@
 #include "ui_app/app_window.hpp"
+#include "ui_app/point_cloud_widget.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -96,6 +97,9 @@ void AppWindow::updateUI() {
 
       {
           std::lock_guard<std::mutex> lock(node_->image_mutex_);
+          if (node_->last_point_cloud_ && widget_point_cloud_->isVisible()) {
+              widget_point_cloud_->updatePointCloud(node_->last_point_cloud_);
+          }
           
           auto update_label = [](QLabel* label, const cv::Mat& mat, bool is_rgb) {
               if (!label || !label->isVisible()) return;
@@ -263,6 +267,12 @@ QWidget* AppWindow::createCameraTab() {
     combo_camera_->setMinimumWidth(150);
     layout_config->addWidget(combo_camera_);
 
+    layout_config->addWidget(new QLabel("PC Topic:"));
+    combo_pc_topic_ = new QComboBox();
+    combo_pc_topic_->setEditable(true);
+    combo_pc_topic_->setMinimumWidth(200);
+    layout_config->addWidget(combo_pc_topic_);
+
     btn_scan_ = new QPushButton("Scan Cameras");
     layout_config->addWidget(btn_scan_);
 
@@ -275,17 +285,20 @@ QWidget* AppWindow::createCameraTab() {
     auto * layout_sensors = new QHBoxLayout();
     check_color_ = new QCheckBox("Color Stream");
     check_depth_ = new QCheckBox("Depth Stream");
+    check_point_cloud_ = new QCheckBox("Point Cloud");
     check_ir_left_ = new QCheckBox("IR Left");
     check_ir_right_ = new QCheckBox("IR Right");
     
     // Defaults: Color and Depth checked
     check_color_->setChecked(true);
     check_depth_->setChecked(true);
+    check_point_cloud_->setChecked(false);
     check_ir_left_->setChecked(false);
     check_ir_right_->setChecked(false);
 
     layout_sensors->addWidget(check_color_);
     layout_sensors->addWidget(check_depth_);
+    layout_sensors->addWidget(check_point_cloud_);
     layout_sensors->addWidget(check_ir_left_);
     layout_sensors->addWidget(check_ir_right_);
     layout_sensors->addStretch();
@@ -313,11 +326,15 @@ QWidget* AppWindow::createCameraTab() {
         node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, false, true);
     });
 
+    widget_point_cloud_ = new PointCloudWidget();
+    widget_point_cloud_->setMinimumSize(400, 300);
+
     // Add to grid (2x2)
     grid_video->addWidget(widget_color_, 0, 0);
     grid_video->addWidget(widget_depth_, 0, 1);
     grid_video->addWidget(widget_ir_left_, 1, 0);
     grid_video->addWidget(widget_ir_right_, 1, 1);
+    grid_video->addWidget(widget_point_cloud_, 2, 0, 1, 2); // Span 2 columns
     
     scroll->setWidget(container_video_);
     layout->addWidget(scroll);
@@ -327,8 +344,10 @@ QWidget* AppWindow::createCameraTab() {
     
     auto update_config = [this]() { onCameraConfigChanged(); };
     connect(combo_camera_, &QComboBox::currentTextChanged, this, update_config);
+    connect(combo_pc_topic_, &QComboBox::currentTextChanged, this, update_config);
     connect(check_color_, &QCheckBox::stateChanged, this, update_config);
     connect(check_depth_, &QCheckBox::stateChanged, this, update_config);
+    connect(check_point_cloud_, &QCheckBox::stateChanged, this, update_config);
     connect(check_ir_left_, &QCheckBox::stateChanged, this, update_config);
     connect(check_ir_right_, &QCheckBox::stateChanged, this, update_config);
 
@@ -370,28 +389,91 @@ void AppWindow::refreshCameraList() {
         combo_camera_->addItem(QString::fromStdString(cam));
     }
     combo_camera_->blockSignals(false);
+
+    auto pc_topics = node_->scan_point_clouds();
+    combo_pc_topic_->blockSignals(true);
+    combo_pc_topic_->clear();
+    for(const auto& topic : pc_topics) {
+        combo_pc_topic_->addItem(QString::fromStdString(topic));
+    }
+    // Add default if empty and camera combo has items
+    // This is purely UI logic now, we don't force push to combo unless needed.
+    // The previous logic was:
+    // if(combo_pc_topic_->count() == 0) { ... } 
+    // We removed the hardcoded camera fallback in ros_node.cpp, so we should be clean here.
+    
+    combo_pc_topic_->blockSignals(false);
+
     // Trigger update if selection changed (or just force it)
     if (combo_camera_->count() > 0) {
-        combo_camera_->setCurrentIndex(0);
+        if(combo_camera_->currentIndex() == -1) combo_camera_->setCurrentIndex(0);
         onCameraConfigChanged(); 
     }
 }
 
 void AppWindow::onCameraConfigChanged() {
     std::string cam_ns = combo_camera_->currentText().toStdString();
+    
+    // Auto-detect capabilities and update UI state (Enable/Disable/Hide)
+    auto caps = node_->get_camera_capabilities(cam_ns);
+
+    // Update Checkbox visibility/state based on capabilities
+    check_color_->setEnabled(caps.has_color);
+    if (!caps.has_color && check_color_->isChecked()) check_color_->setChecked(false);
+
+    check_depth_->setEnabled(caps.has_depth);
+    if (!caps.has_depth && check_depth_->isChecked()) check_depth_->setChecked(false);
+
+    // IR Logic
+    check_ir_left_->setEnabled(caps.has_ir_left);
+    if (caps.has_ir_left && !caps.has_ir_right) {
+        // Mono IR case: Rename "IR Left" to "IR Stream" and hide "IR Right"
+        check_ir_left_->setText("IR Stream");
+        check_ir_right_->setVisible(false);
+        check_ir_right_->setChecked(false);
+    } else {
+        // Dual IR case
+        check_ir_left_->setText("IR Left");
+        check_ir_right_->setVisible(true);
+        check_ir_right_->setEnabled(caps.has_ir_right);
+    }
+    if (!caps.has_ir_left && check_ir_left_->isChecked()) check_ir_left_->setChecked(false);
+    if (!caps.has_ir_right && check_ir_right_->isChecked()) check_ir_right_->setChecked(false);
+
+    // Point Cloud: Enable if capability exists OR if user selected a custom topic in the dropdown
+    std::string pc_topic = combo_pc_topic_->currentText().toStdString();
+    bool has_custom_pc_topic = !pc_topic.empty();
+    
+    check_point_cloud_->setEnabled(caps.has_point_cloud || has_custom_pc_topic);
+    // Don't auto-uncheck pointcloud as user might want to try force enabling or using custom topic
+
     bool c = check_color_->isChecked();
     bool d = check_depth_->isChecked();
+    bool pc = check_point_cloud_->isChecked();
     bool ir_l = check_ir_left_->isChecked();
     bool ir_r = check_ir_right_->isChecked();
 
     // Update Node Subscriptions
-    node_->update_camera_subscriptions(cam_ns, c, d, ir_l, ir_r);
+    node_->update_camera_subscriptions(cam_ns, c, d, ir_l, ir_r, pc, pc_topic);
 
     // Update UI Visibility
     widget_color_->setVisible(c);
     widget_depth_->setVisible(d);
+    widget_point_cloud_->setVisible(pc);
     widget_ir_left_->setVisible(ir_l);
     widget_ir_right_->setVisible(ir_r);
+    
+    // Update Widget Titles if Mono IR
+    if (caps.has_ir_left && !caps.has_ir_right) {
+        // widget_ir_left_ is a QGroupBox* because createVideoWidget returns a group box
+        if (QGroupBox* gb = qobject_cast<QGroupBox*>(widget_ir_left_)) {
+            gb->setTitle("IR Stream");
+        }
+    } else {
+        if (QGroupBox* gb = qobject_cast<QGroupBox*>(widget_ir_left_)) {
+            gb->setTitle("IR Left Stream");
+        }
+    }
 }
 
 QWidget* AppWindow::createLHandTab() {
@@ -486,11 +568,15 @@ QWidget* AppWindow::createLHandTab() {
     });
     
     connect(btn_lhand_move_, &QPushButton::clicked, this, [this](){
+        std::array<int, 6> positions;
         for(int i=0; i<6; ++i) {
-             int pos = spin_lhand_pos_[i]->value();
-             node_->call_lhand_set_position(i+1, pos);
+             positions[i] = spin_lhand_pos_[i]->value();
         }
-        node_->call_lhand_move(0);
+        node_->call_lhand_set_all_position(positions);
+        
+        QTimer::singleShot(10, this, [this](){
+            node_->call_lhand_move(0);
+        });
     });
 
     return widget;

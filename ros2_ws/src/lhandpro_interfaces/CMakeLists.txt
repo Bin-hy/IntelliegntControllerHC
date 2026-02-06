@@ -30,6 +30,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetMaxCurrent.srv"
   "srv/SetPosition.srv"
   "srv/SetPositionVelocity.srv"
+  "srv/SetAllPosition.srv"
 )
 
 if(BUILD_TESTING)

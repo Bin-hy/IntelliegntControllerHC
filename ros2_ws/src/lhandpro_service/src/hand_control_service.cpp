@@ -11,7 +11,7 @@ HandControlService::HandControlService() : Node("lhandpro_service") {
   ec_master_ = std::make_shared<EthercatMaster>();
 
   is_connected_ = false;
-  current_channel_ = 0;  // 手动修改默认通道
+  current_channel_ = 1;  // 手动修改默认通道
 
   init_ethercat(current_channel_);
   init_service();
@@ -180,6 +180,8 @@ void HandControlService::init_service() {
       REGISTER_SERVICE(SetEnable, SRV_NAME_SET_ENABLE, set_enable_callback);
   set_position_srv_ = REGISTER_SERVICE(SetPosition, SRV_NAME_SET_POSITION,
                                        set_position_callback);
+  set_all_position_srv_ = REGISTER_SERVICE(SetAllPosition, SRV_NAME_SET_ALL_POSITION,
+                                       set_all_position_callback);
   get_position_srv_ = REGISTER_SERVICE(GetPosition, SRV_NAME_GET_POSITION,
                                        get_position_callback);
   get_now_angle_srv_ = REGISTER_SERVICE(GetNowAngle, SRV_NAME_GET_NOW_ANGLE,
@@ -235,12 +237,52 @@ void HandControlService::set_position_callback(
     res->result = -1;
     return;
   }
+  RCLCPP_INFO(this->get_logger(), "关节位置信息: 关节ID=%d, 目标位置=%d", req->joint_id, req->position);
+  
   int retn = lhp_lib_->set_target_position(req->joint_id, req->position);
+
   if (retn != 0) {
     RCLCPP_WARN(this->get_logger(), "[%s] 设置位置失败，错误码：%d",
                 service_name, retn);
   }
   res->result = retn;
+}
+
+void HandControlService::set_all_position_callback(
+    const std::shared_ptr<lhandpro_interfaces::srv::SetAllPosition::Request> req,
+    std::shared_ptr<lhandpro_interfaces::srv::SetAllPosition::Response> res) {
+  const char* service_name = SRV_NAME_SET_ALL_POSITION;
+  
+  if (!is_alive()) {
+    RCLCPP_ERROR(this->get_logger(), "[%s] 设备未连接或通信异常", service_name);
+    res->result = -1;
+    return;
+  }
+
+  // positions is int32[6]
+  for (int i = 0; i < 6; ++i) {
+      int joint_id = i + 1;
+      if (joint_id > active_dof_) break; // Stop if exceeding active DOF
+      
+      int pos = req->positions[i];
+      int retn = lhp_lib_->set_target_position(joint_id, pos);
+      if (retn != 0) {
+          RCLCPP_WARN(this->get_logger(), "[%s] 设置关节%d位置失败，错误码：%d",
+                      service_name, joint_id, retn);
+          // Continue setting others? Or return error?
+          // Let's continue but mark error.
+          res->result = retn; 
+      }
+  }
+  
+  // Usually we trigger move automatically or wait for move_motors call?
+  // The existing pattern seems to be: set_position sets target, move_motors executes it?
+  // Or does set_target_position just update internal state?
+  // Based on existing code: set_position just calls set_target_position.
+  
+  if (res->result == 0) {
+       RCLCPP_INFO(this->get_logger(), "设置所有关节位置成功");
+  }
 }
 
 void HandControlService::get_position_callback(
@@ -481,6 +523,7 @@ void HandControlService::move_motors_callback(
     return;
   }
   if (req->joint_id == 0) {
+    
     RCLCPP_INFO(this->get_logger(), "驱动关节全部运动 : %d", retn);
   } else {
     RCLCPP_INFO(this->get_logger(), "驱动关节 %d 运动 : %d", req->joint_id,

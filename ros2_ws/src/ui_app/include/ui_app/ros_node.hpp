@@ -4,6 +4,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <duco_msg/srv/robot_control.hpp>
 #include <duco_msg/srv/robot_io_control.hpp>
 #include <duco_msg/srv/robot_move.hpp>
@@ -12,6 +13,7 @@
 #include "vision_server/srv/save_image.hpp"
 #include "lhandpro_interfaces/srv/set_enable.hpp"
 #include "lhandpro_interfaces/srv/set_position.hpp"
+#include "lhandpro_interfaces/srv/set_all_position.hpp"
 #include "lhandpro_interfaces/srv/set_position_velocity.hpp"
 #include "lhandpro_interfaces/srv/move_motors.hpp"
 #include "lhandpro_interfaces/srv/home_motors.hpp"
@@ -41,11 +43,23 @@ public:
   void call_lhand_enable(int joint_id, int enable);
   void call_lhand_home(int joint_id);
   void call_lhand_set_position(int joint_id, int position);
+  void call_lhand_set_all_position(const std::array<int, 6>& positions);
   void call_lhand_set_velocity(int joint_id, int velocity);
   void call_lhand_move(int joint_id);
   
   std::vector<std::string> scan_cameras();
-  void update_camera_subscriptions(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right);
+  std::vector<std::string> scan_point_clouds();
+  
+  struct CameraCapabilities {
+      bool has_color = false;
+      bool has_depth = false;
+      bool has_ir_left = false;
+      bool has_ir_right = false;
+      bool has_point_cloud = false;
+  };
+  CameraCapabilities get_camera_capabilities(std::string camera_ns);
+
+  void update_camera_subscriptions(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::string pc_topic = "");
 
   // Data storage
   std::atomic<int> count_;
@@ -59,6 +73,7 @@ public:
   cv::Mat last_depth_image_;
   cv::Mat last_ir_left_image_;
   cv::Mat last_ir_right_image_;
+  sensor_msgs::msg::PointCloud2::SharedPtr last_point_cloud_;
   
   std::mutex data_mutex_;
   std::mutex image_mutex_;
@@ -69,6 +84,7 @@ private:
   void depth_callback(const sensor_msgs::msg::Image::SharedPtr msg);
   void ir_left_callback(const sensor_msgs::msg::Image::SharedPtr msg);
   void ir_right_callback(const sensor_msgs::msg::Image::SharedPtr msg);
+  void point_cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
 
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
   rclcpp::Subscription<duco_msg::msg::DucoRobotState>::SharedPtr sub_robot_state_;
@@ -77,6 +93,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_depth_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_ir_left_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_ir_right_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_point_cloud_;
   
   rclcpp::Client<duco_msg::srv::RobotControl>::SharedPtr client_control_;
   rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedPtr client_io_;
@@ -87,6 +104,7 @@ private:
   // LHand Clients
   rclcpp::Client<lhandpro_interfaces::srv::SetEnable>::SharedPtr client_lhand_enable_;
   rclcpp::Client<lhandpro_interfaces::srv::SetPosition>::SharedPtr client_lhand_pos_;
+  rclcpp::Client<lhandpro_interfaces::srv::SetAllPosition>::SharedPtr client_lhand_all_pos_;
   rclcpp::Client<lhandpro_interfaces::srv::SetPositionVelocity>::SharedPtr client_lhand_vel_;
   rclcpp::Client<lhandpro_interfaces::srv::MoveMotors>::SharedPtr client_lhand_move_;
   rclcpp::Client<lhandpro_interfaces::srv::HomeMotors>::SharedPtr client_lhand_home_;

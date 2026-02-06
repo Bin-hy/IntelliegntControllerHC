@@ -26,11 +26,13 @@
 #include "lhandpro_interfaces/srv/set_enable.hpp"
 #include "lhandpro_interfaces/srv/set_max_current.hpp"
 #include "lhandpro_interfaces/srv/set_position.hpp"
+#include "lhandpro_interfaces/srv/set_all_position.hpp"
 #include "lhandpro_interfaces/srv/set_position_velocity.hpp"
 
 // 服务名称宏
 #define SRV_NAME_SET_ENABLE "set_enable"
 #define SRV_NAME_SET_POSITION "set_position"
+#define SRV_NAME_SET_ALL_POSITION "set_all_position"
 #define SRV_NAME_GET_POSITION "get_position"
 #define SRV_NAME_GET_NOW_ANGLE "get_now_angle"
 #define SRV_NAME_GET_NOW_POSITION "get_now_position"
@@ -78,6 +80,10 @@ class HandControlService : public rclcpp::Node {
   void set_position_callback(
       const std::shared_ptr<lhandpro_interfaces::srv::SetPosition::Request> req,
       std::shared_ptr<lhandpro_interfaces::srv::SetPosition::Response> res);
+
+  void set_all_position_callback(
+      const std::shared_ptr<lhandpro_interfaces::srv::SetAllPosition::Request> req,
+      std::shared_ptr<lhandpro_interfaces::srv::SetAllPosition::Response> res);
 
   void get_position_callback(
       const std::shared_ptr<lhandpro_interfaces::srv::GetPosition::Request> req,
@@ -162,6 +168,8 @@ class HandControlService : public rclcpp::Node {
       set_enable_srv_;
   rclcpp::Service<lhandpro_interfaces::srv::SetPosition>::SharedPtr
       set_position_srv_;
+  rclcpp::Service<lhandpro_interfaces::srv::SetAllPosition>::SharedPtr
+      set_all_position_srv_;
   rclcpp::Service<lhandpro_interfaces::srv::GetPosition>::SharedPtr
       get_position_srv_;
   rclcpp::Service<lhandpro_interfaces::srv::GetNowAngle>::SharedPtr

@@ -18,7 +18,7 @@ find_package(lhandpro_interfaces REQUIRED)
 include_directories(/home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/include/vision_server)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui OpenGL)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -28,6 +28,8 @@ add_executable(ui_app
   src/main.cpp
   src/ros_node.cpp
   src/app_window.cpp
+  src/point_cloud_widget.cpp
+  include/ui_app/point_cloud_widget.hpp
   resources/resources.qrc
 )
 
@@ -40,6 +42,7 @@ target_link_libraries(ui_app
   Qt5::Widgets
   Qt5::Core
   Qt5::Gui
+  Qt5::OpenGL
   /home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/lib/libvision_server__rosidl_typesupport_cpp.so
 )
 

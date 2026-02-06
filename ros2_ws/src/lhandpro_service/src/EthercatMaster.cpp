@@ -1,8 +1,6 @@
-// EthercatMaster.cpp
+﻿// EthercatMaster.cpp
 #include "EthercatMaster.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -11,7 +9,48 @@
 #define ECOUT std::cout
 #else
 #define ECOUT \
-  if (0) std::cout
+  if (0)      \
+  std::cout
+#endif
+
+// 平台特定的网口过滤关键词
+#ifdef _WIN32
+// Windows特定关键词
+static const std::vector<std::string> EXCLUDE_KEYWORDS = {
+    "wan miniport",  // Windows WAN Miniport
+    "wi-fi",         // Windows WiFi
+    "wifi",          // WiFi接口
+    "wireless",      // 无线
+    "bluetooth",     // 蓝牙
+    "vmware",        // VMware虚拟网卡
+    "virtual",       // 虚拟设备
+    "loopback",      // 回环(Windows)
+    "tap-",          // TAP虚拟设备
+    "vpn",           // VPN接口
+    "wintun",        // Windows TUN设备
+    "teredo",        // Teredo隧道
+    "isatap"         // ISATAP隧道
+};
+#else
+// Linux特定关键词
+static const std::vector<std::string> EXCLUDE_KEYWORDS = {
+    "lo",       // Linux 回环接口
+    "docker",   // Docker虚拟网卡
+    "veth",     // 虚拟以太网设备
+    "br-",      // 网桥接口
+    "virbr",    // 虚拟网桥
+    "vmnet",    // VMware虚拟网卡
+    "tap",      // TAP虚拟设备
+    "tun",      // TUN虚拟设备
+    "wlan",     // 无线网卡
+    "wlp",      // 无线网卡(新命名)
+    "wlx",      // 无线网卡
+    "wwan",     // 无线广域网
+    "vboxnet",  // VirtualBox虚拟网卡
+    "p2p",      // P2P连接
+    "teredo",   // Teredo隧道
+    "isatap"    // ISATAP隧道
+};
 #endif
 
 std::string SlaveInfo::toString() const {
@@ -72,78 +111,53 @@ EthercatMaster::~EthercatMaster() {
 
 std::vector<std::string> EthercatMaster::scanNetworkInterfaces() {
   interfaces_.clear();
-  std::vector<std::string> descriptions;
-
-  // 排除关键词列表
-  static const std::vector<std::string> exclude_keywords = {
-      "lo",         // Linux 回环接口
-      "docker",     // Docker虚拟网卡
-      "veth",       // 虚拟以太网设备
-      "br-",        // 网桥接口
-      "virbr",      // 虚拟网桥
-      "vmnet",      // VMware虚拟网卡
-      "tap",        // TAP虚拟设备
-      "tun",        // TUN虚拟设备
-      "wlan",       // 无线网卡
-      "wlp",        // 无线网卡(新命名)
-      "wlx",        // 无线网卡
-      "wifi",       // WiFi接口
-      "wwan",       // 无线广域网
-      "bluetooth",  // 蓝牙
-      "vboxnet",    // VirtualBox虚拟网卡
-      "wintun",     // Windows TUN设备
-      "p2p",        // P2P连接
-      "loopback",   // 回环(Windows)
-      "teredo",     // Teredo隧道
-      "isatap"      // ISATAP隧道
-  };
-
+  std::vector<std::string> descrptions;
   ec_adaptert* adapter = ec_find_adapters();
   ec_adaptert* head = adapter;
 
-  ECOUT << "扫描所有适配器:\n";
-  int total_count = 0;
-  int filtered_count = 0;
-
+  ECOUT << "Available adapters:\n";
   while (adapter != nullptr) {
-    total_count++;
+    // 检查是否需要排除
+    bool should_exclude = false;
     std::string adapter_name(adapter->name);
     std::string adapter_desc(adapter->desc);
+    std::string adapter_name_lower = adapter_name;
+    std::string adapter_desc_lower = adapter_desc;
 
-    // 转换为小写以进行不区分大小写的匹配
-    std::string desc_lower = adapter_desc;
-    std::transform(desc_lower.begin(), desc_lower.end(), desc_lower.begin(),
-                   ::tolower);
-
-    // 检查是否应该排除
-    bool should_exclude = false;
-    for (const auto& keyword : exclude_keywords) {
-      // 在描述中搜索关键词
-      if (desc_lower.find(keyword) != std::string::npos) {
-        ECOUT << "    [排除] " << adapter_name << "  (" << adapter_desc
-              << ") - 匹配排除关键词: " << keyword << "\n";
-        should_exclude = true;
-        filtered_count++;
-        break;
-      }
+    // 转换为小写便于比较
+    for (char& c : adapter_name_lower) {
+      c = std::tolower(static_cast<unsigned char>(c));
+    }
+    for (char& c : adapter_desc_lower) {
+      c = std::tolower(static_cast<unsigned char>(c));
     }
 
-    // 如果不排除，则添加到列表
+    for (const std::string& keyword : EXCLUDE_KEYWORDS) {
+      // 检查名称
+      if (adapter_name_lower.find(keyword) != std::string::npos) {
+        should_exclude = true;
+        break;
+      }
+#ifdef _WIN32
+      // 检查描述
+      if (adapter_desc_lower.find(keyword) != std::string::npos) {
+        should_exclude = true;
+        break;
+      }
+#endif
+    }
+
     if (!should_exclude) {
-      ECOUT << "    [保留] " << adapter_name << "  (" << adapter_desc << ")\n";
-      interfaces_.push_back(adapter_name);
-      descriptions.push_back(adapter_desc);
+      ECOUT << "    - " << adapter->name << "  (" << adapter->desc << ")\n";
+      interfaces_.push_back(std::string(adapter->name));
+      descrptions.push_back(std::string(adapter->desc));
     }
 
     adapter = adapter->next;
   }
-
   ec_free_adapters(head);
 
-  ECOUT << "扫描完成: 共 " << total_count << " 个适配器，过滤 "
-        << filtered_count << " 个，保留 " << descriptions.size() << " 个\n";
-
-  return descriptions;
+  return descrptions;
 }
 
 bool EthercatMaster::init(int index) {
@@ -176,13 +190,17 @@ bool EthercatMaster::init(int index) {
   outputs_ = grp->outputs;
   inputs_ = grp->inputs;
 
+  //  初始化双缓冲区大小
+  output_buffer_.resize(output_bytes_);
+
   ECOUT << "mapped " << grp->Obytes << "O+" << grp->Ibytes << "I bytes from "
         << grp->nsegments << " segments";
 
   if (grp->nsegments > 1) {
     ECOUT << " (";
     for (int i = 0; i < grp->nsegments; ++i) {
-      if (i > 0) ECOUT << "+";
+      if (i > 0)
+        ECOUT << "+";
       ECOUT << grp->IOsegment[i];
     }
     ECOUT << " slaves)";
@@ -198,7 +216,8 @@ bool EthercatMaster::init(int index) {
 }
 
 bool EthercatMaster::start() {
-  if (!initialized_) return false;
+  if (!initialized_)
+    return false;
 
   // ec_groupt* grp = context_.grouplist + group_;
   ec_slavet* slave = context_.slavelist;
@@ -270,6 +289,12 @@ void EthercatMaster::run() {
       ECOUT << "Iteration " << std::setw(4) << std::setfill(' ') << iteration
             << ":";
 
+      //  检测是否有新数据，有则同步到 SOEM 输出缓冲区
+      if (uint8_t* latest = output_buffer_.getLatest()) {
+        std::lock_guard<std::mutex> lock(io_mutex_);
+        memcpy(outputs_, latest, output_bytes_);
+      }
+
       ec_groupt* grp = context_.grouplist + group_;
 
       ec_timet start = osal_current_time();
@@ -302,8 +327,10 @@ void EthercatMaster::run() {
       if (iteration == 1) {
         min_time = max_time = roundtrip_time_;
       } else {
-        if (roundtrip_time_ < min_time) min_time = roundtrip_time_;
-        if (roundtrip_time_ > max_time) max_time = roundtrip_time_;
+        if (roundtrip_time_ < min_time)
+          min_time = roundtrip_time_;
+        if (roundtrip_time_ > max_time)
+          max_time = roundtrip_time_;
       }
 
       iteration++;
@@ -336,7 +363,8 @@ EthercatMaster::EthercatState EthercatMaster::getState() const {
 
   for (int i = 1; i <= context_.slavecount; ++i) {
     const ec_slavet* slave = context_.slavelist + i;
-    if (slave->group != group_) continue;
+    if (slave->group != group_)
+      continue;
 
     if (slave->state == EC_STATE_NONE) {
       return EthercatState::Disconnected;  // 从站丢失
@@ -381,11 +409,13 @@ EthercatMaster::EthercatState EthercatMaster::getState() const {
 SlaveInfo EthercatMaster::getSlaveInfo() const {
   SlaveInfo info;
 
-  if (context_.slavecount < 1) return info;
+  if (context_.slavecount < 1)
+    return info;
 
   const ec_slavet* slave = context_.slavelist + 1;
 
-  if (slave->group != group_) return info;
+  if (slave->group != group_)
+    return info;
 
   info.index = 1;
   info.name = std::string(slave->name);
@@ -426,7 +456,8 @@ void EthercatMaster::stop() {
 }
 
 void EthercatMaster::setOutput(int index, uint8_t value) {
-  if (!started_ || outputs_ == nullptr) return;
+  if (!started_ || outputs_ == nullptr)
+    return;
   if (index >= 0 && index < output_bytes_) {
     std::lock_guard<std::mutex> lock(io_mutex_);
     outputs_[index] = value;
@@ -434,27 +465,44 @@ void EthercatMaster::setOutput(int index, uint8_t value) {
 }
 
 uint8_t EthercatMaster::getInput(int index) {
-  if (!started_ || inputs_ == nullptr) return 0;
+  if (!started_ || inputs_ == nullptr)
+    return 0;
   if (index >= 0 && index < input_bytes_) {
     std::lock_guard<std::mutex> lock(io_mutex_);
     return inputs_[index];
   }
   return 0;
 }
+// bool EthercatMaster::setOutputs(const uint8_t* data, unsigned int len) {
+//   if (!started_ || !data || len <= 0)
+//     return false;
+//   if (len > output_bytes_) {
+//     ECOUT << "Error: setOutputs length " << len
+//           << " exceeds configured output bytes " << output_bytes_ << "\n";
+//     return false;
+//   }
+
+//   std::lock_guard<std::mutex> lock(io_mutex_);
+//   memcpy(outputs_, data, len);
+//   return true;
+// }
+
 bool EthercatMaster::setOutputs(const uint8_t* data, unsigned int len) {
-  if (!started_ || !data || len <= 0) return false;
+  if (!started_ || !data || len <= 0)
+    return false;
   if (len > output_bytes_) {
     ECOUT << "Error: setOutputs length " << len
           << " exceeds configured output bytes " << output_bytes_ << "\n";
     return false;
   }
 
-  std::lock_guard<std::mutex> lock(io_mutex_);
-  memcpy(outputs_, data, len);
-  return true;
+  // 保证数据能在下一周期发出
+  return output_buffer_.write(data, len);
 }
+
 bool EthercatMaster::getInputs(uint8_t* buffer, unsigned int len) {
-  if (!started_ || !buffer || len <= 0) return false;
+  if (!started_ || !buffer || len <= 0)
+    return false;
   if (len > input_bytes_) {
     ECOUT << "Error: getInputs buffer length " << len
           << " exceeds configured input bytes " << input_bytes_ << "\n";
@@ -466,7 +514,8 @@ bool EthercatMaster::getInputs(uint8_t* buffer, unsigned int len) {
   return true;
 }
 bool EthercatMaster::getOutputs(uint8_t* buffer, unsigned int len) {
-  if (!started_ || !buffer || len <= 0) return false;
+  if (!started_ || !buffer || len <= 0)
+    return false;
   if (len > output_bytes_) {
     ECOUT << "Error: getOutputs buffer length " << len
           << " exceeds configured input bytes " << output_bytes_ << "\n";
@@ -477,9 +526,13 @@ bool EthercatMaster::getOutputs(uint8_t* buffer, unsigned int len) {
   memcpy(buffer, outputs_, len);
   return true;
 }
-int EthercatMaster::getOutputSize() const { return output_bytes_; }
+int EthercatMaster::getOutputSize() const {
+  return output_bytes_;
+}
 
-int EthercatMaster::getInputSize() const { return input_bytes_; }
+int EthercatMaster::getInputSize() const {
+  return input_bytes_;
+}
 
 bool EthercatMaster::sdoRead(uint16_t index, uint8_t subindex,
                              uint32_t* value) {

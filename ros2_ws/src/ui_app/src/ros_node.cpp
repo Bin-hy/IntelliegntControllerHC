@@ -27,14 +27,15 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     client_save_image_ = create_client<vision_server::srv::SaveImage>("save_image");
 
     // LHand Clients
-    client_lhand_enable_ = create_client<lhandpro_interfaces::srv::SetEnable>("set_enable");
-    client_lhand_pos_ = create_client<lhandpro_interfaces::srv::SetPosition>("set_position");
-    client_lhand_vel_ = create_client<lhandpro_interfaces::srv::SetPositionVelocity>("set_position_velocity");
-    client_lhand_move_ = create_client<lhandpro_interfaces::srv::MoveMotors>("move_motors");
-    client_lhand_home_ = create_client<lhandpro_interfaces::srv::HomeMotors>("home_motors");
+    client_lhand_enable_ = create_client<lhandpro_interfaces::srv::SetEnable>("/lhandpro_service/set_enable");
+    client_lhand_pos_ = create_client<lhandpro_interfaces::srv::SetPosition>("/lhandpro_service/set_position");
+    client_lhand_all_pos_ = create_client<lhandpro_interfaces::srv::SetAllPosition>("/lhandpro_service/set_all_position");
+    client_lhand_vel_ = create_client<lhandpro_interfaces::srv::SetPositionVelocity>("/lhandpro_service/set_position_velocity");
+    client_lhand_move_ = create_client<lhandpro_interfaces::srv::MoveMotors>("/lhandpro_service/move_motors");
+    client_lhand_home_ = create_client<lhandpro_interfaces::srv::HomeMotors>("/lhandpro_service/home_motors");
 
     // Default Camera Subscriptions (camera, Color+Depth)
-    update_camera_subscriptions("camera", true, true, false, false);
+    update_camera_subscriptions("camera", true, true, false, false, false);
 
     // Timer
     timer_ = create_wall_timer(std::chrono::seconds(1), [this](){
@@ -71,25 +72,76 @@ std::vector<std::string> RosNode::scan_cameras() {
     
     if (cameras.empty()) {
         // Fallback if no cameras found
-        cameras.push_back("camera");
+        // cameras.push_back("camera"); // Removed hardcoded fallback that causes confusion
     }
     return cameras;
 }
 
-void RosNode::update_camera_subscriptions(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right) {
+std::vector<std::string> RosNode::scan_point_clouds() {
+    std::vector<std::string> topics;
+    auto topic_names_and_types = this->get_topic_names_and_types();
+    
+    for (const auto& [name, types] : topic_names_and_types) {
+        for (const auto& type : types) {
+            if (type == "sensor_msgs/msg/PointCloud2") {
+                topics.push_back(name);
+                break;
+            }
+        }
+    }
+    std::sort(topics.begin(), topics.end());
+    return topics;
+}
+
+RosNode::CameraCapabilities RosNode::get_camera_capabilities(std::string camera_ns) {
+    CameraCapabilities caps;
+    
+    // Normalize namespace
+    if (camera_ns.back() == '/') camera_ns.pop_back();
+    if (camera_ns.front() != '/') camera_ns = "/" + camera_ns;
+
+    auto topic_names_and_types = this->get_topic_names_and_types();
+    auto topics = topic_names_and_types; // Copy map
+
+    // Helper to check existence
+    auto has_topic = [&](std::string suffix) -> bool {
+        std::string full_name = camera_ns + suffix;
+        return topics.find(full_name) != topics.end();
+    };
+
+    caps.has_color = has_topic("/color/image_raw");
+    caps.has_depth = has_topic("/depth/image_raw");
+    caps.has_ir_left = has_topic("/left_ir/image_raw");
+    caps.has_ir_right = has_topic("/right_ir/image_raw");
+    caps.has_point_cloud = has_topic("/depth/color/points"); // Default guess
+
+    // Fallback/Enhancement logic
+    if (!caps.has_ir_left) {
+        // Check for mono IR
+        if (has_topic("/ir/image_raw")) {
+            caps.has_ir_left = true; // Map mono IR to Left
+            // caps.has_ir_right remains false
+        }
+    }
+
+    return caps;
+}
+
+void RosNode::update_camera_subscriptions(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::string pc_topic) {
     // Unsubscribe all
     sub_color_.reset();
     sub_depth_.reset();
     sub_ir_left_.reset();
     sub_ir_right_.reset();
+    sub_point_cloud_.reset();
 
     // Remove trailing slash if user provided one (though we extracted without it)
     if (camera_ns.back() == '/') camera_ns.pop_back();
     // Ensure leading slash
     if (camera_ns.front() != '/') camera_ns = "/" + camera_ns;
 
-    RCLCPP_INFO(get_logger(), "Updating subs for camera: %s [C:%d D:%d L:%d R:%d]", 
-        camera_ns.c_str(), color, depth, ir_left, ir_right);
+    RCLCPP_INFO(get_logger(), "Updating subs for camera: %s [C:%d D:%d L:%d R:%d P:%d Topic:%s]", 
+        camera_ns.c_str(), color, depth, ir_left, ir_right, point_cloud, pc_topic.c_str());
 
     if (color) {
         sub_color_ = create_subscription<sensor_msgs::msg::Image>(
@@ -100,15 +152,40 @@ void RosNode::update_camera_subscriptions(std::string camera_ns, bool color, boo
             camera_ns + "/depth/image_raw", 10, std::bind(&RosNode::depth_callback, this, std::placeholders::_1));
     }
     if (ir_left) {
-        // Standard Orbbec mapping often uses "left_ir" or "ir/left" depending on launch.
-        // Based on config "leftir", it is likely "left_ir" or "ir_left".
-        // Let's assume "left_ir" as it is common.
+        std::string ir_topic = camera_ns + "/left_ir/image_raw";
+        // Check if "ir/image_raw" exists instead (for 210 series)
+        auto topics = this->get_topic_names_and_types();
+        std::string mono_ir = camera_ns + "/ir/image_raw";
+        if (topics.find(mono_ir) != topics.end()) {
+            ir_topic = mono_ir;
+            RCLCPP_INFO(get_logger(), "Using mono IR topic: %s", ir_topic.c_str());
+        }
+
         sub_ir_left_ = create_subscription<sensor_msgs::msg::Image>(
-            camera_ns + "/left_ir/image_raw", 10, std::bind(&RosNode::ir_left_callback, this, std::placeholders::_1));
+            ir_topic, 10, std::bind(&RosNode::ir_left_callback, this, std::placeholders::_1));
     }
     if (ir_right) {
+        std::string ir_topic = camera_ns + "/right_ir/image_raw";
+        // Check if "ir/image_raw" exists instead (for 210 series fallback or similar mono cam)
+        // If "left_ir" was mapped to "ir", we shouldn't map "right_ir" to the same unless desired.
+        // But for 210 series which is mono IR, usually users expect IR Left to show the IR stream.
+        // IR Right is simply not available.
+        // However, if the user explicitly checks IR Right, we can check if a dedicated topic exists.
+        
+        // Let's just subscribe standard right_ir. If it doesn't exist, it won't receive data.
+        // Or we can be smart: if left_ir mapped to /ir/image_raw, maybe right is not needed.
+        
         sub_ir_right_ = create_subscription<sensor_msgs::msg::Image>(
-            camera_ns + "/right_ir/image_raw", 10, std::bind(&RosNode::ir_right_callback, this, std::placeholders::_1));
+            ir_topic, 10, std::bind(&RosNode::ir_right_callback, this, std::placeholders::_1));
+    }
+    if (point_cloud) {
+        std::string topic = pc_topic;
+        if (topic.empty()) {
+             // Fallback default
+             topic = camera_ns + "/depth/color/points";
+        }
+        sub_point_cloud_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+            topic, 10, std::bind(&RosNode::point_cloud_callback, this, std::placeholders::_1));
     }
 }
 
@@ -194,6 +271,12 @@ void RosNode::ir_right_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
     } catch (cv_bridge::Exception& e) {
         RCLCPP_ERROR(get_logger(), "cv_bridge exception (ir_right): %s", e.what());
     }
+}
+
+void RosNode::point_cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+    // Just store the pointer, processing happens in UI thread or worker
+    std::lock_guard<std::mutex> lock(data_mutex_); // Reuse data_mutex or use image_mutex? Let's use image_mutex for all visual data
+    last_point_cloud_ = msg;
 }
 
 void RosNode::call_robot_control(const std::string& command) {
@@ -302,39 +385,127 @@ void RosNode::robot_state_callback(const duco_msg::msg::DucoRobotState::SharedPt
 
 // LHand Implementation
 void RosNode::call_lhand_enable(int joint_id, int enable) {
+    if (!client_lhand_enable_->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(get_logger(), "LHand Enable service not available");
+        return;
+    }
     auto request = std::make_shared<lhandpro_interfaces::srv::SetEnable::Request>();
     request->joint_id = joint_id;
     request->enable = enable;
-    client_lhand_enable_->async_send_request(request);
-    RCLCPP_INFO(get_logger(), "LHand: Enable %d -> %d", joint_id, enable);
+    
+    using ServiceT = lhandpro_interfaces::srv::SetEnable;
+    client_lhand_enable_->async_send_request(request, 
+        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+            try {
+                auto response = future.get();
+                RCLCPP_INFO(get_logger(), "LHand Enable result: %d", response->result);
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(get_logger(), "LHand Enable failed: %s", e.what());
+            }
+        });
 }
 
 void RosNode::call_lhand_home(int joint_id) {
+    if (!client_lhand_home_->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(get_logger(), "LHand Home service not available");
+        return;
+    }
     auto request = std::make_shared<lhandpro_interfaces::srv::HomeMotors::Request>();
     request->joint_id = joint_id;
-    client_lhand_home_->async_send_request(request);
-    RCLCPP_INFO(get_logger(), "LHand: Home %d", joint_id);
+    
+    using ServiceT = lhandpro_interfaces::srv::HomeMotors;
+    client_lhand_home_->async_send_request(request, 
+        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+            try {
+                auto response = future.get();
+                RCLCPP_INFO(get_logger(), "LHand Home result: %d", response->result);
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(get_logger(), "LHand Home failed: %s", e.what());
+            }
+        });
 }
 
 void RosNode::call_lhand_set_position(int joint_id, int position) {
+    if (!client_lhand_pos_->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(get_logger(), "LHand SetPosition service not available");
+        return;
+    }
     auto request = std::make_shared<lhandpro_interfaces::srv::SetPosition::Request>();
     request->joint_id = joint_id;
     request->position = position;
-    client_lhand_pos_->async_send_request(request);
-    RCLCPP_INFO(get_logger(), "LHand: Set Pos %d -> %d", joint_id, position);
+    
+    using ServiceT = lhandpro_interfaces::srv::SetPosition;
+    client_lhand_pos_->async_send_request(request, 
+        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+            try {
+                auto response = future.get();
+                RCLCPP_INFO(get_logger(), "LHand SetPosition result: %d", response->result);
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(get_logger(), "LHand SetPosition failed: %s", e.what());
+            }
+        });
+}
+
+void RosNode::call_lhand_set_all_position(const std::array<int, 6>& positions) {
+    if (!client_lhand_all_pos_->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(get_logger(), "LHand SetAllPosition service not available");
+        return;
+    }
+    auto request = std::make_shared<lhandpro_interfaces::srv::SetAllPosition::Request>();
+    // Copy array to request
+    for(size_t i=0; i<6; ++i) {
+        request->positions[i] = positions[i];
+    }
+    
+    using ServiceT = lhandpro_interfaces::srv::SetAllPosition;
+    client_lhand_all_pos_->async_send_request(request, 
+        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+            try {
+                auto response = future.get();
+                RCLCPP_INFO(get_logger(), "LHand SetAllPosition result: %d", response->result);
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(get_logger(), "LHand SetAllPosition failed: %s", e.what());
+            }
+        });
 }
 
 void RosNode::call_lhand_set_velocity(int joint_id, int velocity) {
+    if (!client_lhand_vel_->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(get_logger(), "LHand SetVelocity service not available");
+        return;
+    }
     auto request = std::make_shared<lhandpro_interfaces::srv::SetPositionVelocity::Request>();
     request->joint_id = joint_id;
     request->velocity = velocity;
-    client_lhand_vel_->async_send_request(request);
-    RCLCPP_INFO(get_logger(), "LHand: Set Vel %d -> %d", joint_id, velocity);
+    
+    using ServiceT = lhandpro_interfaces::srv::SetPositionVelocity;
+    client_lhand_vel_->async_send_request(request, 
+        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+            try {
+                auto response = future.get();
+                RCLCPP_INFO(get_logger(), "LHand SetVelocity result: %d", response->result);
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(get_logger(), "LHand SetVelocity failed: %s", e.what());
+            }
+        });
 }
 
 void RosNode::call_lhand_move(int joint_id) {
+    if (!client_lhand_move_->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(get_logger(), "LHand Move service not available");
+        return;
+    }
     auto request = std::make_shared<lhandpro_interfaces::srv::MoveMotors::Request>();
     request->joint_id = joint_id;
-    client_lhand_move_->async_send_request(request);
-    RCLCPP_INFO(get_logger(), "LHand: Move %d", joint_id);
+    
+    using ServiceT = lhandpro_interfaces::srv::MoveMotors;
+    client_lhand_move_->async_send_request(request, 
+        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+            try {
+                auto response = future.get();
+                RCLCPP_INFO(get_logger(), "LHand Move result: %d", response->result);
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(get_logger(), "LHand Move failed: %s", e.what());
+            }
+        });
 }
