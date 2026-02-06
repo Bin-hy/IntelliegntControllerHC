@@ -54,8 +54,8 @@ QWidget* AppWindow::createControlTab() {
       btn_disable_ = new QPushButton("Disable");
       btn_power_off_ = new QPushButton("Power OFF");
       
-      btn_power_on_->setStyleSheet("background-color: #e0ffe0");
-      btn_power_off_->setStyleSheet("background-color: #ffe0e0");
+      btn_power_on_->setObjectName("btn_power_on");
+      btn_power_off_->setObjectName("btn_power_off");
 
       layout_ctrl->addWidget(btn_power_on_);
       layout_ctrl->addWidget(btn_enable_);
@@ -346,7 +346,8 @@ QWidget* AppWindow::createVideoWidget(const QString& title, QLabel*& label_ptr, 
     label_ptr = new QLabel("No Signal");
     label_ptr->setMinimumSize(320, 240);
     label_ptr->setAlignment(Qt::AlignCenter);
-    label_ptr->setStyleSheet("border: 1px solid #555; background-color: #222; color: #aaa;");
+    label_ptr->setObjectName("video_label");
+    // label_ptr->setStyleSheet("border: 1px solid #555; background-color: #222; color: #aaa;");
     layout->addWidget(label_ptr);
 
     auto * btn = new QPushButton("Capture / Save");

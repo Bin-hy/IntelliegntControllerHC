@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QFile>
 #include <QTimer>
 #include <rclcpp/rclcpp.hpp>
 #include "ui_app/ros_node.hpp"
@@ -13,6 +14,14 @@ int main(int argc, char ** argv) {
   exec.add_node(node);
 
   QApplication app(argc, argv);
+
+  // Load Stylesheet
+  QFile styleFile(":/style.qss");
+  if(styleFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+      app.setStyleSheet(styleFile.readAll());
+      styleFile.close();
+  }
+
   AppWindow w(node);
   w.setWindowTitle("机器臂手上位机 -目前仅机器臂");
   w.resize(800, 600); // Increased size for tabs

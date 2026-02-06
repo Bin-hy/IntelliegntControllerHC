@@ -28,6 +28,7 @@ add_executable(ui_app
   src/main.cpp
   src/ros_node.cpp
   src/app_window.cpp
+  resources/resources.qrc
 )
 
 target_include_directories(ui_app PUBLIC

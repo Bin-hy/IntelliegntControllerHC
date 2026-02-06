@@ -1,0 +1,174 @@
+/* Global Reset */
+QWidget {
+    background-color: #0b0f19;
+    color: #e0e0e0;
+    font-family: "Segoe UI", "Roboto", "Helvetica", sans-serif;
+    font-size: 14px;
+}
+
+/* GroupBox */
+QGroupBox {
+    border: 1px solid #00d2ff;
+    border-radius: 4px;
+    margin-top: 24px;
+    background-color: rgba(0, 210, 255, 0.05); /* Slight blue tint */
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top center;
+    padding: 4px 12px;
+    color: #00d2ff;
+    font-weight: bold;
+    background-color: #0b0f19;
+    border: 1px solid #00d2ff;
+    border-radius: 12px; /* Pill shape */
+}
+
+/* PushButton */
+QPushButton {
+    background-color: rgba(0, 210, 255, 0.1);
+    border: 1px solid #00d2ff;
+    color: #00d2ff;
+    padding: 6px 16px;
+    border-radius: 4px;
+}
+QPushButton:hover {
+    background-color: rgba(0, 210, 255, 0.3);
+    color: #ffffff;
+    border: 1px solid #ffffff;
+    /* Glow effect simulation via border/bg */
+}
+QPushButton:pressed {
+    background-color: rgba(0, 210, 255, 0.5);
+}
+QPushButton:disabled {
+    border-color: #444;
+    color: #666;
+    background-color: #1a1a1a;
+}
+
+/* Specific Buttons - assign object names in C++ to use these if needed, 
+   but for now let's define some generic classes if Qt supported them (it doesn't nicely),
+   so we rely on dynamic properties or object names.
+   I'll update the C++ to set object names for the Power buttons.
+*/
+
+QPushButton#btn_power_on {
+    border-color: #00ff88;
+    color: #00ff88;
+    background-color: rgba(0, 255, 136, 0.1);
+}
+QPushButton#btn_power_on:hover {
+    background-color: rgba(0, 255, 136, 0.3);
+    color: #ffffff;
+}
+
+QPushButton#btn_power_off {
+    border-color: #ff4444;
+    color: #ff4444;
+    background-color: rgba(255, 68, 68, 0.1);
+}
+QPushButton#btn_power_off:hover {
+    background-color: rgba(255, 68, 68, 0.3);
+    color: #ffffff;
+}
+
+/* LineEdit / SpinBox / ComboBox */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background-color: #111625;
+    border: 1px solid #444;
+    border-radius: 2px;
+    padding: 4px;
+    color: #ffffff;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border: 1px solid #00d2ff;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left-width: 1px;
+    border-left-color: #444;
+    border-left-style: solid;
+}
+QComboBox::down-arrow {
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #00d2ff;
+    margin-top: 2px;
+}
+
+/* TabWidget */
+QTabWidget::pane {
+    border: 1px solid #333;
+    background: #0b0f19;
+    top: -1px;
+}
+QTabBar::tab {
+    background: #1a202c;
+    color: #888;
+    padding: 8px 24px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    margin-right: 4px;
+    border-bottom: 2px solid transparent;
+}
+QTabBar::tab:selected {
+    background: rgba(0, 210, 255, 0.1);
+    color: #00d2ff;
+    font-weight: bold;
+    border-bottom: 2px solid #00d2ff;
+}
+QTabBar::tab:hover {
+    background: #222;
+    color: #fff;
+}
+
+/* TextEdit */
+QTextEdit {
+    background-color: #080a10;
+    border: 1px solid #333;
+    color: #00ff88; /* Matrix green/cyan text for logs */
+    font-family: "Consolas", "Monospace";
+}
+
+/* ScrollBar */
+QScrollBar:vertical {
+    border: none;
+    background: #0b0f19;
+    width: 8px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background: #333;
+    min-height: 20px;
+    border-radius: 4px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #00d2ff;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/* Labels */
+QLabel {
+    color: #e0e0e0;
+}
+/* Header Labels if any */
+QLabel#header {
+    font-size: 18px;
+    font-weight: bold;
+    color: #00d2ff;
+}
+
+/* Video Placeholder */
+QLabel#video_label {
+    border: 1px dashed #444;
+    background-color: #000000;
+    color: #555;
+    font-size: 16px;
+}
