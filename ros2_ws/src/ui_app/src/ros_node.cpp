@@ -26,6 +26,13 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     // New Save Image Service (Vision Server)
     client_save_image_ = create_client<vision_server::srv::SaveImage>("save_image");
 
+    // LHand Clients
+    client_lhand_enable_ = create_client<lhandpro_interfaces::srv::SetEnable>("set_enable");
+    client_lhand_pos_ = create_client<lhandpro_interfaces::srv::SetPosition>("set_position");
+    client_lhand_vel_ = create_client<lhandpro_interfaces::srv::SetPositionVelocity>("set_position_velocity");
+    client_lhand_move_ = create_client<lhandpro_interfaces::srv::MoveMotors>("move_motors");
+    client_lhand_home_ = create_client<lhandpro_interfaces::srv::HomeMotors>("home_motors");
+
     // Default Camera Subscriptions (camera, Color+Depth)
     update_camera_subscriptions("camera", true, true, false, false);
 
@@ -291,4 +298,43 @@ void RosNode::robot_state_callback(const duco_msg::msg::DucoRobotState::SharedPt
       }
       
       last_robot_state_str_ = ss.str();
+}
+
+// LHand Implementation
+void RosNode::call_lhand_enable(int joint_id, int enable) {
+    auto request = std::make_shared<lhandpro_interfaces::srv::SetEnable::Request>();
+    request->joint_id = joint_id;
+    request->enable = enable;
+    client_lhand_enable_->async_send_request(request);
+    RCLCPP_INFO(get_logger(), "LHand: Enable %d -> %d", joint_id, enable);
+}
+
+void RosNode::call_lhand_home(int joint_id) {
+    auto request = std::make_shared<lhandpro_interfaces::srv::HomeMotors::Request>();
+    request->joint_id = joint_id;
+    client_lhand_home_->async_send_request(request);
+    RCLCPP_INFO(get_logger(), "LHand: Home %d", joint_id);
+}
+
+void RosNode::call_lhand_set_position(int joint_id, int position) {
+    auto request = std::make_shared<lhandpro_interfaces::srv::SetPosition::Request>();
+    request->joint_id = joint_id;
+    request->position = position;
+    client_lhand_pos_->async_send_request(request);
+    RCLCPP_INFO(get_logger(), "LHand: Set Pos %d -> %d", joint_id, position);
+}
+
+void RosNode::call_lhand_set_velocity(int joint_id, int velocity) {
+    auto request = std::make_shared<lhandpro_interfaces::srv::SetPositionVelocity::Request>();
+    request->joint_id = joint_id;
+    request->velocity = velocity;
+    client_lhand_vel_->async_send_request(request);
+    RCLCPP_INFO(get_logger(), "LHand: Set Vel %d -> %d", joint_id, velocity);
+}
+
+void RosNode::call_lhand_move(int joint_id) {
+    auto request = std::make_shared<lhandpro_interfaces::srv::MoveMotors::Request>();
+    request->joint_id = joint_id;
+    client_lhand_move_->async_send_request(request);
+    RCLCPP_INFO(get_logger(), "LHand: Move %d", joint_id);
 }

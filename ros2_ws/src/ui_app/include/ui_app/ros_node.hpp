@@ -10,6 +10,11 @@
 #include <duco_msg/msg/duco_robot_state.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include "vision_server/srv/save_image.hpp"
+#include "lhandpro_interfaces/srv/set_enable.hpp"
+#include "lhandpro_interfaces/srv/set_position.hpp"
+#include "lhandpro_interfaces/srv/set_position_velocity.hpp"
+#include "lhandpro_interfaces/srv/move_motors.hpp"
+#include "lhandpro_interfaces/srv/home_motors.hpp"
 // #include "vision_server/vision_server/srv/save_image.hpp"
 #include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/opencv.hpp>
@@ -31,6 +36,13 @@ public:
   void call_robot_io(const std::string& command, int type, int port, bool value);
   // void save_image(); // Deprecated in favor of multi-camera
   void save_snapshot(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right);
+
+  // LHand Control
+  void call_lhand_enable(int joint_id, int enable);
+  void call_lhand_home(int joint_id);
+  void call_lhand_set_position(int joint_id, int position);
+  void call_lhand_set_velocity(int joint_id, int velocity);
+  void call_lhand_move(int joint_id);
   
   std::vector<std::string> scan_cameras();
   void update_camera_subscriptions(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right);
@@ -71,6 +83,13 @@ private:
   rclcpp::Client<duco_msg::srv::RobotMove>::SharedPtr client_move_;
   // rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client_save_image_;
   rclcpp::Client<vision_server::srv::SaveImage>::SharedPtr client_save_image_;
+
+  // LHand Clients
+  rclcpp::Client<lhandpro_interfaces::srv::SetEnable>::SharedPtr client_lhand_enable_;
+  rclcpp::Client<lhandpro_interfaces::srv::SetPosition>::SharedPtr client_lhand_pos_;
+  rclcpp::Client<lhandpro_interfaces::srv::SetPositionVelocity>::SharedPtr client_lhand_vel_;
+  rclcpp::Client<lhandpro_interfaces::srv::MoveMotors>::SharedPtr client_lhand_move_;
+  rclcpp::Client<lhandpro_interfaces::srv::HomeMotors>::SharedPtr client_lhand_home_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 };

@@ -29,6 +29,7 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent)
     tabs->addTab(createMoveTab(), "Motion Control");
     tabs->addTab(createIOTab(), "IO Control");
     tabs->addTab(createCameraTab(), "Vision System");
+    tabs->addTab(createLHandTab(), "LHand Control");
     main_layout->addWidget(tabs);
     
     setLayout(main_layout);
@@ -81,6 +82,44 @@ QWidget* AppWindow::createControlTab() {
       connect(btn_power_off_, &QPushButton::clicked, this, [this](){ node_->call_robot_control("poweroff"); });
 
       return widget;
+}
+
+void AppWindow::updateUI() {
+      label_count_->setText("Heartbeat: " + QString::number(node_->count_.load()));
+      
+      {
+          std::lock_guard<std::mutex> lock(node_->data_mutex_);
+          if (!node_->last_robot_state_str_.empty()) {
+              text_robot_state_->setText(QString::fromStdString(node_->last_robot_state_str_));
+          }
+      }
+
+      {
+          std::lock_guard<std::mutex> lock(node_->image_mutex_);
+          
+          auto update_label = [](QLabel* label, const cv::Mat& mat, bool is_rgb) {
+              if (!label || !label->isVisible()) return;
+              if (mat.empty()) {
+                  // label->setText("No Data"); // Keep last frame or "No Signal" text
+                  return; 
+              }
+              QImage img;
+              if (is_rgb) {
+                  cv::Mat rgb;
+                  cv::cvtColor(mat, rgb, cv::COLOR_BGR2RGB);
+                  img = QImage(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888).copy();
+              } else {
+                  // Grayscale (Depth / IR)
+                  img = QImage(mat.data, mat.cols, mat.rows, mat.step, QImage::Format_Grayscale8).copy();
+              }
+              label->setPixmap(QPixmap::fromImage(img).scaled(label->size(), Qt::KeepAspectRatio));
+          };
+
+          update_label(label_color_stream_, node_->last_color_image_, true);
+          update_label(label_depth_stream_, node_->last_depth_image_, false);
+          update_label(label_ir_left_stream_, node_->last_ir_left_image_, false);
+          update_label(label_ir_right_stream_, node_->last_ir_right_image_, false);
+      }
 }
 
 QWidget* AppWindow::createMoveTab() {
@@ -354,40 +393,105 @@ void AppWindow::onCameraConfigChanged() {
     widget_ir_right_->setVisible(ir_r);
 }
 
-void AppWindow::updateUI() {
-      label_count_->setText("Heartbeat: " + QString::number(node_->count_.load()));
-      
-      {
-          std::lock_guard<std::mutex> lock(node_->data_mutex_);
-          if (!node_->last_robot_state_str_.empty()) {
-              text_robot_state_->setText(QString::fromStdString(node_->last_robot_state_str_));
-          }
-      }
+QWidget* AppWindow::createLHandTab() {
+    auto * widget = new QWidget();
+    auto * layout = new QVBoxLayout();
 
-      {
-          std::lock_guard<std::mutex> lock(node_->image_mutex_);
-          
-          auto update_label = [](QLabel* label, const cv::Mat& mat, bool is_rgb) {
-              if (!label || !label->isVisible()) return;
-              if (mat.empty()) {
-                  // label->setText("No Data"); // Keep last frame or "No Signal" text
-                  return; 
-              }
-              QImage img;
-              if (is_rgb) {
-                  cv::Mat rgb;
-                  cv::cvtColor(mat, rgb, cv::COLOR_BGR2RGB);
-                  img = QImage(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888).copy();
-              } else {
-                  // Grayscale (Depth / IR)
-                  img = QImage(mat.data, mat.cols, mat.rows, mat.step, QImage::Format_Grayscale8).copy();
-              }
-              label->setPixmap(QPixmap::fromImage(img).scaled(label->size(), Qt::KeepAspectRatio));
-          };
+    // --- Global Controls ---
+    auto * group_global = new QGroupBox("Global Control");
+    auto * layout_global = new QHBoxLayout();
+    
+    btn_lhand_enable_ = new QPushButton("Enable All");
+    btn_lhand_disable_ = new QPushButton("Disable All");
+    btn_lhand_home_ = new QPushButton("Home All");
+    
+    layout_global->addWidget(btn_lhand_enable_);
+    layout_global->addWidget(btn_lhand_disable_);
+    layout_global->addWidget(btn_lhand_home_);
+    
+    group_global->setLayout(layout_global);
+    layout->addWidget(group_global);
 
-          update_label(label_color_stream_, node_->last_color_image_, true);
-          update_label(label_depth_stream_, node_->last_depth_image_, false);
-          update_label(label_ir_left_stream_, node_->last_ir_left_image_, false);
-          update_label(label_ir_right_stream_, node_->last_ir_right_image_, false);
-      }
+    // --- Joint Controls ---
+    auto * group_joints = new QGroupBox("Joint Control");
+    auto * layout_joints = new QGridLayout();
+    
+    layout_joints->addWidget(new QLabel("Joint"), 0, 0);
+    layout_joints->addWidget(new QLabel("Position (0-1000)"), 0, 1);
+    layout_joints->addWidget(new QLabel("Action"), 0, 2);
+
+    for(int i=0; i<6; ++i) {
+        layout_joints->addWidget(new QLabel(QString("J%1").arg(i+1)), i+1, 0);
+        
+        spin_lhand_pos_[i] = new QSpinBox();
+        spin_lhand_pos_[i]->setRange(0, 10000); 
+        spin_lhand_pos_[i]->setValue(0);
+        layout_joints->addWidget(spin_lhand_pos_[i], i+1, 1);
+        
+        auto * btn_set = new QPushButton("Set & Move");
+        layout_joints->addWidget(btn_set, i+1, 2);
+        
+        // Connect per-joint set
+        connect(btn_set, &QPushButton::clicked, this, [this, i](){
+            int pos = spin_lhand_pos_[i]->value();
+            node_->call_lhand_set_position(i+1, pos); 
+            node_->call_lhand_move(i+1);
+        });
+    }
+    
+    group_joints->setLayout(layout_joints);
+    layout->addWidget(group_joints);
+
+    // --- Global Velocity ---
+    auto * group_vel = new QGroupBox("Velocity Control");
+    auto * layout_vel = new QHBoxLayout();
+    layout_vel->addWidget(new QLabel("Velocity (0-20000):"));
+    
+    spin_lhand_vel_ = new QSpinBox();
+    spin_lhand_vel_->setRange(0, 50000);
+    spin_lhand_vel_->setValue(20000);
+    layout_vel->addWidget(spin_lhand_vel_);
+    
+    auto * btn_set_vel = new QPushButton("Set Velocity (All)");
+    layout_vel->addWidget(btn_set_vel);
+    
+    group_vel->setLayout(layout_vel);
+    layout->addWidget(group_vel);
+
+    // --- Global Move ---
+    btn_lhand_move_ = new QPushButton("Move All Joints to Target");
+    layout->addWidget(btn_lhand_move_);
+    
+    layout->addStretch();
+
+    widget->setLayout(layout);
+    
+    // Connections
+    connect(btn_lhand_enable_, &QPushButton::clicked, this, [this](){
+        node_->call_lhand_enable(0, 1);
+    });
+    
+    connect(btn_lhand_disable_, &QPushButton::clicked, this, [this](){
+        node_->call_lhand_enable(0, 0);
+    });
+
+    connect(btn_lhand_home_, &QPushButton::clicked, this, [this](){
+        node_->call_lhand_home(0);
+    });
+    
+    connect(btn_set_vel, &QPushButton::clicked, this, [this](){
+        int vel = spin_lhand_vel_->value();
+        for(int i=0; i<6; ++i) node_->call_lhand_set_velocity(i+1, vel);
+    });
+    
+    connect(btn_lhand_move_, &QPushButton::clicked, this, [this](){
+        for(int i=0; i<6; ++i) {
+             int pos = spin_lhand_pos_[i]->value();
+             node_->call_lhand_set_position(i+1, pos);
+        }
+        node_->call_lhand_move(0);
+    });
+
+    return widget;
 }
+

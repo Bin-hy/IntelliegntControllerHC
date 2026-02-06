@@ -14,6 +14,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(vision_server REQUIRED)
+find_package(lhandpro_interfaces REQUIRED)
 include_directories(/home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/include/vision_server)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -50,6 +51,7 @@ ament_target_dependencies(ui_app
   std_srvs
   image_transport
   OpenCV
+  lhandpro_interfaces
 )
 
 install(TARGETS ui_app

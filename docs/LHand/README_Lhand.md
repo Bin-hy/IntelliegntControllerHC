@@ -48,7 +48,7 @@ sudo setcap cap_net_raw,cap_net_admin+ep
 配置执行环境
 ```bash
 # 复制conf文件到系统目录
-sudo cp src/ros2_lhandpro.conf/etc/ld.so.conf.d/
+sudo cp src/ros2_lhandpro.conf /etc/ld.so.conf.d/
 # 刷新动态链接器缓存
 sudo ldconfig
 ```
@@ -69,7 +69,7 @@ ros2 launch sequence_demo_cpp sequence.launch.py
 
 5. 执行rviz2的仿真显示
 ```bash
-ros2 launch lhandpro_descriptiondisplay lhandpro.launch.py 
+ros2 launch lhandpro_description display_lhandpro.launch.py 
 # 执行该脚本, 会启动robot_state_publisher节点
 # 启动lhandpro_state_publisher节点, 用来通过服务监控角度变化, 并通过/joint_states发布给rviz2更新显示# 启动rviz2节点, 并加载准备好的rviz配置config
 # 加载完成顺利的话则能在rviz2中看到灵巧手的模型

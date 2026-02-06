@@ -2,3 +2,8 @@
 about/
 # 拍照信息
 photos/
+# 构建信息
+build/
+logs/
+log/
+install/

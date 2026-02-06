@@ -16,6 +16,7 @@
   <depend>cv_bridge</depend>
   <depend>std_srvs</depend>
   <depend>vision_server</depend>
+  <depend>lhandpro_interfaces</depend>
   <depend>image_transport</depend>
 
   <!-- Qt5 dependencies are system dependencies, not rosdep managed usually in simple setup, but good to list -->

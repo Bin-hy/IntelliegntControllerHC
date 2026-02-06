@@ -22,6 +22,7 @@ private:
   QWidget* createControlTab();
   QWidget* createMoveTab();
   QWidget* createIOTab();
+  QWidget* createLHandTab();
   QWidget* createCameraTab();
   QWidget* createVideoWidget(const QString& title, QLabel*& label_ptr, std::function<void()> save_callback);
   void refreshCameraList();
@@ -69,6 +70,14 @@ private:
   QLabel* label_ir_left_stream_;
   QLabel* label_ir_right_stream_;
   QWidget* container_video_;
+
+  // LHand UI
+  QSpinBox* spin_lhand_pos_[6];
+  QSpinBox* spin_lhand_vel_;
+  QPushButton* btn_lhand_enable_;
+  QPushButton* btn_lhand_disable_;
+  QPushButton* btn_lhand_home_;
+  QPushButton* btn_lhand_move_;
 };
 
 #endif // APP_WINDOW_HPP
