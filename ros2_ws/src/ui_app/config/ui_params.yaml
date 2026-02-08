@@ -1,0 +1,5 @@
+ui_app:
+  ros__parameters:
+    robot_ip: "192.168.1.10"
+    # Default URDF path for visualization
+    robot_urdf_path: "/home/user/IntelliegntControllerHC/ros2_ws/src/duco_support/urdf/duco_gcr5_910.urdf"

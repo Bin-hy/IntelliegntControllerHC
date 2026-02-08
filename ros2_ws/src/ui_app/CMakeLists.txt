@@ -18,7 +18,12 @@ find_package(lhandpro_interfaces REQUIRED)
 include_directories(/home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/include/vision_server)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui OpenGL)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui OpenGL 3DCore 3DRender 3DExtras 3DInput 3DLogic)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(urdf REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -29,7 +34,9 @@ add_executable(ui_app
   src/ros_node.cpp
   src/app_window.cpp
   src/point_cloud_widget.cpp
+  src/robot_viz_widget.cpp
   include/ui_app/point_cloud_widget.hpp
+  include/ui_app/robot_viz_widget.hpp
   resources/resources.qrc
 )
 
@@ -43,6 +50,11 @@ target_link_libraries(ui_app
   Qt5::Core
   Qt5::Gui
   Qt5::OpenGL
+  Qt5::3DCore
+  Qt5::3DRender
+  Qt5::3DExtras
+  Qt5::3DInput
+  Qt5::3DLogic
   /home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/lib/libvision_server__rosidl_typesupport_cpp.so
 )
 
@@ -56,6 +68,11 @@ ament_target_dependencies(ui_app
   image_transport
   OpenCV
   lhandpro_interfaces
+  tf2_ros
+  tf2_geometry_msgs
+  geometry_msgs
+  urdf
+  ament_index_cpp
 )
 
 install(TARGETS ui_app
@@ -65,7 +82,7 @@ install(DIRECTORY include/
   DESTINATION include
 )
 
-install(DIRECTORY launch
+install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
 

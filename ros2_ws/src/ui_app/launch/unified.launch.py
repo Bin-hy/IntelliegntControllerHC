@@ -27,7 +27,13 @@ def generate_launch_description():
         launch_arguments={'robot_ip': LaunchConfiguration('robot_ip')}.items() 
     )
 
-    # 3. System Controller (Flow Control)
+    # 3. LHandPro Service
+    lhand_pkg = FindPackageShare('lhandpro_service')
+    lhand_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([lhand_pkg, '/launch/lhandpro.launch.py'])
+    )
+
+    # 4. System Controller (Flow Control)
     sys_ctrl_node = Node(
         package='system_controller',
         executable='system_controller_node',
@@ -35,16 +41,20 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 4. UI App
+    # 5. UI App
     # Launched last with a delay
+    ui_pkg = FindPackageShare('ui_app')
+    ui_params = [
+        {'robot_ip': LaunchConfiguration('robot_ip')},
+        [ui_pkg, '/config/ui_params.yaml']
+    ]
+
     ui_node = Node(
         package='ui_app',
         executable='ui_app',
         name='ui_app',
         output='screen',
-        parameters=[{
-            'robot_ip': LaunchConfiguration('robot_ip')
-        }]
+        parameters=ui_params
     )
 
     ui_delayed = TimerAction(
@@ -56,6 +66,7 @@ def generate_launch_description():
         robot_ip_arg,
         vision_launch,
         robot_launch,
+        lhand_launch,
         sys_ctrl_node,
         ui_delayed
     ])

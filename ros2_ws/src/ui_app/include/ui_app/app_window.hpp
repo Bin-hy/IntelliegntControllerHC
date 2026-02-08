@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <memory>
 #include "ui_app/ros_node.hpp"
+#include "ui_app/robot_viz_widget.hpp"
 
 class QLabel;
 class QTextEdit;
@@ -82,6 +83,8 @@ private:
   QPushButton* btn_lhand_disable_;
   QPushButton* btn_lhand_home_;
   QPushButton* btn_lhand_move_;
+
+  RobotVizWidget* robot_viz_;
 };
 
 #endif // APP_WINDOW_HPP

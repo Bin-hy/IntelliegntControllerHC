@@ -20,6 +20,9 @@
 // #include "vision_server/vision_server/srv/save_image.hpp"
 #include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/opencv.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <atomic>
 #include <mutex>
 #include <vector>
@@ -37,7 +40,7 @@ public:
                        const std::string& tool, const std::string& wobj);
   void call_robot_io(const std::string& command, int type, int port, bool value);
   // void save_image(); // Deprecated in favor of multi-camera
-  void save_snapshot(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right);
+  void save_snapshot(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right, std::function<void(bool, std::string)> callback = nullptr);
 
   // LHand Control
   void call_lhand_enable(int joint_id, int enable);
@@ -47,6 +50,8 @@ public:
   void call_lhand_set_velocity(int joint_id, int velocity);
   void call_lhand_move(int joint_id);
   
+  std::string get_robot_urdf_path() const { return robot_urdf_path_; }
+
   std::vector<std::string> scan_cameras();
   std::vector<std::string> scan_point_clouds();
   
@@ -61,9 +66,12 @@ public:
 
   void update_camera_subscriptions(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::string pc_topic = "");
 
+  std::shared_ptr<tf2_ros::Buffer> get_tf_buffer() { return tf_buffer_; }
+
   // Data storage
   std::atomic<int> count_;
   std::string last_robot_state_str_;
+  std::string robot_urdf_path_;
   
   std::vector<double> current_joints_; 
   std::vector<double> current_cart_pos_;
@@ -108,6 +116,9 @@ private:
   rclcpp::Client<lhandpro_interfaces::srv::SetPositionVelocity>::SharedPtr client_lhand_vel_;
   rclcpp::Client<lhandpro_interfaces::srv::MoveMotors>::SharedPtr client_lhand_move_;
   rclcpp::Client<lhandpro_interfaces::srv::HomeMotors>::SharedPtr client_lhand_home_;
+
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 };

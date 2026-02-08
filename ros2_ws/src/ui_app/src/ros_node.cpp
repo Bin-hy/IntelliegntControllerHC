@@ -11,9 +11,18 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     
     // Parameters
     this->declare_parameter<std::string>("robot_ip", "192.168.1.10");
+    this->declare_parameter<std::string>("robot_urdf_path", "");
+    
     std::string robot_ip;
     this->get_parameter("robot_ip", robot_ip);
+    this->get_parameter("robot_urdf_path", robot_urdf_path_);
+    
     RCLCPP_INFO(this->get_logger(), "UI Configured with Robot IP: %s", robot_ip.c_str());
+    if (!robot_urdf_path_.empty()) {
+        RCLCPP_INFO(this->get_logger(), "Robot URDF Path: %s", robot_urdf_path_.c_str());
+    } else {
+        RCLCPP_WARN(this->get_logger(), "Robot URDF Path is empty! Visualization may not work.");
+    }
 
     // Subscriber: Duco Robot State
     sub_robot_state_ = create_subscription<duco_msg::msg::DucoRobotState>(
@@ -36,6 +45,10 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
 
     // Default Camera Subscriptions (camera, Color+Depth)
     update_camera_subscriptions("camera", true, true, false, false, false);
+
+    // TF Listener
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // Timer
     timer_ = create_wall_timer(std::chrono::seconds(1), [this](){
@@ -189,38 +202,62 @@ void RosNode::update_camera_subscriptions(std::string camera_ns, bool color, boo
     }
 }
 
-void RosNode::save_snapshot(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right) {
+void RosNode::save_snapshot(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right, std::function<void(bool, std::string)> callback) {
     if (!client_save_image_->wait_for_service(std::chrono::seconds(1))) {
         RCLCPP_WARN(get_logger(), "Save Image service not available");
+        if(callback) callback(false, "Service not available");
         return;
     }
 
     if (camera_ns.back() == '/') camera_ns.pop_back();
     if (camera_ns.front() != '/') camera_ns = "/" + camera_ns;
 
-    auto send_request = [this](std::string topic, std::string tag) {
+    auto send_request = [this, callback](std::string topic, std::string tag) {
         auto request = std::make_shared<vision_server::srv::SaveImage::Request>();
         request->topic_name = topic;
         request->file_tag = tag;
         
         client_save_image_->async_send_request(request, 
-            [this, topic](rclcpp::Client<vision_server::srv::SaveImage>::SharedFuture future) {
+            [this, topic, callback](rclcpp::Client<vision_server::srv::SaveImage>::SharedFuture future) {
                 try {
                     auto response = future.get();
                     if (response->success) {
                         RCLCPP_INFO(get_logger(), "Saved %s: %s", topic.c_str(), response->message.c_str());
+                        if(callback) callback(true, response->message);
                     } else {
                         RCLCPP_WARN(get_logger(), "Failed to save %s: %s", topic.c_str(), response->message.c_str());
+                        if(callback) callback(false, "Failed: " + response->message);
                     }
                 } catch (const std::exception &e) {
                     RCLCPP_ERROR(get_logger(), "Service call failed for %s: %s", topic.c_str(), e.what());
+                    if(callback) callback(false, std::string("Exception: ") + e.what());
                 }
             });
     };
 
     if (color) send_request(camera_ns + "/color/image_raw", "Color");
     if (depth) send_request(camera_ns + "/depth/image_raw", "Depth");
-    if (ir_left) send_request(camera_ns + "/left_ir/image_raw", "IR_Left");
+    // Handle IR: if "left" is requested but might be single IR
+    if (ir_left) {
+        // Try the standard left_ir first, if we want to be strict.
+        // But user said "camera_Axxx/ir" is the one.
+        // We will prioritize checking if "/ir/image_raw" exists or just default to it if it is camera_Axxx?
+        // Simpler approach: Send request to "ir/image_raw" if "left_ir/image_raw" is not the convention for single IR.
+        // However, we don't know for sure which camera it is dynamically here without checking topics.
+        // Let's trust the user's specific request: "one is camera_Axxx/ir".
+        // We can try to support both or just switch based on the user's report.
+        // Given the user said "Handle it" implying a fix for their current setup:
+        // We will change the logic to use "ir/image_raw" if it's the specific single-IR camera case, 
+        // OR we can send to both or try one then the other.
+        // But the "SaveImage" service just waits for a topic. If we send the wrong topic, it timeouts.
+        
+        // Let's assume if it is "camera_Axxx", use "ir".
+        if (camera_ns.find("camera_A") != std::string::npos) {
+             send_request(camera_ns + "/ir/image_raw", "IR");
+        } else {
+             send_request(camera_ns + "/left_ir/image_raw", "IR_Left");
+        }
+    }
     if (ir_right) send_request(camera_ns + "/right_ir/image_raw", "IR_Right");
 }
 

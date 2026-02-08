@@ -14,6 +14,7 @@
 #include <QCheckBox>
 #include <QTimer>
 #include <QScrollArea>
+#include <QMessageBox>
 
 AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent) 
     : QWidget(parent), node_(std::move(node)) 
@@ -30,6 +31,18 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent)
     tabs->addTab(createMoveTab(), "Motion Control");
     tabs->addTab(createIOTab(), "IO Control");
     tabs->addTab(createCameraTab(), "Vision System");
+    
+    // Robot Viz
+    robot_viz_ = new RobotVizWidget(node_);
+    tabs->addTab(robot_viz_, "3D Simulation");
+    // Load model from parameter
+    std::string urdf_path = node_->get_robot_urdf_path();
+    if (urdf_path.empty()) {
+         // Fallback default
+         urdf_path = "/home/user/IntelliegntControllerHC/ros2_ws/src/duco_support/urdf/duco_gcr16_960.urdf";
+    }
+    robot_viz_->loadRobotModel(urdf_path);
+
     tabs->addTab(createLHandTab(), "LHand Control");
     main_layout->addWidget(tabs);
     
@@ -313,17 +326,30 @@ QWidget* AppWindow::createCameraTab() {
     auto * grid_video = new QGridLayout(container_video_);
     
     // Create Widgets (hidden by default if not checked)
-    widget_color_ = createVideoWidget("Color Stream", label_color_stream_, [this](){
-        node_->save_snapshot(combo_camera_->currentText().toStdString(), true, false, false, false);
+    auto make_callback = [this]() {
+        return [this](bool success, std::string msg) {
+            QString qmsg = QString::fromStdString(msg);
+            QMetaObject::invokeMethod(this, [this, success, qmsg](){
+                if(success) {
+                    QMessageBox::information(this, "Snapshot Saved", "Saved successfully to:\n" + qmsg);
+                } else {
+                    QMessageBox::warning(this, "Snapshot Failed", qmsg);
+                }
+            }, Qt::QueuedConnection);
+        };
+    };
+
+    widget_color_ = createVideoWidget("Color Stream", label_color_stream_, [this, make_callback](){
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), true, false, false, false, make_callback());
     });
-    widget_depth_ = createVideoWidget("Depth Stream", label_depth_stream_, [this](){
-        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, true, false, false);
+    widget_depth_ = createVideoWidget("Depth Stream", label_depth_stream_, [this, make_callback](){
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, true, false, false, make_callback());
     });
-    widget_ir_left_ = createVideoWidget("IR Left Stream", label_ir_left_stream_, [this](){
-        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, true, false);
+    widget_ir_left_ = createVideoWidget("IR Left Stream", label_ir_left_stream_, [this, make_callback](){
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, true, false, make_callback());
     });
-    widget_ir_right_ = createVideoWidget("IR Right Stream", label_ir_right_stream_, [this](){
-        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, false, true);
+    widget_ir_right_ = createVideoWidget("IR Right Stream", label_ir_right_stream_, [this, make_callback](){
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, false, true, make_callback());
     });
 
     widget_point_cloud_ = new PointCloudWidget();

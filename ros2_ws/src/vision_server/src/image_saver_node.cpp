@@ -27,6 +27,9 @@ public:
         service_ = this->create_service<vision_server::srv::SaveImage>(
             "save_image", std::bind(&ImageSaverNode::save_callback, this, std::placeholders::_1, std::placeholders::_2));
 
+        // Create a callback group for the subscription to allow it to run in parallel with the service callback
+        callback_group_sub_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+
         RCLCPP_INFO(this->get_logger(), "Image Saver Node started.");
         RCLCPP_INFO(this->get_logger(), "Base Save Dir: %s", save_dir_.c_str());
     }
@@ -44,14 +47,9 @@ private:
         auto promise = std::make_shared<std::promise<sensor_msgs::msg::Image::SharedPtr>>();
         auto future = promise->get_future();
 
-        // Create a temporary subscription
-        // We use a unique callback group to ensure it can run in parallel if using MultiThreadedExecutor?
-        // Actually, since we are inside a service callback, we are occupying a thread.
-        // We need the subscription callback to run on another thread.
-        // If we use MultiThreadedExecutor, this should be fine if we have enough threads.
-        
+        // Use the separate callback group for the subscription
         rclcpp::SubscriptionOptions options;
-        // options.callback_group = ...; // Default group is fine if we have threads.
+        options.callback_group = callback_group_sub_;
 
         auto sub = this->create_subscription<sensor_msgs::msg::Image>(
             topic, 
@@ -62,7 +60,8 @@ private:
                 } catch (...) {
                     // Promise might be already set if multiple messages come quickly
                 }
-            }
+            },
+            options
         );
 
         // Wait for image (timeout 3 seconds)
@@ -149,6 +148,7 @@ private:
     }
 
     rclcpp::Service<vision_server::srv::SaveImage>::SharedPtr service_;
+    rclcpp::CallbackGroup::SharedPtr callback_group_sub_;
     std::string save_dir_;
 };
 
