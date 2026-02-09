@@ -1,3 +1,15 @@
+#  初次clone安装依赖
+```bash
+cd ros2_ws
+rosdep init 
+rosdep update
+rosdep install --from-paths src --ignore-src -r -y
+```
+
+# 安装orbbec依赖
+```bash
+
+```
 # 启动所有
 ```bash
 cd ~/IntelliegntControllerHC/ros2_ws
