@@ -43,6 +43,14 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent)
     }
     robot_viz_->loadRobotModel(urdf_path);
 
+    // Load Left Hand
+    std::string lhand_path = node_->get_left_hand_urdf_path();
+    if (!lhand_path.empty()) robot_viz_->loadRobotModel(lhand_path);
+
+    // Load Right Hand
+    std::string rhand_path = node_->get_right_hand_urdf_path();
+    if (!rhand_path.empty()) robot_viz_->loadRobotModel(rhand_path);
+
     tabs->addTab(createLHandTab(), "LHand Control");
     main_layout->addWidget(tabs);
     

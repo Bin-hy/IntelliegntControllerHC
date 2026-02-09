@@ -43,18 +43,14 @@ def generate_launch_description():
 
     # 5. UI App
     # Launched last with a delay
-    ui_pkg = FindPackageShare('ui_app')
-    ui_params = [
-        {'robot_ip': LaunchConfiguration('robot_ip')},
-        [ui_pkg, '/config/ui_params.yaml']
-    ]
-
     ui_node = Node(
         package='ui_app',
         executable='ui_app',
         name='ui_app',
         output='screen',
-        parameters=ui_params
+        parameters=[{
+            'robot_ip': LaunchConfiguration('robot_ip')
+        }]
     )
 
     ui_delayed = TimerAction(

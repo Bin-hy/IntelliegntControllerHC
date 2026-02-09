@@ -9,6 +9,9 @@
 #include <fstream>
 #include <iostream>
 #include <ament_index_cpp/get_package_share_directory.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2/exceptions.h>
 
 // Helper to resolve package:// paths
 std::string resolvePath(const std::string& path) {
@@ -250,6 +253,9 @@ Qt3DCore::QEntity* RobotVizWidget::createLinkNode(const std::string& name, std::
                          Qt3DRender::QMesh *qmesh = new Qt3DRender::QMesh();
                          qmesh->setSource(QUrl::fromLocalFile(QString::fromStdString(mesh_path)));
                          mesh = qmesh;
+                         
+                         // Debug: Print that we fell back to QMesh
+                         std::cout << "Falling back to QMesh for: " << mesh_path << std::endl;
                     }
                 } else {
                     Qt3DRender::QMesh *qmesh = new Qt3DRender::QMesh();
@@ -267,6 +273,8 @@ Qt3DCore::QEntity* RobotVizWidget::createLinkNode(const std::string& name, std::
                              Qt3DExtras::QCuboidMesh *box = new Qt3DExtras::QCuboidMesh();
                              box->setXExtent(0.05f); box->setYExtent(0.05f); box->setZExtent(0.05f);
                              visual_entity->addComponent(box);
+                         } else if (status == Qt3DRender::QMesh::Ready) {
+                             std::cout << "Mesh Ready: " << mesh_path << std::endl;
                          }
                      });
                 }
@@ -430,7 +438,8 @@ void RobotVizWidget::updateTransforms() {
             // Adjust "base_link" to whatever the fixed frame is (e.g. "world" or "base")
             // Usually "base" or "base_link" is the root.
             geometry_msgs::msg::TransformStamped t;
-            t = tf_buffer->lookupTransform("base", name, tf2::TimePointZero);
+            // Use base_link as the fixed frame
+            t = tf_buffer->lookupTransform("base_link", name, tf2::TimePointZero);
             
             QVector3D pos(t.transform.translation.x, t.transform.translation.y, t.transform.translation.z);
             QQuaternion rot(t.transform.rotation.w, t.transform.rotation.x, t.transform.rotation.y, t.transform.rotation.z);

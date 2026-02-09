@@ -3,9 +3,9 @@
      Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
      For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
 <robot
-  name="DH116-R000-A1">
+  name="R_DH116-R000-A1">
   <link
-    name="base_link">
+    name="R_base_link">
     <inertial>
       <origin
         xyz="-0.0052741 0.002479 0.057207"
@@ -26,10 +26,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/base_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/base_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -40,12 +40,12 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/base_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/base_link.STL" />
       </geometry>
     </collision>
   </link>
   <link
-    name="finger11_link">
+    name="R_finger11_link">
     <inertial>
       <origin
         xyz="0.0078225 0.0020462 -0.0025622"
@@ -66,10 +66,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger11_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger11_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -80,20 +80,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger11_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger11_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger11"
+    name="R_finger11"
     type="revolute">
     <origin
       xyz="0.018 0.021747 0.043279"
       rpy="-0.087266 0 0" />
     <parent
-      link="base_link" />
+      link="R_base_link" />
     <child
-      link="finger11_link" />
+      link="R_finger11_link" />
     <axis
       xyz="0 0 -1" />
     <limit
@@ -103,7 +103,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger12_link">
+    name="R_finger12_link">
     <inertial>
       <origin
         xyz="0.0014182 -1.2893E-06 0.024329"
@@ -124,10 +124,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger12_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger12_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -138,20 +138,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger12_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger12_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger12"
+    name="R_finger12"
     type="revolute">
     <origin
       xyz="0.018876 0.0049375 -0.0056093"
       rpy="0 0.95149 0.25585" />
     <parent
-      link="finger11_link" />
+      link="R_finger11_link" />
     <child
-      link="finger12_link" />
+      link="R_finger12_link" />
     <axis
       xyz="0 -1 0" />
     <limit
@@ -161,7 +161,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger13_link">
+    name="R_finger13_link">
     <inertial>
       <origin
         xyz="0.0064864 -1.72E-06 0.014709"
@@ -182,10 +182,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger13_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger13_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -196,20 +196,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger13_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger13_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger13"
+    name="R_finger13"
     type="revolute">
     <origin
       xyz="0 0 0.045"
       rpy="0 0 0" />
     <parent
-      link="finger12_link" />
+      link="R_finger12_link" />
     <child
-      link="finger13_link" />
+      link="R_finger13_link" />
     <axis
       xyz="0 -1 0" />
     <limit
@@ -219,7 +219,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger14_link">
+    name="R_finger14_link">
     <inertial>
       <origin
         xyz="0.0030983 8.624E-07 0.024752"
@@ -240,10 +240,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger14_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger14_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="0.2 0.2 0.2 1" />
       </material>
@@ -254,20 +254,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger14_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger14_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger14"
+    name="R_finger14"
     type="fixed">
     <origin
       xyz="0 0 0"
       rpy="0 0 0" />
     <parent
-      link="finger13_link" />
+      link="R_finger13_link" />
     <child
-      link="finger14_link" />
+      link="R_finger14_link" />
     <axis
       xyz="0 0 0" />
     <limit
@@ -277,7 +277,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger21_link">
+    name="R_finger21_link">
     <inertial>
       <origin
         xyz="-0.0017978 3.2789E-07 0.018686"
@@ -298,10 +298,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger21_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger21_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -312,20 +312,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger21_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger21_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger21"
+    name="R_finger21"
     type="revolute">
     <origin
       xyz="-0.011581 0.031971 0.10003"
       rpy="-0.052657 0.10625 -0.0055894" />
     <parent
-      link="base_link" />
+      link="R_base_link" />
     <child
-      link="finger21_link" />
+      link="R_finger21_link" />
     <axis
       xyz="0 1 0" />
     <limit
@@ -335,7 +335,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger22_link">
+    name="R_finger22_link">
     <inertial>
       <origin
         xyz="-0.0019337 7.2998E-07 0.02175"
@@ -356,10 +356,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger22_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger22_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -370,20 +370,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger22_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger22_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger22"
+    name="R_finger22"
     type="revolute">
     <origin
       xyz="0 0 0.035"
       rpy="0 0 0" />
     <parent
-      link="finger21_link" />
+      link="R_finger21_link" />
     <child
-      link="finger22_link" />
+      link="R_finger22_link" />
     <axis
       xyz="0 1 0" />
     <limit
@@ -393,7 +393,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger23_link">
+    name="R_finger23_link">
     <inertial>
       <origin
         xyz="0.0027534 -5.1038E-07 0.027456"
@@ -414,10 +414,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger23_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger23_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="0.2 0.2 0.2 1" />
       </material>
@@ -428,20 +428,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger23_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger23_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger23"
+    name="R_finger23"
     type="fixed">
     <origin
       xyz="0 0 0"
       rpy="0 0 0" />
     <parent
-      link="finger22_link" />
+      link="R_finger22_link" />
     <child
-      link="finger23_link" />
+      link="R_finger23_link" />
     <axis
       xyz="0 0 0" />
     <limit
@@ -451,7 +451,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger31_link">
+    name="R_finger31_link">
     <inertial>
       <origin
         xyz="-0.0017978 3.3269E-07 0.018686"
@@ -472,10 +472,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger31_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger31_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -486,20 +486,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger31_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger31_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger31"
+    name="R_finger31"
     type="revolute">
     <origin
       xyz="-0.013501 0.0105 0.10286"
       rpy="0 0.10214 0" />
     <parent
-      link="base_link" />
+      link="R_base_link" />
     <child
-      link="finger31_link" />
+      link="R_finger31_link" />
     <axis
       xyz="0 1 0" />
     <limit
@@ -509,7 +509,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger32_link">
+    name="R_finger32_link">
     <inertial>
       <origin
         xyz="-0.0021242 6.6141E-08 0.024943"
@@ -530,10 +530,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger32_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger32_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -544,20 +544,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger32_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger32_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger32"
+    name="R_finger32"
     type="revolute">
     <origin
       xyz="0 0 0.035"
       rpy="0 0 0" />
     <parent
-      link="finger31_link" />
+      link="R_finger31_link" />
     <child
-      link="finger32_link" />
+      link="R_finger32_link" />
     <axis
       xyz="0 1 0" />
     <limit
@@ -567,7 +567,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger33_link">
+    name="R_finger33_link">
     <inertial>
       <origin
         xyz="0.0025776 -4.8031E-07 0.03447"
@@ -588,10 +588,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger33_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger33_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="0.2 0.2 0.2 1" />
       </material>
@@ -602,20 +602,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger33_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger33_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger33"
+    name="R_finger33"
     type="fixed">
     <origin
       xyz="0 0 0"
       rpy="0 0 0" />
     <parent
-      link="finger32_link" />
+      link="R_finger32_link" />
     <child
-      link="finger33_link" />
+      link="R_finger33_link" />
     <axis
       xyz="0 0 0" />
     <limit
@@ -625,7 +625,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger41_link">
+    name="R_finger41_link">
     <inertial>
       <origin
         xyz="-0.0017978 2.8835E-07 0.018686"
@@ -646,10 +646,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger41_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger41_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -660,20 +660,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger41_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger41_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger41"
+    name="R_finger41"
     type="revolute">
     <origin
       xyz="-0.015081 -0.010971 0.10183"
       rpy="0.052889 0.14148 0.0074648" />
     <parent
-      link="base_link" />
+      link="R_base_link" />
     <child
-      link="finger41_link" />
+      link="R_finger41_link" />
     <axis
       xyz="0 1 0" />
     <limit
@@ -683,7 +683,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger42_link">
+    name="R_finger42_link">
     <inertial>
       <origin
         xyz="-0.00099481 6.0006E-07 0.021813"
@@ -704,10 +704,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger42_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger42_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -718,20 +718,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger42_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger42_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger42"
+    name="R_finger42"
     type="revolute">
     <origin
       xyz="0 0 0.035"
       rpy="0 0 0" />
     <parent
-      link="finger41_link" />
+      link="R_finger41_link" />
     <child
-      link="finger42_link" />
+      link="R_finger42_link" />
     <axis
       xyz="0 1 0" />
     <limit
@@ -741,7 +741,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger43_link">
+    name="R_finger43_link">
     <inertial>
       <origin
         xyz="0.0039336 -3.2576E-07 0.027311"
@@ -762,10 +762,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger43_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger43_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="0.2 0.2 0.2 1" />
       </material>
@@ -776,20 +776,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger43_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger43_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger43"
+    name="R_finger43"
     type="fixed">
     <origin
       xyz="0 0 0"
       rpy="0 0 0" />
     <parent
-      link="finger42_link" />
+      link="R_finger42_link" />
     <child
-      link="finger43_link" />
+      link="R_finger43_link" />
     <axis
       xyz="0 0 0" />
     <limit
@@ -799,7 +799,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger51_link">
+    name="R_finger51_link">
     <inertial>
       <origin
         xyz="-0.0017978 4.0336E-07 0.018686"
@@ -820,10 +820,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger51_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger51_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -834,20 +834,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger51_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger51_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger51"
+    name="R_finger51"
     type="revolute">
     <origin
       xyz="-0.013081 -0.032156 0.097798"
       rpy="0.078754 0.073706 0.0058113" />
     <parent
-      link="base_link" />
+      link="R_base_link" />
     <child
-      link="finger51_link" />
+      link="R_finger51_link" />
     <axis
       xyz="0 1 0" />
     <limit
@@ -857,7 +857,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger52_link">
+    name="R_finger52_link">
     <inertial>
       <origin
         xyz="-0.0024432 3.1795E-07 0.016659"
@@ -878,10 +878,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger52_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger52_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="1 1 1 1" />
       </material>
@@ -892,20 +892,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger52_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger52_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger52"
+    name="R_finger52"
     type="revolute">
     <origin
       xyz="0 0 0.035"
       rpy="0 0 0" />
     <parent
-      link="finger51_link" />
+      link="R_finger51_link" />
     <child
-      link="finger52_link" />
+      link="R_finger52_link" />
     <axis
       xyz="0 1 0" />
     <limit
@@ -915,7 +915,7 @@
       velocity="0" />
   </joint>
   <link
-    name="finger53_link">
+    name="R_finger53_link">
     <inertial>
       <origin
         xyz="0.0021833 1.5926E-06 0.02278"
@@ -936,10 +936,10 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger53_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger53_link.STL" />
       </geometry>
       <material
-        name="">
+        name="R_">
         <color
           rgba="0.2 0.2 0.2 1" />
       </material>
@@ -950,20 +950,20 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://DH116-R000-A1/meshes/finger53_link.STL" />
+          filename="R_package://DH116-R000-A1/meshes/finger53_link.STL" />
       </geometry>
     </collision>
   </link>
   <joint
-    name="finger53"
+    name="R_finger53"
     type="fixed">
     <origin
       xyz="0 0 0"
       rpy="0 0 0" />
     <parent
-      link="finger52_link" />
+      link="R_finger52_link" />
     <child
-      link="finger53_link" />
+      link="R_finger53_link" />
     <axis
       xyz="0 0 0" />
     <limit

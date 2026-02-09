@@ -7,6 +7,7 @@
 #include <iostream>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <string>
 #include <thread>
 #include <utility>
@@ -196,4 +197,7 @@ class HandControlService : public rclcpp::Node {
       home_motors_srv_;
   rclcpp::Service<lhandpro_interfaces::srv::MoveMotors>::SharedPtr
       move_motors_srv_;
+
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
+  std::vector<std::string> joint_names_;
 };

@@ -12,10 +12,14 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     // Parameters
     this->declare_parameter<std::string>("robot_ip", "192.168.1.10");
     this->declare_parameter<std::string>("robot_urdf_path", "");
-    
+    this->declare_parameter<std::string>("left_hand_urdf_path", "");
+    this->declare_parameter<std::string>("right_hand_urdf_path", "");
+
     std::string robot_ip;
     this->get_parameter("robot_ip", robot_ip);
     this->get_parameter("robot_urdf_path", robot_urdf_path_);
+    this->get_parameter("left_hand_urdf_path", left_hand_urdf_path_);
+    this->get_parameter("right_hand_urdf_path", right_hand_urdf_path_);
     
     RCLCPP_INFO(this->get_logger(), "UI Configured with Robot IP: %s", robot_ip.c_str());
     if (!robot_urdf_path_.empty()) {
@@ -23,6 +27,8 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     } else {
         RCLCPP_WARN(this->get_logger(), "Robot URDF Path is empty! Visualization may not work.");
     }
+    if (!left_hand_urdf_path_.empty()) RCLCPP_INFO(this->get_logger(), "Left Hand URDF: %s", left_hand_urdf_path_.c_str());
+    if (!right_hand_urdf_path_.empty()) RCLCPP_INFO(this->get_logger(), "Right Hand URDF: %s", right_hand_urdf_path_.c_str());
 
     // Subscriber: Duco Robot State
     sub_robot_state_ = create_subscription<duco_msg::msg::DucoRobotState>(
