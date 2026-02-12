@@ -3,6 +3,7 @@
 #include <duco_msg/srv/robot_control.hpp>
 #include <duco_msg/srv/robot_io_control.hpp>
 #include <duco_msg/msg/duco_robot_state.hpp>
+#include <duco_msg/srv/robot_task_state_rquest.hpp>
 #include <mutex>
 #include <atomic>
 #include <future>
@@ -15,13 +16,14 @@ public:
     SystemController() : Node("system_controller_node"), is_busy_(false) {
         // Subscribers
         sub_state_ = this->create_subscription<duco_msg::msg::DucoRobotState>(
-            "/duco_robot/robot_state", 10,
+            "/duco_cobot/robot_state", 10,
             std::bind(&SystemController::robot_state_callback, this, std::placeholders::_1));
 
         // Clients to Duco Driver
         client_move_ = this->create_client<duco_msg::srv::RobotMove>("/duco_robot/robot_move");
         client_control_ = this->create_client<duco_msg::srv::RobotControl>("/duco_robot/robot_control");
         client_io_ = this->create_client<duco_msg::srv::RobotIoControl>("/duco_robot/robot_io_control");
+        client_task_state_ = this->create_client<duco_msg::srv::RobotTaskStateRquest>("/duco_robot/robot_task_state_request");
 
         // Services for UI
         srv_move_ = this->create_service<duco_msg::srv::RobotMove>(
@@ -113,11 +115,11 @@ private:
             return;
         }
 
-        // 3. Enforce Blocking
-        request->block = true;
+        // 3. Use Non-Blocking Mode + Polling
+        request->block = false;
 
         // 4. Forward Request
-        RCLCPP_INFO(this->get_logger(), "Executing Move Command: %s", request->command.c_str());
+        RCLCPP_INFO(this->get_logger(), "Executing Move Command: %s (Non-blocking)", request->command.c_str());
         
         if (!client_move_->wait_for_service(1s)) {
             is_busy_ = false;
@@ -127,22 +129,77 @@ private:
 
         auto future = client_move_->async_send_request(request);
         
-        // Wait for result with timeout (Move can be long, e.g. 120s)
-        if (future.wait_for(120s) == std::future_status::timeout) {
-            is_busy_ = false; // Reset busy state on timeout to allow recovery
-            response->response = "ERROR: RobotMove Service Timeout (120s)";
-            RCLCPP_ERROR(this->get_logger(), "Move Timeout: Service did not respond in 120s");
-            // Ideally we should trigger a STOP here, but no stop interface is standard.
+        // Wait for initial acceptance (should be fast)
+        if (future.wait_for(2s) == std::future_status::timeout) {
+            is_busy_ = false;
+            response->response = "ERROR: RobotMove Service Timeout (Initial)";
+            RCLCPP_ERROR(this->get_logger(), "Move Timeout: Service did not accept request");
             return;
         }
         
+        std::string task_id_str;
         try {
             auto result = future.get();
-            response->response = result->response;
-            RCLCPP_INFO(this->get_logger(), "Move Complete: %s", result->response.c_str());
+            task_id_str = result->response;
+            RCLCPP_INFO(this->get_logger(), "Move Accepted. Task ID: %s", task_id_str.c_str());
         } catch (const std::exception &e) {
+            is_busy_ = false;
             response->response = std::string("ERROR: Exception during service call: ") + e.what();
             RCLCPP_ERROR(this->get_logger(), "Move Exception: %s", e.what());
+            return;
+        }
+
+        // 5. Polling Loop
+        if (!client_task_state_->wait_for_service(1s)) {
+            is_busy_ = false;
+            response->response = "ERROR: RobotTaskState service not available";
+            RCLCPP_ERROR(this->get_logger(), "TaskState Service Missing");
+            return;
+        }
+
+        auto start_time = std::chrono::steady_clock::now();
+        while (rclcpp::ok()) {
+             // Check timeout (120s)
+             if (std::chrono::steady_clock::now() - start_time > 120s) {
+                 response->response = "ERROR: Move Timeout (120s)";
+                 RCLCPP_ERROR(this->get_logger(), "Move Polling Timeout");
+                 break; 
+             }
+
+             auto task_req = std::make_shared<duco_msg::srv::RobotTaskStateRquest::Request>();
+             task_req->id = task_id_str;
+             task_req->arm_num = 0;
+
+             auto task_future = client_task_state_->async_send_request(task_req);
+             if (task_future.wait_for(1s) == std::future_status::timeout) {
+                 RCLCPP_WARN(this->get_logger(), "Task State Query Timeout");
+                 continue;
+             }
+
+             try {
+                 auto task_res = task_future.get();
+                 int state = std::stoi(task_res->response);
+                 // ST_Finished = 4
+                 if (state == 4) {
+                     response->response = "Finished";
+                     RCLCPP_INFO(this->get_logger(), "Move Finished Successfully");
+                     break;
+                 } else if (state == 5) { // Interrupt
+                      response->response = "Interrupt";
+                      RCLCPP_WARN(this->get_logger(), "Move Interrupted");
+                      break;
+                 } else if (state == 6 || state == 7 || state == 8) { // Error
+                      response->response = "Error: " + std::to_string(state);
+                      RCLCPP_ERROR(this->get_logger(), "Move Error: State %d", state);
+                      break;
+                 }
+                 // ST_Running (1), ST_Idle (0), etc. -> Continue
+                 
+             } catch (const std::exception &e) {
+                 RCLCPP_WARN(this->get_logger(), "Task State Exception: %s", e.what());
+             }
+
+             std::this_thread::sleep_for(100ms);
         }
 
         is_busy_ = false;
@@ -251,6 +308,7 @@ private:
     rclcpp::Client<duco_msg::srv::RobotMove>::SharedPtr client_move_;
     rclcpp::Client<duco_msg::srv::RobotControl>::SharedPtr client_control_;
     rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedPtr client_io_;
+    rclcpp::Client<duco_msg::srv::RobotTaskStateRquest>::SharedPtr client_task_state_;
     
     rclcpp::Service<duco_msg::srv::RobotMove>::SharedPtr srv_move_;
     rclcpp::Service<duco_msg::srv::RobotControl>::SharedPtr srv_control_;

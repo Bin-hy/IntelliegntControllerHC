@@ -139,14 +139,19 @@ def launch_setup(context, *args, **kwargs):
             'usb_port': port,
             'enable_color': 'true',
             'enable_depth': 'true',
-            'depth_registration': 'true'
+            'depth_registration': 'false', # Disable to save resources/stability
+            'enable_point_cloud': 'false', # Disable for stability
+            'enable_disparity_to_depth': 'false', # Fix for 'depth frame processor' error
+            'enable_d2c_viewer': 'false'
         }
         
         # Specific parameter adjustments
         if 'gemini305' in launch_file:
              launch_args.update({
-                 'enable_left_ir': 'true',
-                 'enable_right_ir': 'true'
+                 'enable_left_ir': 'false',  # Disable to save bandwidth on USB 2.0
+                 'enable_right_ir': 'false', # Disable to save bandwidth on USB 2.0
+                 'enable_depth': 'true',     # Keep depth enabled
+                 'enable_color': 'true'
              })
         elif 'gemini_330' in launch_file:
              launch_args.update({

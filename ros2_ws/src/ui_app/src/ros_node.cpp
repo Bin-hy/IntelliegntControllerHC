@@ -32,7 +32,7 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
 
     // Subscriber: Duco Robot State
     sub_robot_state_ = create_subscription<duco_msg::msg::DucoRobotState>(
-      "/duco_robot/robot_state", 30, std::bind(&RosNode::robot_state_callback, this, std::placeholders::_1));
+      "/duco_cobot/robot_state", 30, std::bind(&RosNode::robot_state_callback, this, std::placeholders::_1));
 
     // Service Clients
     client_control_ = create_client<duco_msg::srv::RobotControl>("/ui/request_control");
@@ -69,9 +69,14 @@ std::vector<std::string> RosNode::scan_cameras() {
     std::vector<std::string> cameras;
     auto topic_names_and_types = this->get_topic_names_and_types();
     
+    RCLCPP_INFO(this->get_logger(), "Scanning for cameras...");
     for (const auto& [name, types] : topic_names_and_types) {
+        // Debug log all topics
+        // RCLCPP_DEBUG(this->get_logger(), "Topic: %s", name.c_str());
+
         // Look for topics ending in /color/image_raw
         if (name.find("/color/image_raw") != std::string::npos) {
+            RCLCPP_INFO(this->get_logger(), "Found potential camera topic: %s", name.c_str());
             // Extract namespace
             // e.g. /camera/color/image_raw -> /camera
             // e.g. /camera_01/color/image_raw -> /camera_01
@@ -82,6 +87,7 @@ std::vector<std::string> RosNode::scan_cameras() {
                 // If it is empty (root), handle gracefully.
                 if (ns.empty()) ns = "/"; // unlikely for standard usage
                 cameras.push_back(ns);
+                RCLCPP_INFO(this->get_logger(), "Added camera: %s", ns.c_str());
             }
         }
     }
@@ -164,11 +170,11 @@ void RosNode::update_camera_subscriptions(std::string camera_ns, bool color, boo
 
     if (color) {
         sub_color_ = create_subscription<sensor_msgs::msg::Image>(
-            camera_ns + "/color/image_raw", 10, std::bind(&RosNode::color_callback, this, std::placeholders::_1));
+            camera_ns + "/color/image_raw", rclcpp::SensorDataQoS(), std::bind(&RosNode::color_callback, this, std::placeholders::_1));
     }
     if (depth) {
         sub_depth_ = create_subscription<sensor_msgs::msg::Image>(
-            camera_ns + "/depth/image_raw", 10, std::bind(&RosNode::depth_callback, this, std::placeholders::_1));
+            camera_ns + "/depth/image_raw", rclcpp::SensorDataQoS(), std::bind(&RosNode::depth_callback, this, std::placeholders::_1));
     }
     if (ir_left) {
         std::string ir_topic = camera_ns + "/left_ir/image_raw";
@@ -181,7 +187,7 @@ void RosNode::update_camera_subscriptions(std::string camera_ns, bool color, boo
         }
 
         sub_ir_left_ = create_subscription<sensor_msgs::msg::Image>(
-            ir_topic, 10, std::bind(&RosNode::ir_left_callback, this, std::placeholders::_1));
+            ir_topic, rclcpp::SensorDataQoS(), std::bind(&RosNode::ir_left_callback, this, std::placeholders::_1));
     }
     if (ir_right) {
         std::string ir_topic = camera_ns + "/right_ir/image_raw";
@@ -195,7 +201,7 @@ void RosNode::update_camera_subscriptions(std::string camera_ns, bool color, boo
         // Or we can be smart: if left_ir mapped to /ir/image_raw, maybe right is not needed.
         
         sub_ir_right_ = create_subscription<sensor_msgs::msg::Image>(
-            ir_topic, 10, std::bind(&RosNode::ir_right_callback, this, std::placeholders::_1));
+            ir_topic, rclcpp::SensorDataQoS(), std::bind(&RosNode::ir_right_callback, this, std::placeholders::_1));
     }
     if (point_cloud) {
         std::string topic = pc_topic;
@@ -204,7 +210,7 @@ void RosNode::update_camera_subscriptions(std::string camera_ns, bool color, boo
              topic = camera_ns + "/depth/color/points";
         }
         sub_point_cloud_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-            topic, 10, std::bind(&RosNode::point_cloud_callback, this, std::placeholders::_1));
+            topic, rclcpp::SensorDataQoS(), std::bind(&RosNode::point_cloud_callback, this, std::placeholders::_1));
     }
 }
 

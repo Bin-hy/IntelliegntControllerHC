@@ -35,6 +35,19 @@ ament_export_include_directories(${THIRDPARTY_DIR}/include)
 
 add_subdirectory(src/SOEM)
 
+# Ensure RPATH includes linked library paths (critical for setcap/EtherCAT)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+# Explicitly add ROS 2 lib directory to RPATH to ensure capabilities (setcap) don't break library loading
+if(DEFINED ENV{ROS_DISTRO})
+  set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib:/opt/ros/$ENV{ROS_DISTRO}/lib")
+else()
+  set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib:/opt/ros/humble/lib")
+endif()
+
+# Force RPATH instead of RUNPATH to handle transitive dependencies (like libstatistics_collector)
+# when LD_LIBRARY_PATH is ignored due to capabilities (setcap)
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--disable-new-dtags")
+
 # 添加执行文件
 add_executable(lhandpro_service 
   src/lhandpro_service.cpp

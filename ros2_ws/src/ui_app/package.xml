@@ -18,6 +18,8 @@
   <depend>vision_server</depend>
   <depend>image_transport</depend>
   <depend>OpenCV</depend>
+  <depend>qtbase5-dev</depend>
+  <depend>qt3d5-dev</depend>
   <depend>lhandpro_interfaces</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>

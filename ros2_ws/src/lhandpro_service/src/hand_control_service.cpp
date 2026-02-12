@@ -11,7 +11,12 @@ HandControlService::HandControlService() : Node("lhandpro_service") {
   ec_master_ = std::make_shared<EthercatMaster>();
 
   is_connected_ = false;
-  current_channel_ = 1;  // 手动修改默认通道
+  
+  // 声明并获取参数, 默认值为1
+  this->declare_parameter("ethercat_channel", 1);
+  current_channel_ = this->get_parameter("ethercat_channel").as_int();
+  
+  RCLCPP_INFO(this->get_logger(), "使用EtherCAT通道: %d", current_channel_);
 
   init_ethercat(current_channel_);
   init_service();

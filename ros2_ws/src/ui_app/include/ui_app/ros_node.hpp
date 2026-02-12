@@ -18,7 +18,11 @@
 #include "lhandpro_interfaces/srv/move_motors.hpp"
 #include "lhandpro_interfaces/srv/home_motors.hpp"
 // #include "vision_server/vision_server/srv/save_image.hpp"
+#if __has_include(<cv_bridge/cv_bridge.hpp>)
 #include <cv_bridge/cv_bridge.hpp>
+#elif __has_include(<cv_bridge/cv_bridge.h>)
+#include <cv_bridge/cv_bridge.h>
+#endif
 #include <opencv2/opencv.hpp>
 #include <atomic>
 #include <mutex>
