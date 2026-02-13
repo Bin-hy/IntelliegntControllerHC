@@ -29,7 +29,6 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent)
     auto * tabs = new QTabWidget();
     tabs->addTab(createControlTab(), "Power & Status");
     tabs->addTab(createMoveTab(), "Motion Control");
-    tabs->addTab(createIOTab(), "IO Control");
     tabs->addTab(createCameraTab(), "Vision System");
     
     // Robot Viz
@@ -227,47 +226,6 @@ QWidget* AppWindow::createMoveTab() {
           for(int i=0; i<6; ++i) p.push_back((float)spin_cart_[i]->value());
           std::vector<float> q; // Empty for MoveL
           node_->call_robot_move("movel", p, q, (float)spin_vel_->value(), (float)spin_acc_->value(), 0.0, "default", "default");
-      });
-
-      return widget;
-}
-
-QWidget* AppWindow::createIOTab() {
-      auto * widget = new QWidget();
-      auto * layout = new QVBoxLayout();
-
-      auto * group_io = new QGroupBox("Digital Output Control");
-      auto * layout_io = new QGridLayout();
-
-      layout_io->addWidget(new QLabel("IO Type:"), 0, 0);
-      combo_io_type_ = new QComboBox();
-      combo_io_type_->addItem("Controller IO (0)", 0);
-      combo_io_type_->addItem("Tool IO (1)", 1);
-      layout_io->addWidget(combo_io_type_, 0, 1);
-
-      layout_io->addWidget(new QLabel("Port Index:"), 1, 0);
-      spin_io_port_ = new QSpinBox();
-      spin_io_port_->setRange(0, 15);
-      layout_io->addWidget(spin_io_port_, 1, 1);
-
-      layout_io->addWidget(new QLabel("Value:"), 2, 0);
-      chk_io_value_ = new QCheckBox("High / On");
-      layout_io->addWidget(chk_io_value_, 2, 1);
-
-      auto * btn_set_io = new QPushButton("Set IO");
-      layout_io->addWidget(btn_set_io, 3, 0, 1, 2);
-
-      group_io->setLayout(layout_io);
-      layout->addWidget(group_io);
-      layout->addStretch();
-
-      widget->setLayout(layout);
-
-      connect(btn_set_io, &QPushButton::clicked, this, [this](){
-          int type = combo_io_type_->currentData().toInt();
-          int port = spin_io_port_->value();
-          bool val = chk_io_value_->isChecked();
-          node_->call_robot_io("setIo", type, port, val);
       });
 
       return widget;
