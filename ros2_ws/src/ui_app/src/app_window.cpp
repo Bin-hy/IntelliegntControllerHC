@@ -31,15 +31,9 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent)
     tabs->addTab(createMoveTab(), "Motion Control");
     tabs->addTab(createCameraTab(), "Vision System");
     
-    // Robot Viz
     robot_viz_ = new RobotVizWidget(node_);
     tabs->addTab(robot_viz_, "3D Simulation");
-    // Load model from parameter
     std::string urdf_path = node_->get_robot_urdf_path();
-    if (urdf_path.empty()) {
-         // Fallback default
-         urdf_path = "/home/user/IntelliegntControllerHC/ros2_ws/src/duco_support/urdf/duco_gcr16_960.urdf";
-    }
     robot_viz_->loadRobotModel(urdf_path);
 
     // Load Left Hand
@@ -573,4 +567,3 @@ QWidget* AppWindow::createLHandTab() {
 
     return widget;
 }
-

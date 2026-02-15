@@ -2,24 +2,35 @@
 #include <sstream>
 #include <chrono>
 #include <algorithm>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 using namespace std::chrono_literals;
 
 RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
-    // Publisher
     pub_ = create_publisher<std_msgs::msg::String>("/ui/heartbeat", 10);
     
-    // Parameters
     this->declare_parameter<std::string>("robot_ip", "192.168.1.10");
     this->declare_parameter<std::string>("robot_urdf_path", "");
     this->declare_parameter<std::string>("left_hand_urdf_path", "");
     this->declare_parameter<std::string>("right_hand_urdf_path", "");
+    this->declare_parameter<std::string>("robot_model", "gcr16_960");
 
     std::string robot_ip;
+    std::string robot_model;
     this->get_parameter("robot_ip", robot_ip);
     this->get_parameter("robot_urdf_path", robot_urdf_path_);
     this->get_parameter("left_hand_urdf_path", left_hand_urdf_path_);
     this->get_parameter("right_hand_urdf_path", right_hand_urdf_path_);
+    this->get_parameter("robot_model", robot_model);
+
+    if (robot_urdf_path_.empty()) {
+        try {
+            std::string duco_share = ament_index_cpp::get_package_share_directory("duco_support");
+            robot_urdf_path_ = duco_share + "/urdf/duco_" + robot_model + ".urdf";
+        } catch (const std::exception& e) {
+            RCLCPP_WARN(this->get_logger(), "Failed to resolve duco_support share directory: %s", e.what());
+        }
+    }
     
     RCLCPP_INFO(this->get_logger(), "UI Configured with Robot IP: %s", robot_ip.c_str());
     if (!robot_urdf_path_.empty()) {

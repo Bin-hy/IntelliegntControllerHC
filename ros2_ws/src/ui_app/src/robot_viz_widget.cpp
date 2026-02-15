@@ -13,7 +13,6 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2/exceptions.h>
 
-// Helper to resolve package:// paths
 std::string resolvePath(const std::string& path) {
     std::string prefix = "package://";
     if (path.find(prefix) == 0) {
@@ -22,16 +21,7 @@ std::string resolvePath(const std::string& path) {
         if (slash_pos != std::string::npos) {
             std::string package_name = rest.substr(0, slash_pos);
             std::string file_path = rest.substr(slash_pos);
-            
-            // Try to find package share directory
             try {
-                // In dev environment, we might want source path if meshes are not installed to share
-                // But typically we look in install/share
-                // For this specific case, we know the source path is /home/user/IntelliegntControllerHC/ros2_ws/src/duco_support
-                if (package_name == "duco_support") {
-                     return "/home/user/IntelliegntControllerHC/ros2_ws/src/duco_support" + file_path;
-                }
-                
                 std::string share_dir = ament_index_cpp::get_package_share_directory(package_name);
                 return share_dir + file_path;
             } catch (...) {

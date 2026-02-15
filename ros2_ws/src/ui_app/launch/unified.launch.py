@@ -10,19 +10,19 @@ def generate_launch_description():
     # Args
     robot_ip_arg = DeclareLaunchArgument(
         'robot_ip', 
-        default_value='192.168.1.10',
+        default_value='192.168.192.10',
         description='Robot IP Address'
     )
 
     model_arg = DeclareLaunchArgument(
         'model',
-        default_value='gcr14_1400',
+        default_value='gcr5_910',
         description='Duco robot model name'
     )
 
     ethercat_channel_arg = DeclareLaunchArgument(
         'ethercat_channel',
-        default_value='1',
+        default_value='0',
         description='EtherCAT network interface channel index'
     )
 
@@ -95,7 +95,8 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'robot_ip': LaunchConfiguration('robot_ip'),
-            'robot_urdf_path': urdf_path
+            'robot_urdf_path': urdf_path,
+            'robot_model': LaunchConfiguration('model')
         }]
     )
 
