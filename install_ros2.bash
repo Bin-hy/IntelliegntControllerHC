@@ -23,10 +23,18 @@ sudo dpkg -i /tmp/ros2-apt-source.deb
 sudo apt update
 sudo apt upgrade
 
-sudo apt install ros-humble-desktop -y
-sudo apt install ros-humble-ros-base -y
-sudo apt install ros-dev-tools -y
+# 安装 ROS 2 Jazzy Desktop 版本
+sudo apt install ros-jazzy-desktop -y
 
+# 安装 ROS 2 Jazzy 基础版本（可选）
+sudo apt install ros-jazzy-ros-base -y
+
+# 安装开发工具（可选）
+sudo apt install ros-dev-tools -y
 # Environment Setup
-echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+# 添加 ROS 2 Jazzy 环境变量到 ~/.bashrc
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+
+# 使环境变量立即生效
+source ~/.bashrc
 
