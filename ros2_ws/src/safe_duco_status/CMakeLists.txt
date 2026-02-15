@@ -11,20 +11,18 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(duco_msg REQUIRED)
+find_package(duco_ros_driver REQUIRED)
 
 include_directories(include)
 
-# Use the Duco SDK library
-# Assuming the library is installed in the install/lib of duco_ros_driver or similar
-# Or we can link against the static library found in duco_ros2_driver
-set(DUCO_LIB_PATH "/home/user/IntelliegntControllerHC/ros2_ws/src/robot_control/lib/libDucoCobotAPI.a")
+set(DUCO_LIB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../duco_ros_driver/lib/libDucoCobotAPI.a")
 
 add_executable(safe_duco_status_node src/safe_duco_status_node.cpp)
 target_include_directories(safe_duco_status_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-  "/home/user/IntelliegntControllerHC/ros2_ws/src/duco_ros_driver/include"
-  "/home/user/IntelliegntControllerHC/ros2_ws/src/robot_control/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../duco_ros_driver/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../robot_control/include"
 )
 
 target_link_libraries(safe_duco_status_node
