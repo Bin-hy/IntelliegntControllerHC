@@ -25,58 +25,59 @@ find_package(geometry_msgs REQUIRED)
 find_package(urdf REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTORCC ON)
+  set(CMAKE_AUTOMOC ON)
+  set(CMAKE_AUTOUIC ON)
+  set(CMAKE_AUTORCC ON)
 
-add_executable(ui_app 
-  src/main.cpp
-  src/ros_node.cpp
-  src/app_window.cpp
-  src/point_cloud_widget.cpp
-  src/robot_viz_widget.cpp
-  include/ui_app/point_cloud_widget.hpp
-  include/ui_app/robot_viz_widget.hpp
-  resources/resources.qrc
-)
+  add_executable(ui_app 
+    src/main.cpp
+    src/ros_node.cpp
+    src/app_window.cpp
+    src/point_cloud_widget.cpp
+    src/robot_viz_widget.cpp
+    include/ui_app/point_cloud_widget.hpp
+    include/ui_app/robot_viz_widget.hpp
+    resources/resources.qrc
+  )
 
-target_include_directories(ui_app PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
+  target_include_directories(ui_app PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${CMAKE_BINARY_DIR}/../vision_server/rosidl_generator_cpp
+  )
 
-target_link_libraries(ui_app
-  Qt5::Widgets
-  Qt5::Core
-  Qt5::Gui
-  Qt5::OpenGL
-  Qt5::3DCore
-  Qt5::3DRender
-  Qt5::3DExtras
-  Qt5::3DInput
-  Qt5::3DLogic
-  /home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/lib/libvision_server__rosidl_typesupport_cpp.so
-)
+  target_link_libraries(ui_app
+    Qt5::Widgets
+    Qt5::Core
+    Qt5::Gui
+    Qt5::OpenGL
+    Qt5::3DCore
+    Qt5::3DRender
+    Qt5::3DExtras
+    Qt5::3DInput
+    Qt5::3DLogic
+  )
 
-ament_target_dependencies(ui_app
-  rclcpp
-  std_msgs
-  duco_msg
-  sensor_msgs
-  cv_bridge
-  std_srvs
-  image_transport
-  OpenCV
-  lhandpro_interfaces
-  tf2_ros
-  tf2_geometry_msgs
-  geometry_msgs
-  urdf
-  ament_index_cpp
-)
+  ament_target_dependencies(ui_app
+    rclcpp
+    std_msgs
+    duco_msg
+    sensor_msgs
+    cv_bridge
+    std_srvs
+    image_transport
+    OpenCV
+    lhandpro_interfaces
+    vision_server
+    tf2_ros
+    tf2_geometry_msgs
+    geometry_msgs
+    urdf
+    ament_index_cpp
+  )
 
-install(TARGETS ui_app
-  DESTINATION lib/${PROJECT_NAME})
+  install(TARGETS ui_app
+    DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY include/
   DESTINATION include
