@@ -7,3 +7,5 @@ build/
 logs/
 log/
 install/
+
+**/__pycache__/
