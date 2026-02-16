@@ -6,7 +6,12 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GloveJoints.msg"
   "msg/HandCmd.msg"
-  DEPENDENCIES std_msgs
+  "msg/TaskDeviceCheck.msg"
+  "msg/TaskStep.msg"
+  "msg/TaskConfig.msg"
+  "msg/DeviceStatus.msg"
+  "action/ExecuteTask.action"
+  DEPENDENCIES std_msgs action_msgs
 )
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()

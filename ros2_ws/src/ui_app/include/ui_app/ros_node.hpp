@@ -10,6 +10,7 @@
 #include <duco_msg/srv/robot_move.hpp>
 #include <duco_msg/msg/duco_robot_state.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 #include "vision_server/srv/save_image.hpp"
 #include "lhandpro_interfaces/srv/set_enable.hpp"
 #include "lhandpro_interfaces/srv/set_position.hpp"
@@ -17,6 +18,7 @@
 #include "lhandpro_interfaces/srv/set_position_velocity.hpp"
 #include "lhandpro_interfaces/srv/move_motors.hpp"
 #include "lhandpro_interfaces/srv/home_motors.hpp"
+#include "lhandpro_interfaces/srv/get_now_position.hpp"
 // #include "vision_server/vision_server/srv/save_image.hpp"
 #if __has_include(<cv_bridge/cv_bridge.hpp>)
 #include <cv_bridge/cv_bridge.hpp>
@@ -33,27 +35,43 @@
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+#include <rclcpp_action/rclcpp_action.hpp>
+#include "common_msgs/action/execute_task.hpp"
+#include "common_msgs/msg/device_status.hpp"
+
 class RosNode : public rclcpp::Node {
 public:
+  using ExecuteTask = common_msgs::action::ExecuteTask;
+  using GoalHandleExecuteTask = rclcpp_action::ClientGoalHandle<ExecuteTask>;
+
   RosNode();
 
   void call_robot_control(const std::string& command);
+  void call_robot_move_joint(const std::vector<double>& joints);
+  void call_execute_task(const common_msgs::msg::TaskConfig& task_config, 
+                         std::function<void(const GoalHandleExecuteTask::WrappedResult&)> result_callback,
+                         std::function<void(const std::shared_ptr<const ExecuteTask::Feedback>)> feedback_callback);
+  
+  void cancel_current_task();
+
   void call_robot_move(const std::string& command, 
                        const std::vector<float>& p, 
                        const std::vector<float>& q, 
                        float v, float a, float r, 
                        const std::string& tool, const std::string& wobj);
   void call_robot_io(const std::string& command, int type, int port, bool value);
+  void call_pause_task(bool pause);
   // void save_image(); // Deprecated in favor of multi-camera
-  void save_snapshot(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right, std::function<void(bool, std::string)> callback = nullptr);
+  void save_snapshot(const std::string& camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::function<void(bool, std::string)> callback = nullptr);
 
   // LHand Control
-  void call_lhand_enable(int joint_id, int enable);
+  void call_lhand_enable(bool enable); // Use global enable for now, or default joint_id if needed
   void call_lhand_home(int joint_id);
   void call_lhand_set_position(int joint_id, int position);
   void call_lhand_set_all_position(const std::array<int, 6>& positions);
   void call_lhand_set_velocity(int joint_id, int velocity);
   void call_lhand_move(int joint_id);
+  void call_lhand_get_position(int joint_id, std::function<void(int)> callback);
   
   std::vector<std::string> scan_cameras();
   std::vector<std::string> scan_point_clouds();
@@ -67,7 +85,10 @@ public:
   };
   CameraCapabilities get_camera_capabilities(std::string camera_ns);
 
-  void update_camera_subscriptions(std::string camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::string pc_topic = "");
+  void update_camera_subscriptions(const std::string& camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::string pc_topic = "");
+
+  bool check_device_availability(const common_msgs::msg::TaskDeviceCheck& check);
+  std::vector<common_msgs::msg::DeviceStatus> get_connected_devices();
 
   // Getters for URDF paths
   std::string get_robot_urdf_path() const { return robot_urdf_path_; }
@@ -78,6 +99,7 @@ public:
 
   // Data storage
   std::atomic<int> count_;
+  duco_msg::msg::DucoRobotState::SharedPtr last_robot_state_;
   std::string last_robot_state_str_;
   
   std::vector<double> current_joints_; 
@@ -100,9 +122,13 @@ private:
   void ir_left_callback(const sensor_msgs::msg::Image::SharedPtr msg);
   void ir_right_callback(const sensor_msgs::msg::Image::SharedPtr msg);
   void point_cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+  void device_status_callback(const common_msgs::msg::DeviceStatus::SharedPtr msg);
 
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
   rclcpp::Subscription<duco_msg::msg::DucoRobotState>::SharedPtr sub_robot_state_;
+  rclcpp::Subscription<common_msgs::msg::DeviceStatus>::SharedPtr sub_device_status_;
+  
+  std::map<std::string, common_msgs::msg::DeviceStatus> connected_devices_;
   
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_color_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_depth_;
@@ -113,6 +139,7 @@ private:
   rclcpp::Client<duco_msg::srv::RobotControl>::SharedPtr client_control_;
   rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedPtr client_io_;
   rclcpp::Client<duco_msg::srv::RobotMove>::SharedPtr client_move_;
+  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr client_pause_task_;
 
   // URDF Paths
   std::string robot_urdf_path_;
@@ -132,7 +159,10 @@ private:
   rclcpp::Client<lhandpro_interfaces::srv::SetPositionVelocity>::SharedPtr client_lhand_vel_;
   rclcpp::Client<lhandpro_interfaces::srv::MoveMotors>::SharedPtr client_lhand_move_;
   rclcpp::Client<lhandpro_interfaces::srv::HomeMotors>::SharedPtr client_lhand_home_;
+  rclcpp::Client<lhandpro_interfaces::srv::GetNowPosition>::SharedPtr client_lhand_get_now_pos_;
 
+  rclcpp_action::Client<ExecuteTask>::SharedPtr client_execute_task_;
+  GoalHandleExecuteTask::SharedPtr current_goal_handle_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

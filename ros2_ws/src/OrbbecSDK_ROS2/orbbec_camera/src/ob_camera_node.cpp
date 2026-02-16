@@ -123,6 +123,32 @@ OBCameraNode::OBCameraNode(rclcpp::Node *node, std::shared_ptr<ob::Device> devic
 
   fps_delay_status_color_ = std::make_unique<FpsDelayStatus>(logger_);
   fps_delay_status_depth_ = std::make_unique<FpsDelayStatus>(logger_);
+
+  device_status_timer_ = node_->create_wall_timer(std::chrono::seconds(1), [this]() {
+      if (!device_status_pub_) return;
+      common_msgs::msg::DeviceStatus status;
+      status.device_type = "camera";
+      status.device_usage = "vision";
+      
+      try {
+          if (device_) {
+              auto info = device_->getDeviceInfo();
+              if (info) {
+                  status.device_model = info->name();
+                  status.device_name = info->name();
+                  status.device_sn = info->serialNumber();
+                  status.status = "ready";
+              } else {
+                  status.status = "error";
+              }
+          } else {
+              status.status = "disconnected";
+          }
+      } catch (...) {
+          status.status = "error";
+      }
+      device_status_pub_->publish(status);
+  });
 }
 
 template <class T>
@@ -2524,6 +2550,8 @@ void OBCameraNode::setupPublishers() {
         "depth/points", rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(point_cloud_qos_profile),
                                     point_cloud_qos_profile));
   }
+  device_status_pub_ = node_->create_publisher<common_msgs::msg::DeviceStatus>(
+      "/system/device_status", rclcpp::SystemDefaultsQoS());
   auto device_info = device_->getDeviceInfo();
   CHECK_NOTNULL(device_info.get());
   for (const auto &stream_index : IMAGE_STREAMS) {

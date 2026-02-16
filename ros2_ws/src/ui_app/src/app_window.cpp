@@ -45,6 +45,7 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent)
     if (!rhand_path.empty()) robot_viz_->loadRobotModel(rhand_path);
 
     tabs->addTab(createLHandTab(), "LHand Control");
+    tabs->addTab(createTaskTab(), "Task Module");
     main_layout->addWidget(tabs);
     
     setLayout(main_layout);
@@ -300,16 +301,16 @@ QWidget* AppWindow::createCameraTab() {
     };
 
     widget_color_ = createVideoWidget("Color Stream", label_color_stream_, [this, make_callback](){
-        node_->save_snapshot(combo_camera_->currentText().toStdString(), true, false, false, false, make_callback());
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), true, false, false, false, false, make_callback());
     });
     widget_depth_ = createVideoWidget("Depth Stream", label_depth_stream_, [this, make_callback](){
-        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, true, false, false, make_callback());
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, true, false, false, false, make_callback());
     });
     widget_ir_left_ = createVideoWidget("IR Left Stream", label_ir_left_stream_, [this, make_callback](){
-        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, true, false, make_callback());
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, true, false, false, make_callback());
     });
     widget_ir_right_ = createVideoWidget("IR Right Stream", label_ir_right_stream_, [this, make_callback](){
-        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, false, true, make_callback());
+        node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, false, true, false, make_callback());
     });
 
     widget_point_cloud_ = new PointCloudWidget();
@@ -552,11 +553,11 @@ QWidget* AppWindow::createLHandTab() {
 
     // Connections
     connect(btn_lhand_enable_, &QPushButton::clicked, this, [this](){
-        node_->call_lhand_enable(0, 1);
+        node_->call_lhand_enable(true);
     });
     
     connect(btn_lhand_disable_, &QPushButton::clicked, this, [this](){
-        node_->call_lhand_enable(0, 0);
+        node_->call_lhand_enable(false);
     });
 
     connect(btn_lhand_home_, &QPushButton::clicked, this, [this](){

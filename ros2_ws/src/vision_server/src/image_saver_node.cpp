@@ -7,6 +7,7 @@
 #endif
 #include <opencv2/opencv.hpp>
 #include "vision_server/srv/save_image.hpp"
+#include <common_msgs/msg/device_status.hpp>
 #include <filesystem>
 #include <chrono>
 #include <iomanip>
@@ -33,6 +34,11 @@ public:
 
         // Create a callback group for the subscription to allow it to run in parallel with the service callback
         callback_group_sub_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+
+        // Publisher for DeviceStatus
+        pub_device_status_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
+        status_timer_ = this->create_wall_timer(
+            std::chrono::seconds(1), std::bind(&ImageSaverNode::status_timer_callback, this));
 
         RCLCPP_INFO(this->get_logger(), "Image Saver Node started.");
         RCLCPP_INFO(this->get_logger(), "Base Save Dir: %s", save_dir_.c_str());
@@ -153,7 +159,18 @@ private:
 
     rclcpp::Service<vision_server::srv::SaveImage>::SharedPtr service_;
     rclcpp::CallbackGroup::SharedPtr callback_group_sub_;
+    rclcpp::Publisher<common_msgs::msg::DeviceStatus>::SharedPtr pub_device_status_;
+    rclcpp::TimerBase::SharedPtr status_timer_;
     std::string save_dir_;
+
+    void status_timer_callback() {
+        common_msgs::msg::DeviceStatus status;
+        status.device_type = "orbbec";
+        status.device_model = "VisionServer";
+        status.device_sn = "/camera"; // Default namespace as SN
+        status.status = "ready";
+        pub_device_status_->publish(status);
+    }
 };
 
 int main(int argc, char * argv[])

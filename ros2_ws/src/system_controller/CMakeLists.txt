@@ -9,10 +9,15 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(duco_msg REQUIRED)
+find_package(common_msgs REQUIRED)
+find_package(rclcpp_action REQUIRED)
+find_package(lhandpro_interfaces REQUIRED)
+find_package(vision_server REQUIRED)
 
 add_executable(system_controller_node src/system_controller_node.cpp)
-ament_target_dependencies(system_controller_node rclcpp std_msgs duco_msg)
+ament_target_dependencies(system_controller_node rclcpp std_msgs std_srvs duco_msg common_msgs rclcpp_action lhandpro_interfaces vision_server)
 
 install(TARGETS
   system_controller_node

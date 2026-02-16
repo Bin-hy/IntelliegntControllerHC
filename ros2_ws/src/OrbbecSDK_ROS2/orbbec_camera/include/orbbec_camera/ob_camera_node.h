@@ -47,6 +47,7 @@
 #include "libobsensor/ObSensor.hpp"
 
 #include "orbbec_camera_msgs/msg/device_info.hpp"
+#include "common_msgs/msg/device_status.hpp"
 #include "orbbec_camera_msgs/srv/get_device_info.hpp"
 #include "orbbec_camera_msgs/msg/extrinsics.hpp"
 #include "orbbec_camera_msgs/msg/metadata.hpp"
@@ -802,6 +803,8 @@ class OBCameraNode {
   int spatial_moderate_filter_diff_threshold_ = -1;
   int spatial_moderate_filter_magnitude_ = -1;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr filter_status_pub_;
+  rclcpp::Publisher<common_msgs::msg::DeviceStatus>::SharedPtr device_status_pub_;
+  rclcpp::TimerBase::SharedPtr device_status_timer_;
   nlohmann::json filter_status_;
   std::string align_mode_ = "HW";
   std::unique_ptr<diagnostic_updater::Updater> diagnostic_updater_ = nullptr;

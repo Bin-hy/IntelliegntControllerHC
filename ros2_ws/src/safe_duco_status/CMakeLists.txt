@@ -11,6 +11,7 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(duco_msg REQUIRED)
+find_package(common_msgs REQUIRED)
 find_package(duco_ros_driver REQUIRED)
 
 include_directories(include)
@@ -35,6 +36,7 @@ ament_target_dependencies(safe_duco_status_node
   sensor_msgs
   control_msgs
   duco_msg
+  common_msgs
 )
 
 install(TARGETS safe_duco_status_node

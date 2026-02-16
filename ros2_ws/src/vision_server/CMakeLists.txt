@@ -12,6 +12,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(common_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
@@ -20,8 +21,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 )
 
 add_executable(image_saver_node src/image_saver_node.cpp)
-ament_target_dependencies(image_saver_node rclcpp sensor_msgs cv_bridge image_transport std_srvs OpenCV)
-rosidl_target_interfaces(image_saver_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
+ament_target_dependencies(image_saver_node rclcpp sensor_msgs cv_bridge image_transport std_srvs common_msgs OpenCV)
+rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
+target_link_libraries(image_saver_node "${cpp_typesupport_target}")
 
 install(TARGETS
   image_saver_node

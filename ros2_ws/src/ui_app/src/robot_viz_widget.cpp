@@ -331,7 +331,7 @@ Qt3DRender::QGeometryRenderer* RobotVizWidget::loadSTLGeometry(const QString& pa
     if (data.size() < 84) return nullptr;
     
     quint32 triangleCount = *reinterpret_cast<const quint32*>(ptr + 80);
-    if (data.size() != 84 + triangleCount * 50) {
+    if (data.size() != 84 + static_cast<size_t>(triangleCount) * 50) {
         // Size mismatch for binary, might be ASCII or corrupt. 
         // For this task we assume binary as per analysis.
         std::cerr << "STL size mismatch. Expected " << (84 + triangleCount * 50) << ", got " << data.size() << std::endl;

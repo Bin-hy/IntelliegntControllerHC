@@ -24,6 +24,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(urdf REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 
   set(CMAKE_AUTOMOC ON)
   set(CMAKE_AUTOUIC ON)
@@ -33,10 +34,15 @@ find_package(ament_index_cpp REQUIRED)
     src/main.cpp
     src/ros_node.cpp
     src/app_window.cpp
+    src/app_window_task.cpp
+    src/task_widget.cpp
+    src/task_dialogs.cpp
     src/point_cloud_widget.cpp
     src/robot_viz_widget.cpp
     include/ui_app/point_cloud_widget.hpp
     include/ui_app/robot_viz_widget.hpp
+    include/ui_app/task_widget.hpp
+    include/ui_app/task_dialogs.hpp
     resources/resources.qrc
   )
 
@@ -62,6 +68,7 @@ find_package(ament_index_cpp REQUIRED)
     rclcpp
     std_msgs
     duco_msg
+    common_msgs
     sensor_msgs
     cv_bridge
     std_srvs
@@ -74,6 +81,7 @@ find_package(ament_index_cpp REQUIRED)
     geometry_msgs
     urdf
     ament_index_cpp
+    rclcpp_action
   )
 
   install(TARGETS ui_app

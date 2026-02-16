@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "common_msgs/msg/device_status.hpp"
 #include "lhandpro_interfaces/srv/get_control_mode.hpp"
 #include "lhandpro_interfaces/srv/get_max_current.hpp"
 #include "lhandpro_interfaces/srv/get_now_angle.hpp"
@@ -72,6 +73,8 @@ class HandControlService : public rclcpp::Node {
   bool check_joint_validity(int joint_id, const std::string& service_name);
   void start_monitor();
   void stop_monitor();
+
+  rclcpp::Publisher<common_msgs::msg::DeviceStatus>::SharedPtr pub_device_status_;
 
  private:
   void set_enable_callback(

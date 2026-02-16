@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(lhandpro_interfaces REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(common_msgs REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -56,7 +57,7 @@ add_executable(lhandpro_service
   src/EthercatMaster.cpp
 )
 
-ament_target_dependencies(lhandpro_service rclcpp lhandpro_interfaces sensor_msgs)
+ament_target_dependencies(lhandpro_service rclcpp lhandpro_interfaces sensor_msgs common_msgs)
 
 # 导出头文件路径
 target_link_libraries(lhandpro_service ${LHANDPRO_LIB} soem)

@@ -43,6 +43,7 @@ set(dependencies
     statistics_msgs
     yaml-cpp
     camera_calibration_parsers
+    common_msgs
 )
 
 foreach(dep IN LISTS dependencies)

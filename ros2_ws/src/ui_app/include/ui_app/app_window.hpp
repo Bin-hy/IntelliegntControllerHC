@@ -5,6 +5,7 @@
 #include <memory>
 #include "ui_app/ros_node.hpp"
 #include "ui_app/robot_viz_widget.hpp"
+#include "ui_app/task_widget.hpp"
 
 class QLabel;
 class QTextEdit;
@@ -26,6 +27,7 @@ private:
   QWidget* createIOTab();
   QWidget* createLHandTab();
   QWidget* createCameraTab();
+  QWidget* createTaskTab();
   QWidget* createVideoWidget(const QString& title, QLabel*& label_ptr, std::function<void()> save_callback);
   void refreshCameraList();
   void onCameraConfigChanged();

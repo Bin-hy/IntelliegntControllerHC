@@ -16,6 +16,9 @@ HandControlService::HandControlService() : Node("lhandpro_service") {
   this->declare_parameter("ethercat_channel", 1);
   current_channel_ = this->get_parameter("ethercat_channel").as_int();
   
+  // Publisher for DeviceStatus
+  pub_device_status_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
+
   RCLCPP_INFO(this->get_logger(), "使用EtherCAT通道: %d", current_channel_);
 
   init_ethercat(current_channel_);
@@ -113,13 +116,27 @@ void HandControlService::cleanup_resources() {
 }
 
 void HandControlService::check_and_reconnect() {
+  common_msgs::msg::DeviceStatus status_msg;
+  status_msg.device_type = "lhand";
+  status_msg.device_usage = "hand";
+  status_msg.device_model = "LHandPro";
+  status_msg.device_name = "LHandPro";
+  status_msg.device_sn = "lhand_1"; // Placeholder
+
   if (is_connected_) {
     // 检查是否仍然有效
     if (!is_alive()) {
       RCLCPP_WARN(this->get_logger(), "检测到连接异常，尝试重新连接...");
       is_connected_ = false;
+      status_msg.status = "error";
+    } else {
+      status_msg.status = "ready";
     }
+  } else {
+    status_msg.status = "disconnected";
   }
+  
+  pub_device_status_->publish(status_msg);
 
   if (!is_connected_) {
     RCLCPP_INFO(this->get_logger(), "正在尝试重新连接设备...");
