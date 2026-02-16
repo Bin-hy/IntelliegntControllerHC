@@ -35,6 +35,9 @@ public:
     // Load URDF and create entities
     void loadRobotModel(const std::string& urdf_path);
 
+    // Set camera position
+    void setCameraPosition(const QVector3D& pos, const QVector3D& view_center);
+
 protected:
     void timerEvent(QTimerEvent *event) override;
 
@@ -64,6 +67,9 @@ private:
     
     // Base path for resolving package://
     std::string package_path_;
+    
+    // Root link name for TF lookup
+    std::string root_link_name_ = "base_link";
 };
 
 #endif // ROBOT_VIZ_WIDGET_HPP

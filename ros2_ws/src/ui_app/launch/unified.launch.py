@@ -69,6 +69,29 @@ def generate_launch_description():
         launch_arguments={'ethercat_channel': LaunchConfiguration('ethercat_channel')}.items()
     )
 
+    # LHand Description & State Publisher
+    lhand_desc_pkg = FindPackageShare('lhandpro_description')
+    # Default to Left Hand for now as requested
+    lhand_urdf_path = PathJoinSubstitution([lhand_desc_pkg, 'urdf', 'DH126S-L000-A1.urdf'])
+    
+    # Read URDF content for parameter
+    lhand_desc_content = ParameterValue(Command(['cat ', lhand_urdf_path]), value_type=str)
+
+    lhand_robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='lhand_robot_state_publisher',
+        output='screen',
+        parameters=[{'robot_description': lhand_desc_content}]
+    )
+
+    lhand_state_publisher = Node(
+        package='lhandpro_description',
+        executable='lhandpro_state_publisher',
+        name='lhandpro_state_publisher',
+        output='screen'
+    )
+
     # 4. System Controller (Flow Control)
     sys_ctrl_node = Node(
         package='system_controller',
@@ -96,6 +119,7 @@ def generate_launch_description():
         parameters=[{
             'robot_ip': LaunchConfiguration('robot_ip'),
             'robot_urdf_path': urdf_path,
+            'left_hand_urdf_path': lhand_urdf_path,
             'robot_model': LaunchConfiguration('model')
         }]
     )
@@ -113,6 +137,8 @@ def generate_launch_description():
         robot_launch,
         robot_state_publisher_node,
         lhand_launch,
+        lhand_robot_state_publisher,
+        lhand_state_publisher,
         sys_ctrl_node,
         ui_delayed
     ])

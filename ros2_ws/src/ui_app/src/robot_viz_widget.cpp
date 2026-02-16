@@ -137,6 +137,7 @@ void RobotVizWidget::loadRobotModel(const std::string& urdf_path) {
     // Start recursive processing from root link
     std::shared_ptr<const urdf::Link> root = model.getRoot();
     if (root) {
+        root_link_name_ = root->name;
         QMatrix4x4 identity; // Identity matrix for root
         processLinkRecursive(root, identity);
         
@@ -171,6 +172,13 @@ void RobotVizWidget::loadRobotModel(const std::string& urdf_path) {
     
     // Show debug info
     // QMessageBox::information(this, "Model Load Debug", debug_msg);
+}
+
+void RobotVizWidget::setCameraPosition(const QVector3D& pos, const QVector3D& view_center) {
+    if (!view_ || !view_->camera()) return;
+    Qt3DRender::QCamera *camera = view_->camera();
+    camera->setPosition(pos);
+    camera->setViewCenter(view_center);
 }
 
 void RobotVizWidget::processLinkRecursive(std::shared_ptr<const urdf::Link> link, const QMatrix4x4& parent_transform) {
@@ -428,8 +436,8 @@ void RobotVizWidget::updateTransforms() {
             // Adjust "base_link" to whatever the fixed frame is (e.g. "world" or "base")
             // Usually "base" or "base_link" is the root.
             geometry_msgs::msg::TransformStamped t;
-            // Use base_link as the fixed frame
-            t = tf_buffer->lookupTransform("base_link", name, tf2::TimePointZero);
+            // Use dynamic root link
+            t = tf_buffer->lookupTransform(root_link_name_, name, tf2::TimePointZero);
             
             QVector3D pos(t.transform.translation.x, t.transform.translation.y, t.transform.translation.z);
             QQuaternion rot(t.transform.rotation.w, t.transform.rotation.x, t.transform.rotation.y, t.transform.rotation.z);

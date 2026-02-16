@@ -85,6 +85,7 @@ private:
   QPushButton* btn_lhand_move_;
 
   RobotVizWidget* robot_viz_;
+  RobotVizWidget* lhand_viz_; // Dedicated viz for LHand tab
 };
 
 #endif // APP_WINDOW_HPP

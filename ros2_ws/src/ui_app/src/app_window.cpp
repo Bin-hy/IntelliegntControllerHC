@@ -463,6 +463,9 @@ void AppWindow::onCameraConfigChanged() {
 }
 
 QWidget* AppWindow::createLHandTab() {
+    auto * main_widget = new QWidget();
+    auto * main_layout = new QHBoxLayout(main_widget);
+
     auto * widget = new QWidget();
     auto * layout = new QVBoxLayout();
 
@@ -535,6 +538,18 @@ QWidget* AppWindow::createLHandTab() {
 
     widget->setLayout(layout);
     
+    // Right 3D Panel
+    lhand_viz_ = new RobotVizWidget(node_);
+    std::string lhand_path = node_->get_left_hand_urdf_path();
+    if (!lhand_path.empty()) {
+        lhand_viz_->loadRobotModel(lhand_path);
+        // Adjust camera for hand scale
+        lhand_viz_->setCameraPosition(QVector3D(0.3f, 0.2f, 0.3f), QVector3D(0.0f, 0.05f, 0.0f));
+    }
+    
+    main_layout->addWidget(widget, 1);
+    main_layout->addWidget(lhand_viz_, 2);
+
     // Connections
     connect(btn_lhand_enable_, &QPushButton::clicked, this, [this](){
         node_->call_lhand_enable(0, 1);
@@ -565,5 +580,5 @@ QWidget* AppWindow::createLHandTab() {
         });
     });
 
-    return widget;
+    return main_widget;
 }
