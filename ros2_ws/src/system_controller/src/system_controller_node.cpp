@@ -7,6 +7,7 @@
 #include <duco_msg/srv/robot_task_state_rquest.hpp>
 #include <common_msgs/action/execute_task.hpp>
 #include <common_msgs/msg/device_status.hpp>
+#include <common_msgs/srv/set_current_user.hpp>
 #include <lhandpro_interfaces/srv/set_all_position.hpp>
 #include <lhandpro_interfaces/srv/set_position.hpp>
 #include <vision_server/srv/save_image.hpp>
@@ -28,6 +29,7 @@ class SystemController : public rclcpp::Node {
 public:
     using ExecuteTask = common_msgs::action::ExecuteTask;
     using GoalHandleExecuteTask = rclcpp_action::ServerGoalHandle<ExecuteTask>;
+    using SetCurrentUser = common_msgs::srv::SetCurrentUser;
 
     SystemController() : Node("system_controller_node"), is_busy_(false) {
         // Subscribers
@@ -64,6 +66,10 @@ public:
         srv_pause_ = this->create_service<std_srvs::srv::SetBool>(
             "/system/pause_task",
             std::bind(&SystemController::handle_pause_request, this, std::placeholders::_1, std::placeholders::_2));
+
+        srv_set_user_ = this->create_service<SetCurrentUser>(
+            "/system/set_current_user",
+            std::bind(&SystemController::handle_set_current_user, this, std::placeholders::_1, std::placeholders::_2));
 
         // Action Server for Task Execution
         action_server_ = rclcpp_action::create_server<ExecuteTask>(
@@ -112,6 +118,16 @@ private:
     rclcpp::Service<duco_msg::srv::RobotControl>::SharedPtr srv_control_;
     rclcpp::Service<duco_msg::srv::RobotIoControl>::SharedPtr srv_io_;
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr srv_pause_;
+    rclcpp::Service<SetCurrentUser>::SharedPtr srv_set_user_;
+
+    struct CurrentUser {
+        std::string username;
+        std::string role;
+        std::string session_id;
+    };
+
+    CurrentUser current_user_;
+    std::mutex user_mutex_;
 
     void handle_pause_request(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                               std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
@@ -138,6 +154,61 @@ private:
                 response->message = "Not Paused";
             }
         }
+    }
+
+    void handle_set_current_user(const std::shared_ptr<SetCurrentUser::Request> request,
+                                 std::shared_ptr<SetCurrentUser::Response> response) {
+        std::lock_guard<std::mutex> lock(user_mutex_);
+        if (request->username.empty() || request->role.empty() || request->session_id.empty()) {
+            response->success = false;
+            response->message = "invalid user information";
+            return;
+        }
+        current_user_.username = request->username;
+        current_user_.role = request->role;
+        current_user_.session_id = request->session_id;
+        response->success = true;
+        response->message = "user context updated";
+        RCLCPP_INFO(this->get_logger(), "Current user set to %s (%s)", current_user_.username.c_str(), current_user_.role.c_str());
+    }
+
+    bool has_permission(const std::string& role, const std::string& action) {
+        if (role == "admin") {
+            return true;
+        }
+        if (role == "maintainer") {
+            if (action == "power_on" || action == "power_off" ||
+                action == "start_task" || action == "stop_task" ||
+                action == "modify_param" || action == "calibrate_system") {
+                return true;
+            }
+            return false;
+        }
+        if (role == "operator") {
+            if (action == "power_on" || action == "power_off" ||
+                action == "start_task" || action == "stop_task") {
+                return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
+    bool check_user_permission(const std::string& action, std::string& message) {
+        std::lock_guard<std::mutex> lock(user_mutex_);
+        if (current_user_.username.empty()) {
+            message = "no authenticated user";
+            return false;
+        }
+        std::string role_lower = current_user_.role;
+        for (char& c : role_lower) {
+            c = static_cast<char>(::tolower(c));
+        }
+        if (!has_permission(role_lower, action)) {
+            message = "permission denied";
+            return false;
+        }
+        return true;
     }
 
     // Callbacks
@@ -472,19 +543,39 @@ private:
     }
 
     // Keep existing handlers...
-    void handle_move_request(const std::shared_ptr<duco_msg::srv::RobotMove::Request> /*request*/,
+    void handle_move_request(const std::shared_ptr<duco_msg::srv::RobotMove::Request> request,
                              std::shared_ptr<duco_msg::srv::RobotMove::Response> response) {
-        // ... (Keep existing logic or simplify)
-        response->response = "OK"; 
+        (void)request;
+        std::string msg;
+        if (!check_user_permission("start_task", msg)) {
+            response->response = "DENY:" + msg;
+            RCLCPP_WARN(this->get_logger(), "Move request denied: %s", msg.c_str());
+            return;
+        }
+        response->response = "OK";
     }
     
-    void handle_control_request(const std::shared_ptr<duco_msg::srv::RobotControl::Request>,
+    void handle_control_request(const std::shared_ptr<duco_msg::srv::RobotControl::Request> request,
                              std::shared_ptr<duco_msg::srv::RobotControl::Response> response) {
+        (void)request;
+        std::string msg;
+        if (!check_user_permission("power_on", msg)) {
+            response->response = "DENY:" + msg;
+            RCLCPP_WARN(this->get_logger(), "Control request denied: %s", msg.c_str());
+            return;
+        }
         response->response = "OK";
     }
 
-    void handle_io_request(const std::shared_ptr<duco_msg::srv::RobotIoControl::Request>,
+    void handle_io_request(const std::shared_ptr<duco_msg::srv::RobotIoControl::Request> request,
                              std::shared_ptr<duco_msg::srv::RobotIoControl::Response> response) {
+        (void)request;
+        std::string msg;
+        if (!check_user_permission("modify_param", msg)) {
+            response->response = "DENY:" + msg;
+            RCLCPP_WARN(this->get_logger(), "IO request denied: %s", msg.c_str());
+            return;
+        }
         response->response = "OK";
     }
 

@@ -39,10 +39,20 @@ find_package(rclcpp_action REQUIRED)
     src/task_dialogs.cpp
     src/point_cloud_widget.cpp
     src/robot_viz_widget.cpp
+    src/auth_manager.cpp
+    src/permission_manager.cpp
+    src/auth_log_manager.cpp
+    src/idle_logout_watcher.cpp
+    src/login_window.cpp
     include/ui_app/point_cloud_widget.hpp
     include/ui_app/robot_viz_widget.hpp
     include/ui_app/task_widget.hpp
     include/ui_app/task_dialogs.hpp
+    include/ui_app/auth_manager.hpp
+    include/ui_app/permission_manager.hpp
+    include/ui_app/auth_log_manager.hpp
+    include/ui_app/idle_logout_watcher.hpp
+    include/ui_app/login_window.hpp
     resources/resources.qrc
   )
 

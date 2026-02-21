@@ -15,47 +15,77 @@
 #include <QTimer>
 #include <QScrollArea>
 #include <QMessageBox>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QLineEdit>
+#include <QDateTimeEdit>
+#include <QInputDialog>
 
-AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent) 
-    : QWidget(parent), node_(std::move(node)) 
+AppWindow::AppWindow(std::shared_ptr<RosNode> node,
+                     std::shared_ptr<AuthManager> auth_manager,
+                     std::shared_ptr<AuthLogManager> log_manager,
+                     PermissionManager* permission_manager,
+                     UserRole current_role,
+                     QWidget *parent) 
+    : QWidget(parent),
+      node_(std::move(node)),
+      auth_manager_(std::move(auth_manager)),
+      auth_log_manager_(std::move(log_manager)),
+      permission_manager_(permission_manager),
+      current_role_(current_role),
+      tabs_(nullptr),
+      admin_tab_(nullptr),
+      admin_user_table_(nullptr),
+      admin_log_table_(nullptr),
+      admin_log_user_filter_(nullptr),
+      admin_log_from_(nullptr),
+      admin_log_to_(nullptr),
+      admin_log_success_only_(nullptr),
+      admin_log_failure_only_(nullptr)
 {
     auto * main_layout = new QVBoxLayout();
     
-    // --- Header ---
     label_count_ = new QLabel("Heartbeat: 0");
     main_layout->addWidget(label_count_);
 
-    // --- Tab Widget ---
-    auto * tabs = new QTabWidget();
-    tabs->addTab(createControlTab(), "Power & Status");
-    tabs->addTab(createMoveTab(), "Motion Control");
-    tabs->addTab(createCameraTab(), "Vision System");
+    tabs_ = new QTabWidget();
+    tabs_->addTab(createControlTab(), "Power & Status");
+    tabs_->addTab(createMoveTab(), "Motion Control");
+    tabs_->addTab(createCameraTab(), "Vision System");
     
     robot_viz_ = new RobotVizWidget(node_);
-    tabs->addTab(robot_viz_, "3D Simulation");
+    tabs_->addTab(robot_viz_, "3D Simulation");
     std::string urdf_path = node_->get_robot_urdf_path();
     robot_viz_->loadRobotModel(urdf_path);
 
-    // Load Left Hand
     std::string lhand_path = node_->get_left_hand_urdf_path();
     if (!lhand_path.empty()) robot_viz_->loadRobotModel(lhand_path);
 
-    // Load Right Hand
     std::string rhand_path = node_->get_right_hand_urdf_path();
     if (!rhand_path.empty()) robot_viz_->loadRobotModel(rhand_path);
 
-    tabs->addTab(createLHandTab(), "LHand Control");
-    tabs->addTab(createTaskTab(), "Task Module");
-    main_layout->addWidget(tabs);
+    tabs_->addTab(createLHandTab(), "LHand Control");
+    tabs_->addTab(createTaskTab(), "Task Module");
+
+    rebuildAdminTab();
+
+    main_layout->addWidget(tabs_);
     
     setLayout(main_layout);
     
-    // Timer for UI updates
+    applyPermissionToControls();
+
     timer_ = new QTimer(this);
     connect(timer_, &QTimer::timeout, this, [this](){
       updateUI();
     });
     timer_->start(100);
+}
+
+void AppWindow::setCurrentRole(UserRole role) {
+    current_role_ = role;
+    rebuildAdminTab();
+    applyPermissionToControls();
 }
 
 QWidget* AppWindow::createControlTab() {
@@ -91,11 +121,41 @@ QWidget* AppWindow::createControlTab() {
 
       widget->setLayout(layout);
 
-      // Connect
-      connect(btn_power_on_, &QPushButton::clicked, this, [this](){ node_->call_robot_control("poweron"); });
-      connect(btn_enable_, &QPushButton::clicked, this, [this](){ node_->call_robot_control("enable"); });
-      connect(btn_disable_, &QPushButton::clicked, this, [this](){ node_->call_robot_control("disable"); });
-      connect(btn_power_off_, &QPushButton::clicked, this, [this](){ node_->call_robot_control("poweroff"); });
+      connect(btn_power_on_, &QPushButton::clicked, this, [this](){
+          if (permission_manager_ &&
+              !permission_manager_->hasPermission(current_role_, ActionType::PowerOn)) {
+              QMessageBox::warning(this, "权限不足", "当前用户无权执行 Power ON 操作");
+              return;
+          }
+          node_->call_robot_control("poweron");
+      });
+
+      connect(btn_enable_, &QPushButton::clicked, this, [this](){
+          if (permission_manager_ &&
+              !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+              QMessageBox::warning(this, "权限不足", "当前用户无权执行 Enable 操作");
+              return;
+          }
+          node_->call_robot_control("enable");
+      });
+
+      connect(btn_disable_, &QPushButton::clicked, this, [this](){
+          if (permission_manager_ &&
+              !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+              QMessageBox::warning(this, "权限不足", "当前用户无权执行 Disable 操作");
+              return;
+          }
+          node_->call_robot_control("disable");
+      });
+
+      connect(btn_power_off_, &QPushButton::clicked, this, [this](){
+          if (permission_manager_ &&
+              !permission_manager_->hasPermission(current_role_, ActionType::PowerOff)) {
+              QMessageBox::warning(this, "权限不足", "当前用户无权执行 Power OFF 操作");
+              return;
+          }
+          node_->call_robot_control("poweroff");
+      });
 
       return widget;
 }
@@ -463,6 +523,82 @@ void AppWindow::onCameraConfigChanged() {
     }
 }
 
+void AppWindow::rebuildAdminTab() {
+    if (!tabs_) {
+        return;
+    }
+    bool can_admin = permission_manager_ &&
+                     permission_manager_->hasPermission(current_role_, ActionType::CreateUser);
+    int idx = admin_tab_ ? tabs_->indexOf(admin_tab_) : -1;
+    if (can_admin) {
+        if (!admin_tab_) {
+            admin_tab_ = createAdminTab();
+            tabs_->addTab(admin_tab_, "Admin Console");
+        } else if (idx < 0) {
+            tabs_->addTab(admin_tab_, "Admin Console");
+        }
+    } else {
+        if (idx >= 0) {
+            tabs_->removeTab(idx);
+        }
+        if (admin_tab_) {
+            admin_tab_->deleteLater();
+            admin_tab_ = nullptr;
+            admin_user_table_ = nullptr;
+            admin_log_table_ = nullptr;
+            admin_log_user_filter_ = nullptr;
+            admin_log_from_ = nullptr;
+            admin_log_to_ = nullptr;
+            admin_log_success_only_ = nullptr;
+            admin_log_failure_only_ = nullptr;
+        }
+    }
+}
+
+void AppWindow::applyPermissionToControls() {
+    if (!permission_manager_) {
+        return;
+    }
+    if (btn_power_on_) {
+        btn_power_on_->setEnabled(
+            permission_manager_->hasPermission(current_role_, ActionType::PowerOn));
+    }
+    if (btn_power_off_) {
+        btn_power_off_->setEnabled(
+            permission_manager_->hasPermission(current_role_, ActionType::PowerOff));
+    }
+    bool can_modify = permission_manager_->hasPermission(current_role_, ActionType::ModifyParam);
+    bool can_calib = permission_manager_->hasPermission(current_role_, ActionType::CalibrateSystem);
+
+    if (btn_enable_) {
+        btn_enable_->setEnabled(can_modify);
+    }
+    if (btn_disable_) {
+        btn_disable_->setEnabled(can_modify);
+    }
+
+    if (btn_lhand_enable_) {
+        btn_lhand_enable_->setEnabled(can_modify);
+    }
+    if (btn_lhand_disable_) {
+        btn_lhand_disable_->setEnabled(can_modify);
+    }
+    if (btn_lhand_home_) {
+        btn_lhand_home_->setEnabled(can_calib);
+    }
+    if (btn_lhand_move_) {
+        btn_lhand_move_->setEnabled(can_modify);
+    }
+    if (btn_lhand_set_vel_) {
+        btn_lhand_set_vel_->setEnabled(can_modify);
+    }
+    for (int i = 0; i < 6; ++i) {
+        if (lhand_joint_buttons_[i]) {
+            lhand_joint_buttons_[i]->setEnabled(can_modify);
+        }
+    }
+}
+
 QWidget* AppWindow::createLHandTab() {
     auto * main_widget = new QWidget();
     auto * main_layout = new QHBoxLayout(main_widget);
@@ -501,11 +637,15 @@ QWidget* AppWindow::createLHandTab() {
         spin_lhand_pos_[i]->setValue(0);
         layout_joints->addWidget(spin_lhand_pos_[i], i+1, 1);
         
-        auto * btn_set = new QPushButton("Set & Move");
-        layout_joints->addWidget(btn_set, i+1, 2);
+        lhand_joint_buttons_[i] = new QPushButton("Set & Move");
+        layout_joints->addWidget(lhand_joint_buttons_[i], i+1, 2);
         
-        // Connect per-joint set
-        connect(btn_set, &QPushButton::clicked, this, [this, i](){
+        connect(lhand_joint_buttons_[i], &QPushButton::clicked, this, [this, i](){
+            if (permission_manager_ &&
+                !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+                QMessageBox::warning(this, "权限不足", "当前用户无权单独控制手指关节");
+                return;
+            }
             int pos = spin_lhand_pos_[i]->value();
             node_->call_lhand_set_position(i+1, pos); 
             node_->call_lhand_move(i+1);
@@ -525,8 +665,8 @@ QWidget* AppWindow::createLHandTab() {
     spin_lhand_vel_->setValue(20000);
     layout_vel->addWidget(spin_lhand_vel_);
     
-    auto * btn_set_vel = new QPushButton("Set Velocity (All)");
-    layout_vel->addWidget(btn_set_vel);
+    btn_lhand_set_vel_ = new QPushButton("Set Velocity (All)");
+    layout_vel->addWidget(btn_lhand_set_vel_);
     
     group_vel->setLayout(layout_vel);
     layout->addWidget(group_vel);
@@ -553,23 +693,48 @@ QWidget* AppWindow::createLHandTab() {
 
     // Connections
     connect(btn_lhand_enable_, &QPushButton::clicked, this, [this](){
+        if (permission_manager_ &&
+            !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+            QMessageBox::warning(this, "权限不足", "当前用户无权使能灵巧手");
+            return;
+        }
         node_->call_lhand_enable(true);
     });
     
     connect(btn_lhand_disable_, &QPushButton::clicked, this, [this](){
+        if (permission_manager_ &&
+            !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+            QMessageBox::warning(this, "权限不足", "当前用户无权去使能灵巧手");
+            return;
+        }
         node_->call_lhand_enable(false);
     });
 
     connect(btn_lhand_home_, &QPushButton::clicked, this, [this](){
+        if (permission_manager_ &&
+            !permission_manager_->hasPermission(current_role_, ActionType::CalibrateSystem)) {
+            QMessageBox::warning(this, "权限不足", "当前用户无权执行灵巧手回零");
+            return;
+        }
         node_->call_lhand_home(0);
     });
     
-    connect(btn_set_vel, &QPushButton::clicked, this, [this](){
+    connect(btn_lhand_set_vel_, &QPushButton::clicked, this, [this](){
+        if (permission_manager_ &&
+            !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+            QMessageBox::warning(this, "权限不足", "当前用户无权修改灵巧手速度");
+            return;
+        }
         int vel = spin_lhand_vel_->value();
         for(int i=0; i<6; ++i) node_->call_lhand_set_velocity(i+1, vel);
     });
     
     connect(btn_lhand_move_, &QPushButton::clicked, this, [this](){
+        if (permission_manager_ &&
+            !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+            QMessageBox::warning(this, "权限不足", "当前用户无权整体移动灵巧手");
+            return;
+        }
         std::array<int, 6> positions;
         for(int i=0; i<6; ++i) {
              positions[i] = spin_lhand_pos_[i]->value();
@@ -582,4 +747,325 @@ QWidget* AppWindow::createLHandTab() {
     });
 
     return main_widget;
+}
+
+QWidget* AppWindow::createAdminTab() {
+    auto * widget = new QWidget();
+    auto * layout = new QVBoxLayout(widget);
+
+    auto * group_users = new QGroupBox("用户管理");
+    auto * layout_users = new QVBoxLayout();
+    admin_user_table_ = new QTableWidget();
+    admin_user_table_->setColumnCount(5);
+    admin_user_table_->setHorizontalHeaderLabels(QStringList() << "用户名" << "角色" << "失败次数" << "锁定" << "禁用");
+    admin_user_table_->horizontalHeader()->setStretchLastSection(true);
+    admin_user_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    admin_user_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    layout_users->addWidget(admin_user_table_);
+
+    auto * user_btn_layout = new QHBoxLayout();
+    auto * btn_refresh_users = new QPushButton("刷新");
+    auto * btn_create_user = new QPushButton("创建用户");
+    auto * btn_delete_user = new QPushButton("删除用户");
+    auto * btn_lock_user = new QPushButton("锁定");
+    auto * btn_unlock_user = new QPushButton("解锁");
+    auto * btn_reset_password = new QPushButton("重置密码");
+
+    user_btn_layout->addWidget(btn_refresh_users);
+    user_btn_layout->addWidget(btn_create_user);
+    user_btn_layout->addWidget(btn_delete_user);
+    user_btn_layout->addWidget(btn_lock_user);
+    user_btn_layout->addWidget(btn_unlock_user);
+    user_btn_layout->addWidget(btn_reset_password);
+    user_btn_layout->addStretch();
+    layout_users->addLayout(user_btn_layout);
+    group_users->setLayout(layout_users);
+    layout->addWidget(group_users);
+
+    auto refreshUsers = [this]() {
+        if (!auth_manager_ || !admin_user_table_) {
+            return;
+        }
+        QVector<UserInfo> users;
+        if (!auth_manager_->listUsers(users)) {
+            return;
+        }
+        admin_user_table_->setRowCount(users.size());
+        for (int i = 0; i < users.size(); ++i) {
+            const UserInfo& u = users[i];
+            auto * item_name = new QTableWidgetItem(u.username);
+            QString role_str = "Admin";
+            if (u.role == UserRole::Operator) role_str = "Operator";
+            else if (u.role == UserRole::Maintainer) role_str = "Maintainer";
+            auto * item_role = new QTableWidgetItem(role_str);
+            auto * item_fail = new QTableWidgetItem(QString::number(u.failed_attempts));
+            qint64 now = QDateTime::currentSecsSinceEpoch();
+            bool locked = u.lock_until > now;
+            auto * item_locked = new QTableWidgetItem(locked ? "是" : "否");
+            auto * item_disabled = new QTableWidgetItem(u.disabled ? "是" : "否");
+            admin_user_table_->setItem(i, 0, item_name);
+            admin_user_table_->setItem(i, 1, item_role);
+            admin_user_table_->setItem(i, 2, item_fail);
+            admin_user_table_->setItem(i, 3, item_locked);
+            admin_user_table_->setItem(i, 4, item_disabled);
+        }
+        admin_user_table_->resizeColumnsToContents();
+    };
+
+    bool can_create = permission_manager_ &&
+                      permission_manager_->hasPermission(current_role_, ActionType::CreateUser);
+    bool can_modify = permission_manager_ &&
+                      permission_manager_->hasPermission(current_role_, ActionType::ModifyUser);
+    bool can_delete = permission_manager_ &&
+                      permission_manager_->hasPermission(current_role_, ActionType::DeleteUser);
+    bool can_reset_pw = permission_manager_ &&
+                        permission_manager_->hasPermission(current_role_, ActionType::ResetUserPassword);
+    bool can_lock = permission_manager_ &&
+                    permission_manager_->hasPermission(current_role_, ActionType::LockUnlockUser);
+    bool can_view_logs = permission_manager_ &&
+                         permission_manager_->hasPermission(current_role_, ActionType::ViewAuthLog);
+    bool can_delete_logs = permission_manager_ &&
+                           permission_manager_->hasPermission(current_role_, ActionType::DeleteAuthLog);
+
+    btn_create_user->setEnabled(can_create);
+    btn_delete_user->setEnabled(can_delete);
+    btn_lock_user->setEnabled(can_lock);
+    btn_unlock_user->setEnabled(can_lock);
+    btn_reset_password->setEnabled(can_reset_pw);
+
+    connect(btn_refresh_users, &QPushButton::clicked, this, [refreshUsers]() {
+        refreshUsers();
+    });
+
+    connect(btn_create_user, &QPushButton::clicked, this, [this, can_create, refreshUsers]() {
+        if (!can_create || !auth_manager_) {
+            return;
+        }
+        bool ok = false;
+        QString username = QInputDialog::getText(this, "创建用户", "用户名:", QLineEdit::Normal, "", &ok);
+        if (!ok || username.trimmed().isEmpty()) {
+            return;
+        }
+        QString password = QInputDialog::getText(this, "创建用户", "密码:", QLineEdit::Password, "", &ok);
+        if (!ok || password.isEmpty()) {
+            return;
+        }
+        QString confirm = QInputDialog::getText(this, "创建用户", "确认密码:", QLineEdit::Password, "", &ok);
+        if (!ok || confirm != password) {
+            QMessageBox::warning(this, "创建用户失败", "两次输入的密码不一致");
+            return;
+        }
+        QStringList roles;
+        roles << "Operator" << "Maintainer" << "Admin";
+        QString role_str = QInputDialog::getItem(this, "创建用户", "角色:", roles, 0, false, &ok);
+        if (!ok || role_str.isEmpty()) {
+            return;
+        }
+        UserRole role = UserRole::Operator;
+        if (role_str.compare("Maintainer", Qt::CaseInsensitive) == 0) {
+            role = UserRole::Maintainer;
+        } else if (role_str.compare("Admin", Qt::CaseInsensitive) == 0) {
+            role = UserRole::Admin;
+        }
+        QString err;
+        if (!auth_manager_->createUser(username.trimmed(), password, role, err)) {
+            QMessageBox::warning(this, "创建用户失败", err);
+            return;
+        }
+        refreshUsers();
+    });
+
+    auto selectedUsername = [this]() -> QString {
+        if (!admin_user_table_) {
+            return QString();
+        }
+        auto ranges = admin_user_table_->selectedRanges();
+        if (ranges.isEmpty()) {
+            return QString();
+        }
+        int row = ranges.first().topRow();
+        auto * item = admin_user_table_->item(row, 0);
+        if (!item) {
+            return QString();
+        }
+        return item->text();
+    };
+
+    connect(btn_delete_user, &QPushButton::clicked, this, [this, can_delete, refreshUsers, selectedUsername]() {
+        if (!can_delete || !auth_manager_) {
+            return;
+        }
+        QString username = selectedUsername();
+        if (username.isEmpty()) {
+            QMessageBox::warning(this, "删除用户", "请先选择要删除的用户");
+            return;
+        }
+        if (QMessageBox::question(this, "删除用户", "确认删除用户 " + username + " ?") != QMessageBox::Yes) {
+            return;
+        }
+        QString err;
+        if (!auth_manager_->deleteUser(username, err)) {
+            QMessageBox::warning(this, "删除用户失败", err);
+            return;
+        }
+        refreshUsers();
+    });
+
+    connect(btn_lock_user, &QPushButton::clicked, this, [this, can_lock, refreshUsers, selectedUsername]() {
+        if (!can_lock || !auth_manager_) {
+            return;
+        }
+        QString username = selectedUsername();
+        if (username.isEmpty()) {
+            QMessageBox::warning(this, "锁定用户", "请先选择要锁定的用户");
+            return;
+        }
+        QString err;
+        if (!auth_manager_->setLocked(username, true, err)) {
+            QMessageBox::warning(this, "锁定用户失败", err);
+            return;
+        }
+        refreshUsers();
+    });
+
+    connect(btn_unlock_user, &QPushButton::clicked, this, [this, can_lock, refreshUsers, selectedUsername]() {
+        if (!can_lock || !auth_manager_) {
+            return;
+        }
+        QString username = selectedUsername();
+        if (username.isEmpty()) {
+            QMessageBox::warning(this, "解锁用户", "请先选择要解锁的用户");
+            return;
+        }
+        QString err;
+        if (!auth_manager_->setLocked(username, false, err)) {
+            QMessageBox::warning(this, "解锁用户失败", err);
+            return;
+        }
+        refreshUsers();
+    });
+
+    connect(btn_reset_password, &QPushButton::clicked, this, [this, can_reset_pw, refreshUsers, selectedUsername]() {
+        if (!can_reset_pw || !auth_manager_) {
+            return;
+        }
+        QString username = selectedUsername();
+        if (username.isEmpty()) {
+            QMessageBox::warning(this, "重置密码", "请先选择要重置密码的用户");
+            return;
+        }
+        bool ok = false;
+        QString password = QInputDialog::getText(this, "重置密码", "新密码:", QLineEdit::Password, "", &ok);
+        if (!ok || password.isEmpty()) {
+            return;
+        }
+        QString confirm = QInputDialog::getText(this, "重置密码", "确认新密码:", QLineEdit::Password, "", &ok);
+        if (!ok || confirm != password) {
+            QMessageBox::warning(this, "重置密码失败", "两次输入的密码不一致");
+            return;
+        }
+        QString err;
+        if (!auth_manager_->adminResetPassword(username, password, true, err)) {
+            QMessageBox::warning(this, "重置密码失败", err);
+            return;
+        }
+        refreshUsers();
+    });
+
+    refreshUsers();
+
+    if (can_view_logs && auth_log_manager_) {
+        auto * group_logs = new QGroupBox("登录日志");
+        auto * layout_logs = new QVBoxLayout();
+
+        auto * filter_layout = new QHBoxLayout();
+        admin_log_from_ = new QDateTimeEdit(QDateTime::currentDateTime().addDays(-7));
+        admin_log_to_ = new QDateTimeEdit(QDateTime::currentDateTime());
+        admin_log_from_->setDisplayFormat("yyyy-MM-dd HH:mm:ss");
+        admin_log_to_->setDisplayFormat("yyyy-MM-dd HH:mm:ss");
+        admin_log_user_filter_ = new QLineEdit();
+        admin_log_success_only_ = new QCheckBox("仅成功");
+        admin_log_failure_only_ = new QCheckBox("仅失败");
+        auto * btn_refresh_logs = new QPushButton("刷新");
+        auto * btn_delete_old = new QPushButton("删除早于起始时间的日志");
+
+        filter_layout->addWidget(new QLabel("起始时间"));
+        filter_layout->addWidget(admin_log_from_);
+        filter_layout->addWidget(new QLabel("结束时间"));
+        filter_layout->addWidget(admin_log_to_);
+        filter_layout->addWidget(new QLabel("用户过滤"));
+        filter_layout->addWidget(admin_log_user_filter_);
+        filter_layout->addWidget(admin_log_success_only_);
+        filter_layout->addWidget(admin_log_failure_only_);
+        filter_layout->addWidget(btn_refresh_logs);
+        if (!can_delete_logs) {
+            btn_delete_old->setEnabled(false);
+        }
+        filter_layout->addWidget(btn_delete_old);
+        filter_layout->addStretch();
+
+        layout_logs->addLayout(filter_layout);
+
+        admin_log_table_ = new QTableWidget();
+        admin_log_table_->setColumnCount(5);
+        admin_log_table_->setHorizontalHeaderLabels(QStringList() << "时间" << "用户" << "结果" << "原因" << "来源");
+        admin_log_table_->horizontalHeader()->setStretchLastSection(true);
+        admin_log_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+        admin_log_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+        layout_logs->addWidget(admin_log_table_);
+
+        auto refreshLogs = [this]() {
+            if (!auth_log_manager_ || !admin_log_table_) {
+                return;
+            }
+            QDateTime from = admin_log_from_ ? admin_log_from_->dateTime() : QDateTime();
+            QDateTime to = admin_log_to_ ? admin_log_to_->dateTime() : QDateTime();
+            QString user_filter = admin_log_user_filter_ ? admin_log_user_filter_->text().trimmed() : QString();
+            bool success_only = admin_log_success_only_ && admin_log_success_only_->isChecked();
+            bool failure_only = admin_log_failure_only_ && admin_log_failure_only_->isChecked();
+            QVector<AuthLogEntry> logs = auth_log_manager_->loadLogs(from, to, user_filter, success_only, failure_only);
+            admin_log_table_->setRowCount(logs.size());
+            for (int i = 0; i < logs.size(); ++i) {
+                const AuthLogEntry& e = logs[i];
+                auto * item_time = new QTableWidgetItem(e.timestamp.toString(Qt::ISODate));
+                auto * item_user = new QTableWidgetItem(e.username);
+                auto * item_result = new QTableWidgetItem(e.success ? "成功" : "失败");
+                auto * item_reason = new QTableWidgetItem(e.reason);
+                auto * item_source = new QTableWidgetItem(e.source);
+                admin_log_table_->setItem(i, 0, item_time);
+                admin_log_table_->setItem(i, 1, item_user);
+                admin_log_table_->setItem(i, 2, item_result);
+                admin_log_table_->setItem(i, 3, item_reason);
+                admin_log_table_->setItem(i, 4, item_source);
+            }
+            admin_log_table_->resizeColumnsToContents();
+        };
+
+        connect(btn_refresh_logs, &QPushButton::clicked, this, [refreshLogs]() {
+            refreshLogs();
+        });
+
+        connect(btn_delete_old, &QPushButton::clicked, this, [this, can_delete_logs]() {
+            if (!can_delete_logs || !auth_log_manager_ || !admin_log_from_) {
+                return;
+            }
+            QDateTime before = admin_log_from_->dateTime();
+            if (!before.isValid()) {
+                return;
+            }
+            if (QMessageBox::question(this, "删除日志", "确认删除早于起始时间的日志记录?") != QMessageBox::Yes) {
+                return;
+            }
+            if (!auth_log_manager_->deleteLogs(before)) {
+                QMessageBox::warning(this, "删除日志失败", "删除日志时发生错误");
+            }
+        });
+
+        refreshLogs();
+
+        group_logs->setLayout(layout_logs);
+        layout->addWidget(group_logs);
+    }
+
+    return widget;
 }
