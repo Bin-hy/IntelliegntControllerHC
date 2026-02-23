@@ -203,8 +203,10 @@ QWidget* AppWindow::createMoveTab() {
       // Connect Move Actions
       connect(btn_get_joints, &QPushButton::clicked, this, [this](){
           std::lock_guard<std::mutex> lock(node_->data_mutex_);
-          if(node_->current_joints_.size() >= 7) {
-              for(int i=0; i<7; ++i) spin_joints_[i]->setValue(node_->current_joints_[i]);
+          const int n = static_cast<int>(node_->current_joints_.size());
+          const int to_copy = std::min(n, 7);
+          for(int i = 0; i < to_copy; ++i) {
+              spin_joints_[i]->setValue(node_->current_joints_[i]);
           }
       });
 

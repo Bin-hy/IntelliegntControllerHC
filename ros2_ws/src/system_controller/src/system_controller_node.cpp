@@ -471,21 +471,75 @@ private:
         return success;
     }
 
-    // Keep existing handlers...
-    void handle_move_request(const std::shared_ptr<duco_msg::srv::RobotMove::Request> /*request*/,
+    void handle_move_request(const std::shared_ptr<duco_msg::srv::RobotMove::Request> request,
                              std::shared_ptr<duco_msg::srv::RobotMove::Response> response) {
-        // ... (Keep existing logic or simplify)
-        response->response = "OK"; 
+        if (is_paused_) {
+            response->response = "System paused";
+            return;
+        }
+
+        if (!client_move_->wait_for_service(std::chrono::seconds(1))) {
+            RCLCPP_ERROR(this->get_logger(), "DucoRobot move service not available");
+            response->response = "Service unavailable";
+            return;
+        }
+
+        auto future = client_move_->async_send_request(request,
+            [this](rclcpp::Client<duco_msg::srv::RobotMove>::SharedFuture f) {
+                try {
+                    auto res = f.get();
+                    RCLCPP_INFO(this->get_logger(), "Forwarded move result: %s", res->response.c_str());
+                } catch (const std::exception& e) {
+                    RCLCPP_ERROR(this->get_logger(), "Forwarded move failed: %s", e.what());
+                }
+            });
+
+        (void)future;
+        response->response = "Forwarded";
     }
     
-    void handle_control_request(const std::shared_ptr<duco_msg::srv::RobotControl::Request>,
+    void handle_control_request(const std::shared_ptr<duco_msg::srv::RobotControl::Request> request,
                              std::shared_ptr<duco_msg::srv::RobotControl::Response> response) {
-        response->response = "OK";
+        if (!client_control_->wait_for_service(std::chrono::seconds(1))) {
+            RCLCPP_ERROR(this->get_logger(), "DucoRobot control service not available");
+            response->response = "Service unavailable";
+            return;
+        }
+
+        auto future = client_control_->async_send_request(request,
+            [this](rclcpp::Client<duco_msg::srv::RobotControl>::SharedFuture f) {
+                try {
+                    auto res = f.get();
+                    RCLCPP_INFO(this->get_logger(), "Forwarded control result: %s", res->response.c_str());
+                } catch (const std::exception& e) {
+                    RCLCPP_ERROR(this->get_logger(), "Forwarded control failed: %s", e.what());
+                }
+            });
+
+        (void)future;
+        response->response = "Forwarded";
     }
 
-    void handle_io_request(const std::shared_ptr<duco_msg::srv::RobotIoControl::Request>,
+    void handle_io_request(const std::shared_ptr<duco_msg::srv::RobotIoControl::Request> request,
                              std::shared_ptr<duco_msg::srv::RobotIoControl::Response> response) {
-        response->response = "OK";
+        if (!client_io_->wait_for_service(std::chrono::seconds(1))) {
+            RCLCPP_ERROR(this->get_logger(), "DucoRobot IO service not available");
+            response->response = "Service unavailable";
+            return;
+        }
+
+        auto future = client_io_->async_send_request(request,
+            [this](rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedFuture f) {
+                try {
+                    auto res = f.get();
+                    RCLCPP_INFO(this->get_logger(), "Forwarded IO result: %s", res->response.c_str());
+                } catch (const std::exception& e) {
+                    RCLCPP_ERROR(this->get_logger(), "Forwarded IO failed: %s", e.what());
+                }
+            });
+
+        (void)future;
+        response->response = "Forwarded";
     }
 
 };

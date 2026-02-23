@@ -162,19 +162,38 @@ void RosNode::update_camera_subscriptions(const std::string& camera_ns, bool col
 
 void RosNode::robot_state_callback(const duco_msg::msg::DucoRobotState::SharedPtr msg) {
     std::lock_guard<std::mutex> lock(data_mutex_);
-    last_robot_state_ = msg;
-    
-    // Update current joints and cartesian position
-    current_joints_.assign(msg->joint_actual_position.begin(), msg->joint_actual_position.end());
-    current_cart_pos_.assign(msg->cart_actual_position.begin(), msg->cart_actual_position.end());
 
-    // Synthesize device status for Duco arm
+    last_robot_state_ = msg;
+
+    std::stringstream ss;
+    ss << "State Code: " << static_cast<int>(msg->robot_state) << "\n";
+    ss << "Error Code: " << msg->robot_error << "\n";
+    ss << "Collision: " << (msg->collision ? "YES" : "NO") << "\n";
+
+    current_joints_.clear();
+    ss << "Joint Pos: [";
+    const auto joints_size = msg->joint_actual_position.size();
+    for (size_t i = 0; i < joints_size; ++i) {
+        ss << msg->joint_actual_position[i];
+        if (i + 1 < joints_size) ss << ", ";
+        current_joints_.push_back(msg->joint_actual_position[i]);
+    }
+    ss << "] (" << joints_size << " DOF)\n";
+
+    current_cart_pos_.clear();
+    const auto cart_size = msg->cart_actual_position.size();
+    const size_t cart_to_copy = cart_size < 6 ? cart_size : 6;
+    for (size_t i = 0; i < cart_to_copy; ++i) {
+        current_cart_pos_.push_back(msg->cart_actual_position[i]);
+    }
+
+    last_robot_state_str_ = ss.str();
+
     common_msgs::msg::DeviceStatus status;
     status.device_type = "duco";
-    status.device_model = "unknown"; 
-    // Assuming 6 = Enabled/Ready
-    status.status = (msg->robot_state == 6) ? "ready" : "connected"; 
-    status.device_sn = "duco_arm_1"; // Placeholder
+    status.device_model = "unknown";
+    status.status = (msg->robot_state == 6) ? "ready" : "connected";
+    status.device_sn = "duco_arm_1";
     
     connected_devices_["duco"] = status;
 }
@@ -417,7 +436,7 @@ void RosNode::call_robot_move_joint(const std::vector<double>& joints) {
     request->v = 20.0; // Default velocity % or value
     request->a = 100.0; // Default accel
     request->r = 0.0;
-    request->arm_num = 1; // Default arm
+    request->arm_num = 0;
     
     using ServiceT = duco_msg::srv::RobotMove;
     client_move_->async_send_request(request, 
@@ -441,7 +460,7 @@ void RosNode::call_robot_io(const std::string& command, int type, int port, bool
     request->type = type;
     request->port = port;
     request->value = value;
-    request->arm_num = 1;
+    request->arm_num = 0;
     request->block = false;
 
     using ServiceT = duco_msg::srv::RobotIoControl;
@@ -642,7 +661,7 @@ void RosNode::call_robot_move(const std::string& command,
     request->r = r;
     request->tool = tool;
     request->wobj = wobj;
-    request->arm_num = 1; // Default
+    request->arm_num = 0;
     request->block = false;
 
     using ServiceT = duco_msg::srv::RobotMove;
