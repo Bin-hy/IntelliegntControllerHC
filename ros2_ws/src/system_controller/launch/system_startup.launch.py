@@ -41,6 +41,14 @@ def generate_launch_description():
         output='screen'
     )
     
+    # 3.5 LHand Service (SDK Wrapper)
+    lhand_node = Node(
+        package='lhandpro_service',
+        executable='lhandpro_service',
+        name='lhandpro_service',
+        output='screen'
+    )
+    
     # 4. System Controller (The Brain)
     system_controller_node = Node(
         package='system_controller',
@@ -68,6 +76,7 @@ def generate_launch_description():
         robot_launch,
         vision_launch,
         glove_node,
+        lhand_node,
         system_controller_node,
         ui_launch
     ])

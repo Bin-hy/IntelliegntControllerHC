@@ -9,6 +9,7 @@
 #include <common_msgs/msg/device_status.hpp>
 #include <lhandpro_interfaces/srv/set_all_position.hpp>
 #include <lhandpro_interfaces/srv/set_position.hpp>
+#include <lhandpro_interfaces/srv/move_motors.hpp>
 #include <vision_server/srv/save_image.hpp>
 
 #include <std_srvs/srv/set_bool.hpp>
@@ -222,6 +223,18 @@ private:
                         }
                     }
                 }
+                // Fallback for vision devices: infer from topics if DeviceStatus not provided
+                if (!found && check.device_type == "orbbec") {
+                    auto topic_names_and_types = this->get_topic_names_and_types();
+                    auto matches_sn = [&](const std::string& name){
+                        return check.device_sn.empty() ? true : (name.find(check.device_sn) != std::string::npos);
+                    };
+                    for (const auto& [name, types] : topic_names_and_types) {
+                        if (name.find("color/image_raw") != std::string::npos || name.find("depth/image_raw") != std::string::npos) {
+                            if (matches_sn(name)) { found = true; break; }
+                        }
+                    }
+                }
                 
                 if (!found) {
                     RCLCPP_ERROR(this->get_logger(), "Missing device: %s (%s)", check.device_type.c_str(), check.device_sn.c_str());
@@ -239,6 +252,24 @@ private:
         int step_index = 0;
         is_paused_ = false; // Reset pause state
         for (const auto& step : goal->task_config.task_seqs) {
+            if (!step.device_sn.empty() && step.type != "camera") {
+                bool ok = false;
+                {
+                    std::lock_guard<std::mutex> lock(devices_mutex_);
+                    for (const auto& [key, status] : connected_devices_) {
+                        if (status.device_sn == step.device_sn) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                }
+                if (!ok) {
+                    result->success = false;
+                    result->message = "Target device not available: " + step.device_sn;
+                    goal_handle->abort(result);
+                    return;
+                }
+            }
             // Check for pause
             if (is_paused_) {
                 feedback->current_status = "Paused";
@@ -295,11 +326,9 @@ private:
             step_index++;
         }
 
-        if (rclcpp::ok()) {
-            result->success = true;
-            result->message = "Task Completed Successfully";
-            goal_handle->succeed(result);
-        }
+        result->success = true;
+        result->message = "Task Completed Successfully";
+        goal_handle->succeed(result);
     }
 
     bool execute_arm_step(const common_msgs::msg::TaskStep& step, std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
@@ -347,12 +376,16 @@ private:
     }
 
     bool execute_hand_step(const common_msgs::msg::TaskStep& step, std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
-        std::string service_name = "/lhandpro_service/set_all_position"; 
-        if (step.type == "rhand") service_name = "/rhandpro_service/set_all_position"; 
+        std::string setpos_srv = "/lhandpro_service/set_all_position"; 
+        std::string movem_srv = "/lhandpro_service/move_motors";
+        if (step.type == "rhand") {
+            setpos_srv = "/rhandpro_service/set_all_position";
+            movem_srv = "/rhandpro_service/move_motors";
+        }
 
-        auto client = this->create_client<lhandpro_interfaces::srv::SetAllPosition>(service_name);
-        if (!client->wait_for_service(2s)) {
-             RCLCPP_ERROR(this->get_logger(), "Hand service not available: %s", service_name.c_str());
+        auto client_setpos = this->create_client<lhandpro_interfaces::srv::SetAllPosition>(setpos_srv);
+        if (!client_setpos->wait_for_service(2s)) {
+             RCLCPP_ERROR(this->get_logger(), "Hand service not available: %s", setpos_srv.c_str());
              return false;
         }
 
@@ -364,7 +397,7 @@ private:
             return false;
         }
 
-        auto future = client->async_send_request(request);
+        auto future = client_setpos->async_send_request(request);
         while (rclcpp::ok()) {
              auto status = future.wait_for(100ms);
              if (status == std::future_status::ready) break;
@@ -385,30 +418,62 @@ private:
              return false;
         }
 
+        auto client_move = this->create_client<lhandpro_interfaces::srv::MoveMotors>(movem_srv);
+        if (!client_move->wait_for_service(2s)) {
+             RCLCPP_ERROR(this->get_logger(), "Hand move service not available: %s", movem_srv.c_str());
+             return false;
+        }
+        auto move_req = std::make_shared<lhandpro_interfaces::srv::MoveMotors::Request>();
+        auto move_future = client_move->async_send_request(move_req);
+        while (rclcpp::ok()) {
+             auto status = move_future.wait_for(100ms);
+             if (status == std::future_status::ready) break;
+             if (goal_handle->is_canceling()) {
+                 RCLCPP_WARN(this->get_logger(), "Task canceled during hand move execution");
+                 return false;
+             }
+        }
+        try {
+            auto move_res = move_future.get();
+            if (move_res->result != 0) {
+                RCLCPP_ERROR(this->get_logger(), "Move motors returned error code: %d", move_res->result);
+                return false;
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Move motors call failed: %s", e.what());
+            return false;
+        }
+
         return true;
     }
 
     bool execute_camera_step(const common_msgs::msg::TaskStep& step, std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
-        auto client = this->create_client<vision_server::srv::SaveImage>("/vision_server/save_image");
-        if (!client->wait_for_service(2s)) {
-             RCLCPP_ERROR(this->get_logger(), "Vision service not available");
-             return false;
+        auto client_primary = this->create_client<vision_server::srv::SaveImage>("/image_saver/save_image");
+        auto client_fallback = this->create_client<vision_server::srv::SaveImage>("save_image");
+        rclcpp::Client<vision_server::srv::SaveImage>::SharedPtr client;
+        if (client_primary->wait_for_service(2s)) {
+            client = client_primary;
+        } else if (client_fallback->wait_for_service(2s)) {
+            client = client_fallback;
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Vision service not available (/image_saver/save_image or save_image)");
+            return false;
         }
 
         // Auto-detect camera topics
         auto topic_names_and_types = this->get_topic_names_and_types();
         std::string color_topic, depth_topic, ir_topic;
 
-        // Prefer topics starting with /camera or /ob_camera, but accept any matching suffix
+        auto match_sn = [&](const std::string& name){ return !step.device_sn.empty() && name.find(step.device_sn) != std::string::npos; };
         for (const auto& [name, types] : topic_names_and_types) {
             if (name.find("color/image_raw") != std::string::npos) {
-                if (color_topic.empty() || name.find("/camera/") != std::string::npos) color_topic = name;
+                if (color_topic.empty() || match_sn(name) || name.find("/camera/") != std::string::npos) color_topic = name;
             }
             else if (name.find("depth/image_raw") != std::string::npos) {
-                if (depth_topic.empty() || name.find("/camera/") != std::string::npos) depth_topic = name;
+                if (depth_topic.empty() || match_sn(name) || name.find("/camera/") != std::string::npos) depth_topic = name;
             }
             else if (name.find("ir/image_raw") != std::string::npos || name.find("left_ir/image_raw") != std::string::npos) {
-                 if (ir_topic.empty() || name.find("/camera/") != std::string::npos) ir_topic = name;
+                 if (ir_topic.empty() || match_sn(name) || name.find("/camera/") != std::string::npos) ir_topic = name;
             }
         }
 

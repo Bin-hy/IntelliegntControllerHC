@@ -92,14 +92,14 @@ class LHandProStatePublisher(Node):
             idx = self.joint_names.index(joint_name)
             self.joint_positions[idx] = angle_rad
 
-            self.get_logger().info(f"更新 {joint_name} to {angle_rad:.3f}")
+            self.get_logger().debug(f"更新 {joint_name} to {angle_rad:.3f}")
 
             # 更新从动关节
             for dep_joint, (src_name, ratio) in self.joint_relations.items():
                 if src_name == joint_name:
                     dep_idx = self.joint_names.index(dep_joint)
                     self.joint_positions[dep_idx] = angle_rad * ratio
-                    self.get_logger().info(f"更新 {dep_joint} to {self.joint_positions[dep_idx]:.3f} (比例: {ratio})")
+                    self.get_logger().debug(f"更新 {dep_joint} to {self.joint_positions[dep_idx]:.3f} (比例: {ratio})")
 
         except Exception as e:
             self.get_logger().warn(f"服务调用失败 (joint_id={joint_id}): {e}")

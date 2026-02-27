@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>DH116-L000-A1</name>
+  <name>dh116_r000_a1</name>
   <version>1.0.0</version>
   <description>
-    URDF Description package for DH116-L000-A1
+    URDF Description package for DH116-R000-A1
   </description>
   <maintainer email="TODO@email.com">TODO</maintainer>
   <license>BSD</license>

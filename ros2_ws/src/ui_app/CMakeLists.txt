@@ -15,7 +15,7 @@ find_package(cv_bridge REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(vision_server REQUIRED)
 find_package(lhandpro_interfaces REQUIRED)
-include_directories(/home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/include/vision_server)
+# include_directories(/home/user/IntelliegntControllerHC/ros2_ws/install/vision_server/include/vision_server)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui OpenGL 3DCore 3DRender 3DExtras 3DInput 3DLogic)
@@ -43,7 +43,6 @@ find_package(rclcpp_action REQUIRED)
     include/ui_app/robot_viz_widget.hpp
     include/ui_app/task_widget.hpp
     include/ui_app/task_dialogs.hpp
-    resources/resources.qrc
   )
 
   target_include_directories(ui_app PUBLIC

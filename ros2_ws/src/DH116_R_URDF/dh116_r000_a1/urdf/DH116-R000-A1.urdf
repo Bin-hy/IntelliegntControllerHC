@@ -26,7 +26,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/base_link.STL" />
+          filename="package://dh116_r000_a1/meshes/base_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -40,7 +40,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/base_link.STL" />
+          filename="package://dh116_r000_a1/meshes/base_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -66,7 +66,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger11_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger11_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -80,7 +80,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger11_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger11_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -124,7 +124,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger12_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger12_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -138,7 +138,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger12_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger12_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -182,7 +182,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger13_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger13_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -196,7 +196,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger13_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger13_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -240,7 +240,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger14_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger14_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -254,7 +254,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger14_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger14_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -298,7 +298,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger21_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger21_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -312,7 +312,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger21_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger21_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -356,7 +356,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger22_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger22_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -370,7 +370,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger22_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger22_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -414,7 +414,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger23_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger23_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -428,7 +428,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger23_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger23_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -472,7 +472,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger31_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger31_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -486,7 +486,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger31_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger31_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -530,7 +530,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger32_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger32_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -544,7 +544,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger32_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger32_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -588,7 +588,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger33_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger33_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -602,7 +602,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger33_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger33_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -646,7 +646,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger41_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger41_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -660,7 +660,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger41_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger41_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -704,7 +704,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger42_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger42_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -718,7 +718,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger42_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger42_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -762,7 +762,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger43_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger43_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -776,7 +776,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger43_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger43_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -820,7 +820,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger51_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger51_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -834,7 +834,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger51_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger51_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -878,7 +878,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger52_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger52_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -892,7 +892,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger52_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger52_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -936,7 +936,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger53_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger53_link.STL" />
       </geometry>
       <material
         name="R_">
@@ -950,7 +950,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="R_package://DH116-R000-A1/meshes/finger53_link.STL" />
+          filename="package://dh116_r000_a1/meshes/finger53_link.STL" />
       </geometry>
     </collision>
   </link>

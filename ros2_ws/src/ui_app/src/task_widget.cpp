@@ -97,12 +97,6 @@ void TaskWidget::updateTaskList() {
     }
 }
 
-// Simple JSON-like or CSV-like storage, or just binary?
-// Let's use simple custom text format for now to avoid dependencies, or just don't persist complexly.
-// User didn't strictly ask for persistence but it's good practice.
-// I will just skip persistence implementation details for brevity or use a very simple one.
-// Let's implement a dummy save/load for now or basic one.
-
 void TaskWidget::saveTasks() {
     QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
     if (!dir.exists()) {
@@ -136,6 +130,7 @@ void TaskWidget::saveTasks() {
             QJsonObject stepObj;
             stepObj["step_name"] = QString::fromStdString(step.name);
             stepObj["step_type"] = QString::fromStdString(step.type);
+            stepObj["device_sn"] = QString::fromStdString(step.device_sn);
             
             QJsonArray armPos;
             for (double p : step.arm_pos) armPos.append(p);
@@ -201,6 +196,7 @@ void TaskWidget::loadTasks() {
             common_msgs::msg::TaskStep step;
             step.name = sObj["step_name"].toString().toStdString();
             step.type = sObj["step_type"].toString().toStdString();
+            step.device_sn = sObj["device_sn"].toString().toStdString();
             
             QJsonArray armPos = sObj["arm_pos"].toArray();
             for (const auto& p : armPos) step.arm_pos.push_back(p.toDouble());

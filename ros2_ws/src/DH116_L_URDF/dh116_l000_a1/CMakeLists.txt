@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(DH116-R000-A1)
+project(dh116_l000_a1)
 
 find_package(ament_cmake REQUIRED)
 

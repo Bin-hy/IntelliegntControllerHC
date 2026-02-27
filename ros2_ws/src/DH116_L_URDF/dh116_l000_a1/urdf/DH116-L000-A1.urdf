@@ -12,7 +12,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/base_link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/base_link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -21,7 +21,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/base_link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/base_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -34,7 +34,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger11_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger11_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -43,7 +43,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger11_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger11_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -63,7 +63,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger12_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger12_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -72,7 +72,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger12_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger12_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -92,7 +92,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger13_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger13_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -101,7 +101,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger13_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger13_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -121,7 +121,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger14_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger14_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="0.2 0.2 0.2 1" />
@@ -130,7 +130,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger14_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger14_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -150,7 +150,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger21_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger21_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -159,7 +159,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger21_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger21_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -179,7 +179,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger22_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger22_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -188,7 +188,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger22_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger22_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -208,7 +208,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger23_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger23_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="0.2 0.2 0.2 1" />
@@ -217,7 +217,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger23_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger23_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -237,7 +237,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger31_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger31_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -246,7 +246,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger31_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger31_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -266,7 +266,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger32_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger32_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -275,7 +275,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger32_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger32_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -295,7 +295,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger33_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger33_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="0.2 0.2 0.2 1" />
@@ -304,7 +304,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger33_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger33_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -324,7 +324,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger41_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger41_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -333,7 +333,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger41_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger41_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -353,7 +353,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger42_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger42_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -362,7 +362,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger42_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger42_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -382,7 +382,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger43_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger43_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="0.2 0.2 0.2 1" />
@@ -391,7 +391,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger43_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger43_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -411,7 +411,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger51_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger51_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -420,7 +420,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger51_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger51_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -440,7 +440,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger52_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger52_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="1 1 1 1" />
@@ -449,7 +449,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger52_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger52_Link.STL" />
       </geometry>
     </collision>
   </link>
@@ -469,7 +469,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger53_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger53_Link.STL" />
       </geometry>
       <material name="L_">
         <color rgba="0.2 0.2 0.2 1" />
@@ -478,7 +478,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="L_package://DH116-L000-A1/meshes/finger53_Link.STL" />
+        <mesh filename="package://dh116_l000_a1/meshes/finger53_Link.STL" />
       </geometry>
     </collision>
   </link>

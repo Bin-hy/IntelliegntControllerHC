@@ -3,11 +3,14 @@
 <package format="3">
   <name>vision_server</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="se_hyxiong@163.com">user</maintainer>
+  <description>Vision server for managing cameras and image saving</description>
+  <maintainer email="dev@example.com">Developer</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
 
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
@@ -15,9 +18,9 @@
   <depend>image_transport</depend>
   <depend>std_srvs</depend>
   <depend>common_msgs</depend>
-  <build_depend>rosidl_default_generators</build_depend>
-  <exec_depend>rosidl_default_runtime</exec_depend>
-  <member_of_group>rosidl_interface_packages</member_of_group>
+  <!-- OpenCV is usually a system dependency, not a rosdep package in some contexts, 
+       but for rosdep it is often libopencv-dev or similar. 
+       Here we assume it is found via CMake. -->
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

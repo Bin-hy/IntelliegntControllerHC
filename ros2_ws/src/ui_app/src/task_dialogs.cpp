@@ -130,8 +130,8 @@ common_msgs::msg::TaskDeviceCheck DeviceAddDialog::getDeviceCheck() const {
 // ----------------------------------------------------------------------------
 // StepAddDialog
 // ----------------------------------------------------------------------------
-StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, QWidget *parent)
-    : QDialog(parent), node_(node) {
+StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<common_msgs::msg::TaskDeviceCheck>& devices, QWidget *parent)
+    : QDialog(parent), node_(node), devices_(devices) {
     setWindowTitle("Add Step");
     auto layout = new QVBoxLayout(this);
     
@@ -145,6 +145,10 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, QWidget *parent)
     combo_type_->addItems({"arm", "lhand", "rhand", "camera"});
     layout->addWidget(new QLabel("Step Type:"));
     layout->addWidget(combo_type_);
+
+    layout->addWidget(new QLabel("Target Device:"));
+    combo_device_ = new QComboBox();
+    layout->addWidget(combo_device_);
 
     auto stack = new QStackedWidget();
     
@@ -188,6 +192,8 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, QWidget *parent)
     connect(btn_box, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(btn_capture, &QPushButton::clicked, this, &StepAddDialog::onCaptureCurrent);
     connect(combo_type_, &QComboBox::currentTextChanged, this, &StepAddDialog::onTypeChanged);
+
+    onTypeChanged(combo_type_->currentText());
 }
 
 void StepAddDialog::onTypeChanged(const QString& type) {
@@ -197,6 +203,15 @@ void StepAddDialog::onTypeChanged(const QString& type) {
         static_cast<QStackedWidget*>(widget_hand_->parentWidget())->setCurrentWidget(widget_hand_);
     } else if (type == "camera") {
         static_cast<QStackedWidget*>(widget_camera_->parentWidget())->setCurrentWidget(widget_camera_);
+    }
+
+    combo_device_->clear();
+    std::string target = type.toStdString() == "arm" ? "duco" : (type.toStdString() == "camera" ? "orbbec" : type.toStdString());
+    for (const auto& d : devices_) {
+        if (d.device_type == target) {
+            QString label = QString::fromStdString(d.device_name.empty() ? d.device_model : d.device_name) + " (" + QString::fromStdString(d.device_sn) + ")";
+            combo_device_->addItem(label, QString::fromStdString(d.device_sn));
+        }
     }
 }
 
@@ -224,6 +239,7 @@ common_msgs::msg::TaskStep StepAddDialog::getStep() const {
     common_msgs::msg::TaskStep step;
     step.name = edit_name_->text().toStdString();
     step.type = combo_type_->currentText().toStdString();
+    step.device_sn = combo_device_->currentData().toString().toStdString();
     if (step.type == "arm") {
         for(int i=0; i<6; ++i) step.arm_pos.push_back(spin_arm_pos_[i]->value() * M_PI / 180.0);
     } else if (step.type.find("hand") != std::string::npos) {
@@ -307,7 +323,7 @@ void TaskConfigDialog::onDeleteDevice() {
 }
 
 void TaskConfigDialog::onAddStep() {
-    StepAddDialog dlg(node_, this);
+    StepAddDialog dlg(node_, devices_, this);
     if (dlg.exec() == QDialog::Accepted) {
         steps_.push_back(dlg.getStep());
         updateStepList();
@@ -335,7 +351,7 @@ void TaskConfigDialog::updateDeviceTable() {
 void TaskConfigDialog::updateStepList() {
     list_steps_->clear();
     for(size_t i=0; i<steps_.size(); ++i) {
-        QString txt = "Step " + QString::number(i+1) + ": " + QString::fromStdString(steps_[i].name) + " [" + QString::fromStdString(steps_[i].type) + "]";
+        QString txt = "Step " + QString::number(i+1) + ": " + QString::fromStdString(steps_[i].name) + " [" + QString::fromStdString(steps_[i].type) + "] (SN: " + QString::fromStdString(steps_[i].device_sn) + ")";
         list_steps_->addItem(txt);
     }
 }
@@ -494,4 +510,3 @@ void TaskRunDialog::onTaskFeedback(const std::shared_ptr<const common_msgs::acti
     label_status_->setText(QString::fromStdString(feedback->current_status));
     progress_steps_->setValue(feedback->current_step_index);
 }
-

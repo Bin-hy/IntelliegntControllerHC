@@ -385,11 +385,6 @@ void AppWindow::refreshCameraList() {
     for(const auto& topic : pc_topics) {
         combo_pc_topic_->addItem(QString::fromStdString(topic));
     }
-    // Add default if empty and camera combo has items
-    // This is purely UI logic now, we don't force push to combo unless needed.
-    // The previous logic was:
-    // if(combo_pc_topic_->count() == 0) { ... } 
-    // We removed the hardcoded camera fallback in ros_node.cpp, so we should be clean here.
     
     combo_pc_topic_->blockSignals(false);
 

@@ -1,4 +1,4 @@
-﻿// EthercatMaster.cpp
+// EthercatMaster.cpp
 #include "EthercatMaster.h"
 
 #include <cstring>
@@ -161,7 +161,7 @@ std::vector<std::string> EthercatMaster::scanNetworkInterfaces() {
 }
 
 bool EthercatMaster::init(int index) {
-  if (index < 0 || index >= interfaces_.size()) {
+  if (index < 0 || static_cast<size_t>(index) >= interfaces_.size()) {
     ECOUT << "Index not available\n";
     return false;
   }
@@ -312,12 +312,12 @@ void EthercatMaster::run() {
         ECOUT << " wrong (expected " << expected_wkc << ")\n";
       } else {
         ECOUT << "  O:";
-        for (int n = 0; n < grp->Obytes; ++n) {
+        for (uint32_t n = 0; n < grp->Obytes; ++n) {
           ECOUT << " " << std::hex << std::setw(2) << std::setfill('0')
                 << (int)grp->outputs[n] << std::dec;
         }
         ECOUT << "  I:";
-        for (int n = 0; n < grp->Ibytes; ++n) {
+        for (uint32_t n = 0; n < grp->Ibytes; ++n) {
           ECOUT << " " << std::hex << std::setw(2) << std::setfill('0')
                 << (int)grp->inputs[n] << std::dec;
         }
@@ -490,7 +490,7 @@ uint8_t EthercatMaster::getInput(int index) {
 bool EthercatMaster::setOutputs(const uint8_t* data, unsigned int len) {
   if (!started_ || !data || len <= 0)
     return false;
-  if (len > output_bytes_) {
+  if (len > static_cast<unsigned int>(output_bytes_)) {
     ECOUT << "Error: setOutputs length " << len
           << " exceeds configured output bytes " << output_bytes_ << "\n";
     return false;
@@ -503,7 +503,7 @@ bool EthercatMaster::setOutputs(const uint8_t* data, unsigned int len) {
 bool EthercatMaster::getInputs(uint8_t* buffer, unsigned int len) {
   if (!started_ || !buffer || len <= 0)
     return false;
-  if (len > input_bytes_) {
+  if (len > static_cast<unsigned int>(input_bytes_)) {
     ECOUT << "Error: getInputs buffer length " << len
           << " exceeds configured input bytes " << input_bytes_ << "\n";
     return false;
@@ -516,7 +516,7 @@ bool EthercatMaster::getInputs(uint8_t* buffer, unsigned int len) {
 bool EthercatMaster::getOutputs(uint8_t* buffer, unsigned int len) {
   if (!started_ || !buffer || len <= 0)
     return false;
-  if (len > output_bytes_) {
+  if (len > static_cast<unsigned int>(output_bytes_)) {
     ECOUT << "Error: getOutputs buffer length " << len
           << " exceeds configured input bytes " << output_bytes_ << "\n";
     return false;
@@ -556,7 +556,7 @@ bool EthercatMaster::sdoRead(uint16_t index, uint8_t subindex,
           << "\n";
     return false;
   }
-  if (size < sizeof(uint32_t)) {  // 检查实际读取的数据长度
+  if (static_cast<size_t>(size) < sizeof(uint32_t)) {  // 检查实际读取的数据长度
     ECOUT << "SDO data too short (Expected 4, got " << size << ")\n";
     return false;
   }

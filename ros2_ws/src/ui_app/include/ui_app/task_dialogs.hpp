@@ -46,7 +46,7 @@ private:
 class StepAddDialog : public QDialog {
     Q_OBJECT
 public:
-    explicit StepAddDialog(std::shared_ptr<RosNode> node, QWidget *parent = nullptr);
+    explicit StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<common_msgs::msg::TaskDeviceCheck>& devices, QWidget *parent = nullptr);
     common_msgs::msg::TaskStep getStep() const;
 
 private slots:
@@ -56,6 +56,8 @@ private slots:
 private:
     std::shared_ptr<RosNode> node_;
     QComboBox* combo_type_;
+    QComboBox* combo_device_;
+    std::vector<common_msgs::msg::TaskDeviceCheck> devices_;
     
     // Stacked Widget or just hide/show based on type
     QWidget* widget_arm_;

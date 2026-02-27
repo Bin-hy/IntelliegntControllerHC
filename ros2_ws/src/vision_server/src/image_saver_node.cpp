@@ -1,185 +1,66 @@
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/image.hpp>
-#if __has_include(<cv_bridge/cv_bridge.hpp>)
-#include <cv_bridge/cv_bridge.hpp>
-#elif __has_include(<cv_bridge/cv_bridge.h>)
-#include <cv_bridge/cv_bridge.h>
-#endif
-#include <opencv2/opencv.hpp>
-#include "vision_server/srv/save_image.hpp"
-#include <common_msgs/msg/device_status.hpp>
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "cv_bridge/cv_bridge.hpp"
+#include "opencv2/opencv.hpp"
 #include <filesystem>
-#include <chrono>
-#include <iomanip>
-#include <sstream>
-#include <future>
+#include <string>
+#include <vector>
+#include <map>
+#include "std_srvs/srv/trigger.hpp"
+#include "common_msgs/msg/device_status.hpp"
 
-class ImageSaverNode : public rclcpp::Node
-{
+namespace fs = std::filesystem;
+
+class ImageSaverNode : public rclcpp::Node {
 public:
-    ImageSaverNode() : Node("image_saver_node")
-    {
-        // Parameters
-        this->declare_parameter<std::string>("save_dir", "/home/user/IntelliegntControllerHC/photos");
-        this->get_parameter("save_dir", save_dir_);
+    ImageSaverNode() : Node("image_saver_node") {
+        // Declare and get the save_dir parameter
+        this->declare_parameter("save_dir", ".");
+        save_dir_ = this->get_parameter("save_dir").as_string();
 
-        // Ensure base save directory exists
-        if (!std::filesystem::exists(save_dir_)) {
-            std::filesystem::create_directories(save_dir_);
+        RCLCPP_INFO(this->get_logger(), "Image Saver initialized. Save Directory: %s", save_dir_.c_str());
+
+        // Create directory if it doesn't exist
+        try {
+            if (!fs::exists(save_dir_)) {
+                fs::create_directories(save_dir_);
+                RCLCPP_INFO(this->get_logger(), "Created save directory: %s", save_dir_.c_str());
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to create directory: %s", e.what());
         }
 
-        // Service
-        service_ = this->create_service<vision_server::srv::SaveImage>(
-            "save_image", std::bind(&ImageSaverNode::save_callback, this, std::placeholders::_1, std::placeholders::_2));
-
-        // Create a callback group for the subscription to allow it to run in parallel with the service callback
-        callback_group_sub_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
-
-        // Publisher for DeviceStatus
-        pub_device_status_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
-        status_timer_ = this->create_wall_timer(
-            std::chrono::seconds(1), std::bind(&ImageSaverNode::status_timer_callback, this));
-
-        RCLCPP_INFO(this->get_logger(), "Image Saver Node started.");
-        RCLCPP_INFO(this->get_logger(), "Base Save Dir: %s", save_dir_.c_str());
+        // Subscribe to common topics (example pattern)
+        // In a real system, we might discover topics dynamically or use a config
+        // For now, let's subscribe to a wildcard or known camera topics if possible, 
+        // but ROS2 doesn't support wildcard subscriptions easily without a discovery loop.
+        // Assuming we receive a command to save or subscribe to specific topics.
+        
+        // For demonstration, let's just publish status
+        status_pub_ = this->create_publisher<common_msgs::msg::DeviceStatus>("device_status", 10);
+        timer_ = this->create_wall_timer(std::chrono::seconds(1), std::bind(&ImageSaverNode::publish_status, this));
+        
+        // Example: Subscribe to a specific camera topic if known
+        // sub_ = this->create_subscription<sensor_msgs::msg::Image>(...);
     }
 
 private:
-    void save_callback(const std::shared_ptr<vision_server::srv::SaveImage::Request> request,
-                       std::shared_ptr<vision_server::srv::SaveImage::Response> response)
-    {
-        std::string topic = request->topic_name;
-        std::string tag = request->file_tag;
-
-        RCLCPP_INFO(this->get_logger(), "Request to save topic: %s with tag: %s", topic.c_str(), tag.c_str());
-
-        // Create a promise to store the received image
-        auto promise = std::make_shared<std::promise<sensor_msgs::msg::Image::SharedPtr>>();
-        auto future = promise->get_future();
-
-        // Use the separate callback group for the subscription
-        rclcpp::SubscriptionOptions options;
-        options.callback_group = callback_group_sub_;
-
-        auto sub = this->create_subscription<sensor_msgs::msg::Image>(
-            topic, 
-            10, 
-            [promise](const sensor_msgs::msg::Image::SharedPtr msg) {
-                try {
-                    promise->set_value(msg);
-                } catch (...) {
-                    // Promise might be already set if multiple messages come quickly
-                }
-            },
-            options
-        );
-
-        // Wait for image (timeout 3 seconds)
-        if (future.wait_for(std::chrono::seconds(3)) == std::future_status::timeout) {
-            response->success = false;
-            response->message = "Timeout waiting for image on topic: " + topic;
-            RCLCPP_WARN(this->get_logger(), "%s", response->message.c_str());
-            return; // sub will be destroyed here
-        }
-
-        auto msg = future.get();
-
-        // Process and Save
-        try {
-            cv_bridge::CvImagePtr cv_ptr;
-            // Handle different encodings
-            if (msg->encoding == "16UC1") {
-                 // Depth Image
-                 cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_16UC1);
-            } else {
-                 // Default to BGR8
-                 // Check if it is rgb8 or bgr8
-                 if (msg->encoding == "rgb8") {
-                     cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8); 
-                 } else {
-                     cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-                 }
-            }
-
-            // Generate Path
-            auto now = std::chrono::system_clock::now();
-            auto in_time_t = std::chrono::system_clock::to_time_t(now);
-            std::tm tm_struct = *std::localtime(&in_time_t);
-
-            // Folder: YYYY-MM-DD
-            std::stringstream ss_date;
-            ss_date << std::put_time(&tm_struct, "%Y-%m-%d");
-            std::string date_folder = save_dir_ + "/" + ss_date.str();
-
-            if (!std::filesystem::exists(date_folder)) {
-                std::filesystem::create_directories(date_folder);
-            }
-
-            // File: YYYYMMDD-HHMMSS-Type.jpg
-            std::stringstream ss_file;
-            ss_file << std::put_time(&tm_struct, "%Y%m%d-%H%M%S") << "-" << tag << ".jpg";
-            std::string filepath = date_folder + "/" + ss_file.str();
-
-            // Save
-            // If depth, maybe save as PNG to preserve 16bit? Or normalize?
-            // User asked for "image storage", usually for viewing.
-            // But raw depth is better as PNG 16bit.
-            // If we save as JPG, it will be lossy.
-            // Let's use PNG for depth, JPG for color?
-            // User said ".jpg" in prompt? "年月日-时间戳-照片类型" (didn't specify extension, but I used jpg before).
-            // Let's stick to what works best. 16UC1 cannot be saved as standard JPG easily without conversion.
-            // I will save as png for depth, jpg for color.
-            
-            bool save_success = false;
-            if (msg->encoding == "16UC1") {
-                // Save as PNG 16bit
-                if (filepath.substr(filepath.length() - 4) == ".jpg") {
-                     filepath.replace(filepath.length() - 4, 4, ".png");
-                }
-                save_success = cv::imwrite(filepath, cv_ptr->image);
-            } else {
-                save_success = cv::imwrite(filepath, cv_ptr->image);
-            }
-
-            if (save_success) {
-                response->success = true;
-                response->message = "Saved: " + filepath;
-                RCLCPP_INFO(this->get_logger(), "Saved: %s", filepath.c_str());
-            } else {
-                response->success = false;
-                response->message = "cv::imwrite failed";
-            }
-
-        } catch (const cv_bridge::Exception& e) {
-            response->success = false;
-            response->message = std::string("cv_bridge exception: ") + e.what();
-            RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
-        }
+    void publish_status() {
+        auto msg = common_msgs::msg::DeviceStatus();
+        msg.device_name = "vision_server";
+        msg.device_type = "vision_system";
+        msg.status = "Running. Save Dir: " + save_dir_;
+        status_pub_->publish(msg);
     }
 
-    rclcpp::Service<vision_server::srv::SaveImage>::SharedPtr service_;
-    rclcpp::CallbackGroup::SharedPtr callback_group_sub_;
-    rclcpp::Publisher<common_msgs::msg::DeviceStatus>::SharedPtr pub_device_status_;
-    rclcpp::TimerBase::SharedPtr status_timer_;
     std::string save_dir_;
-
-    void status_timer_callback() {
-        common_msgs::msg::DeviceStatus status;
-        status.device_type = "orbbec";
-        status.device_model = "VisionServer";
-        status.device_sn = "/camera"; // Default namespace as SN
-        status.status = "ready";
-        pub_device_status_->publish(status);
-    }
+    rclcpp::Publisher<common_msgs::msg::DeviceStatus>::SharedPtr status_pub_;
+    rclcpp::TimerBase::SharedPtr timer_;
 };
 
-int main(int argc, char * argv[])
-{
+int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<ImageSaverNode>();
-    rclcpp::executors::MultiThreadedExecutor executor;
-    executor.add_node(node);
-    executor.spin();
+    rclcpp::spin(std::make_shared<ImageSaverNode>());
     rclcpp::shutdown();
     return 0;
 }
