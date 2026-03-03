@@ -14,6 +14,10 @@ int main(int argc, char ** argv) {
   exec.add_node(node);
 
   QApplication app(argc, argv);
+  QFile style_file(":/style.qss");
+  if (style_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    app.setStyleSheet(style_file.readAll());
+  }
 
   AppWindow w(node);
   w.setWindowTitle("机器臂手上位机 -目前仅机器臂");

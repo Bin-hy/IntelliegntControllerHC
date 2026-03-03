@@ -9,7 +9,7 @@ def generate_launch_description():
     # Args
     camera_name_arg = DeclareLaunchArgument(
         'camera_name',
-        default_value='orbbec_camera',
+        default_value='camera',
         description='Camera namespace'
     )
     
@@ -29,6 +29,7 @@ def generate_launch_description():
         'sync_mode': 'standalone',         # Standalone mode
         'enable_color': 'true',
         'enable_depth': 'true',
+        'device_preset': 'Default',
     }
 
     orbbec_launch = IncludeLaunchDescription(
@@ -42,7 +43,7 @@ def generate_launch_description():
         package='vision_server',
         executable='image_saver_node',
         name='image_saver_node',
-        namespace=LaunchConfiguration('camera_name'),
+        namespace='image_saver',
         output='screen'
     )
 

@@ -9,3 +9,5 @@ log/
 install/
 
 **/__pycache__/
+
+*.log

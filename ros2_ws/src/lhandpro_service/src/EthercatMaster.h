@@ -1,4 +1,4 @@
-﻿// EthercatMaster.h
+// EthercatMaster.h
 #pragma once
 
 #include <atomic>
@@ -116,6 +116,7 @@ class EthercatMaster {
 
   // 多线程控制
   std::atomic<bool> running_;
+  std::atomic<EthercatState> cached_state_{EthercatState::Disconnected}; // 缓存的状态，避免频繁调用 ecx_readstate
   std::thread worker_thread_;
   std::mutex io_mutex_;  // 保护 outputs/inputs 访问
 

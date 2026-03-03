@@ -6,8 +6,11 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <chrono>
 #include "std_srvs/srv/trigger.hpp"
 #include "common_msgs/msg/device_status.hpp"
+#include "vision_server/srv/save_image.hpp"
+#include "rclcpp/wait_for_message.hpp"
 
 namespace fs = std::filesystem;
 
@@ -36,26 +39,62 @@ public:
         // but ROS2 doesn't support wildcard subscriptions easily without a discovery loop.
         // Assuming we receive a command to save or subscribe to specific topics.
         
-        // For demonstration, let's just publish status
-        status_pub_ = this->create_publisher<common_msgs::msg::DeviceStatus>("device_status", 10);
+        status_pub_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
         timer_ = this->create_wall_timer(std::chrono::seconds(1), std::bind(&ImageSaverNode::publish_status, this));
-        
-        // Example: Subscribe to a specific camera topic if known
-        // sub_ = this->create_subscription<sensor_msgs::msg::Image>(...);
+        save_service_ = this->create_service<vision_server::srv::SaveImage>(
+            "save_image",
+            std::bind(&ImageSaverNode::handle_save_image, this, std::placeholders::_1, std::placeholders::_2));
     }
 
 private:
+    void handle_save_image(
+        const std::shared_ptr<vision_server::srv::SaveImage::Request> request,
+        std::shared_ptr<vision_server::srv::SaveImage::Response> response) {
+        sensor_msgs::msg::Image msg;
+        bool received = rclcpp::wait_for_message(
+            msg, this->shared_from_this(), request->topic_name, std::chrono::seconds(2));
+        if (!received) {
+            response->success = false;
+            response->message = "No image received from " + request->topic_name;
+            return;
+        }
+        cv_bridge::CvImagePtr cv_ptr;
+        try {
+            if (msg.encoding == sensor_msgs::image_encodings::TYPE_16UC1 ||
+                msg.encoding == sensor_msgs::image_encodings::MONO16) {
+                auto tmp = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_16UC1);
+                cv::Mat normalized;
+                cv::normalize(tmp->image, normalized, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+                cv_ptr = std::make_shared<cv_bridge::CvImage>(tmp->header, "mono8", normalized);
+            } else if (msg.encoding == sensor_msgs::image_encodings::MONO8) {
+                cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
+            } else {
+                cv_ptr = cv_bridge::toCvCopy(msg, "bgr8");
+            }
+        } catch (const std::exception& e) {
+            response->success = false;
+            response->message = std::string("cv_bridge error: ") + e.what();
+            return;
+        }
+        auto stamp = this->now().nanoseconds();
+        std::string file_tag = request->file_tag.empty() ? "image" : request->file_tag;
+        std::string filename = save_dir_ + "/" + file_tag + "_" + std::to_string(stamp) + ".png";
+        bool ok = cv::imwrite(filename, cv_ptr->image);
+        response->success = ok;
+        response->message = ok ? filename : ("Failed to write " + filename);
+    }
     void publish_status() {
         auto msg = common_msgs::msg::DeviceStatus();
         msg.device_name = "vision_server";
         msg.device_type = "vision_system";
-        msg.status = "Running. Save Dir: " + save_dir_;
+        msg.status = "ready";
         status_pub_->publish(msg);
     }
 
     std::string save_dir_;
     rclcpp::Publisher<common_msgs::msg::DeviceStatus>::SharedPtr status_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Service<vision_server::srv::SaveImage>::SharedPtr save_service_;
 };
 
 int main(int argc, char **argv) {

@@ -18,11 +18,15 @@ HandControlService::HandControlService() : Node("lhandpro_service") {
   
   // Publisher for DeviceStatus
   pub_device_status_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
+  now_angles_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/lhandpro_service/now_angles", 10);
 
   RCLCPP_INFO(this->get_logger(), "使用EtherCAT通道: %d", current_channel_);
 
   init_ethercat(current_channel_);
   init_service();
+
+  now_angles_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(50), [this]() { this->publish_now_angles(); });
 
   // 每5秒检查一次连接状态
   reconnect_timer_ = this->create_wall_timer(
@@ -142,6 +146,26 @@ void HandControlService::check_and_reconnect() {
     RCLCPP_INFO(this->get_logger(), "正在尝试重新连接设备...");
     init_ethercat(current_channel_);
   }
+}
+
+void HandControlService::publish_now_angles() {
+  if (!lhp_lib_) return;
+  if (!is_alive()) return;
+  if (last_angles_.size() != 6) {
+    last_angles_.assign(6, 0.0);
+  }
+  int count = active_dof_;
+  if (count > 6) count = 6;
+  for (int i = 0; i < count; ++i) {
+    float angle = 0.0f;
+    int retn = lhp_lib_->get_now_angle(i + 1, &angle);
+    if (retn == 0) {
+      last_angles_[i] = angle;
+    }
+  }
+  std_msgs::msg::Float64MultiArray msg;
+  msg.data = last_angles_;
+  now_angles_pub_->publish(msg);
 }
 
 bool HandControlService::is_alive() {

@@ -36,13 +36,13 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node, QWidget *parent)
     std::string urdf_path = node_->get_robot_urdf_path();
     robot_viz_->loadRobotModel(urdf_path);
 
-    // Load Left Hand
     std::string lhand_path = node_->get_left_hand_urdf_path();
-    if (!lhand_path.empty()) robot_viz_->loadRobotModel(lhand_path);
+    bool fused_hand = urdf_path.find("with_dh116_dualhand") != std::string::npos
+        || urdf_path.find("with_dh116_lhand") != std::string::npos;
+    if (!fused_hand && !lhand_path.empty()) robot_viz_->loadRobotModel(lhand_path);
 
-    // Load Right Hand
     std::string rhand_path = node_->get_right_hand_urdf_path();
-    if (!rhand_path.empty()) robot_viz_->loadRobotModel(rhand_path);
+    if (!fused_hand && !rhand_path.empty()) robot_viz_->loadRobotModel(rhand_path);
 
     tabs->addTab(createLHandTab(), "LHand Control");
     tabs->addTab(createTaskTab(), "Task Module");

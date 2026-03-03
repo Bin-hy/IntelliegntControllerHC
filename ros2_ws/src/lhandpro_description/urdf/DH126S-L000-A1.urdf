@@ -66,7 +66,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger11_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger11_link.STL" />
       </geometry>
       <material
         name="">
@@ -80,7 +80,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger11_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger11_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -124,7 +124,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger12_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger12_link.STL" />
       </geometry>
       <material
         name="">
@@ -138,7 +138,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger12_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger12_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -182,7 +182,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger13_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger13_link.STL" />
       </geometry>
       <material
         name="">
@@ -196,7 +196,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger13_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger13_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -240,7 +240,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger14_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger14_link.STL" />
       </geometry>
       <material
         name="">
@@ -254,7 +254,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger14_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger14_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -298,7 +298,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger21_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger21_link.STL" />
       </geometry>
       <material
         name="">
@@ -312,7 +312,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger21_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger21_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -356,7 +356,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger22_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger22_link.STL" />
       </geometry>
       <material
         name="">
@@ -370,7 +370,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger22_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger22_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -414,7 +414,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger23_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger23_link.STL" />
       </geometry>
       <material
         name="">
@@ -428,7 +428,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger23_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger23_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -472,7 +472,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger31_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger31_link.STL" />
       </geometry>
       <material
         name="">
@@ -486,7 +486,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger31_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger31_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -530,7 +530,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger32_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger32_link.STL" />
       </geometry>
       <material
         name="">
@@ -544,7 +544,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger32_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger32_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -588,7 +588,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger33_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger33_link.STL" />
       </geometry>
       <material
         name="">
@@ -602,7 +602,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger33_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger33_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -646,7 +646,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger41_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger41_link.STL" />
       </geometry>
       <material
         name="">
@@ -660,7 +660,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger41_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger41_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -704,7 +704,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger42_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger42_link.STL" />
       </geometry>
       <material
         name="">
@@ -718,7 +718,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger42_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger42_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -762,7 +762,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger43_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger43_link.STL" />
       </geometry>
       <material
         name="">
@@ -776,7 +776,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger43_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger43_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -820,7 +820,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger51_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger51_link.STL" />
       </geometry>
       <material
         name="">
@@ -834,7 +834,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger51_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger51_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -878,7 +878,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger52_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger52_link.STL" />
       </geometry>
       <material
         name="">
@@ -892,7 +892,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger52_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger52_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -936,7 +936,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger53_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger53_link.STL" />
       </geometry>
       <material
         name="">
@@ -950,7 +950,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://lhandpro_description/meshes/finger53_Link.STL" />
+          filename="package://lhandpro_description/meshes/finger53_link.STL" />
       </geometry>
     </collision>
   </link>

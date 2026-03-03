@@ -222,7 +222,9 @@ bool RosNode::check_device_availability(const common_msgs::msg::TaskDeviceCheck&
     for (const auto& kv : connected_devices_) {
         const auto& status = kv.second;
         // Check if device matches requirements
-        if (status.device_type == check.device_type) {
+        if (status.device_type == check.device_type ||
+            ((check.device_type == "orbbec" || check.device_type == "camera" || check.device_type == "vision_system") &&
+             (status.device_type == "orbbec" || status.device_type == "camera_server" || status.device_type == "vision_system"))) {
             // If SN is specified, check it
             if (!check.device_sn.empty() && status.device_sn != check.device_sn) {
                 continue;
@@ -233,7 +235,23 @@ bool RosNode::check_device_availability(const common_msgs::msg::TaskDeviceCheck&
             }
         }
     }
+    if (check.device_type == "orbbec" || check.device_type == "camera" || check.device_type == "vision_system") {
+        auto topic_names_and_types = this->get_topic_names_and_types();
+        for (const auto& [name, types] : topic_names_and_types) {
+            if (name.find("/color/image_raw") != std::string::npos ||
+                name.find("/depth/image_raw") != std::string::npos) {
+                if (check.device_sn.empty() || name.find(check.device_sn) != std::string::npos) {
+                    return true;
+                }
+            }
+        }
+    }
     return false;
+}
+
+bool RosNode::is_task_action_ready() const {
+    if (!client_execute_task_) return false;
+    return client_execute_task_->action_server_is_ready();
 }
 
 void RosNode::call_execute_task(const common_msgs::msg::TaskConfig& task_config, 
@@ -500,7 +518,7 @@ void RosNode::call_lhand_enable(bool enable) {
         return;
     }
     auto request = std::make_shared<lhandpro_interfaces::srv::SetEnable::Request>();
-    request->joint_id = 1; // Default to 1 (first finger/motor?) or all if handled by node
+    request->joint_id = 0; // 0 = all joints
     request->enable = enable ? 1 : 0;
     
     using ServiceT = lhandpro_interfaces::srv::SetEnable;

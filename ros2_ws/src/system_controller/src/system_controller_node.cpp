@@ -30,7 +30,7 @@ public:
     using ExecuteTask = common_msgs::action::ExecuteTask;
     using GoalHandleExecuteTask = rclcpp_action::ServerGoalHandle<ExecuteTask>;
 
-    SystemController() : Node("system_controller_node"), is_busy_(false) {
+    SystemController() : Node("system_controller_node"), is_busy_(false), is_paused_(false) {
         // Subscribers
         sub_state_ = this->create_subscription<duco_msg::msg::DucoRobotState>(
             "/duco_cobot/robot_state", 10,
@@ -86,6 +86,7 @@ private:
     std::atomic<bool> is_paused_;
     std::condition_variable pause_cv_;
     std::mutex pause_mutex_;
+    std::string pause_reason_;
     duco_msg::msg::DucoRobotState current_state_;
     std::map<std::string, common_msgs::msg::DeviceStatus> connected_devices_; // Key: Device SN or Type+ID
     std::mutex state_mutex_;
@@ -152,8 +153,9 @@ private:
         // DucoRobotState doesn't seem to have SN. We might need another way or just assume type "duco" is present.
         common_msgs::msg::DeviceStatus status;
         status.device_type = "duco";
-        status.device_model = "unknown"; // Extract if possible
-        status.status = "connected"; // msg->robot_state == STATE_ENABLE ? "ready" : "connected";
+        status.device_model = "unknown";
+        status.device_usage = "arm";
+        status.status = (msg->robot_state == STATE_ENABLE) ? "ready" : "connected";
         status.device_sn = "duco_arm_1"; // Placeholder
         
         std::lock_guard<std::mutex> dev_lock(devices_mutex_);
@@ -166,6 +168,94 @@ private:
         std::string key = msg->device_sn.empty() ? msg->device_type : msg->device_sn;
         connected_devices_[key] = *msg;
         RCLCPP_DEBUG(this->get_logger(), "Device updated: %s (%s)", key.c_str(), msg->status.c_str());
+    }
+
+    bool is_status_ready(const std::string& status) {
+        return status == "ready" || status == "running";
+    }
+
+    bool match_device(const common_msgs::msg::DeviceStatus& status, const common_msgs::msg::TaskDeviceCheck& check) {
+        if (!check.device_sn.empty() && status.device_sn != check.device_sn) return false;
+        if (!check.device_type.empty() && status.device_type != check.device_type) return false;
+        return true;
+    }
+
+    bool check_vision_topics(const common_msgs::msg::TaskDeviceCheck& check) {
+        auto topic_names_and_types = this->get_topic_names_and_types();
+        auto matches_sn = [&](const std::string& name){
+            return check.device_sn.empty() ? true : (name.find(check.device_sn) != std::string::npos);
+        };
+        for (const auto& [name, types] : topic_names_and_types) {
+            if (name.find("color/image_raw") != std::string::npos || name.find("depth/image_raw") != std::string::npos) {
+                if (matches_sn(name)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    bool are_devices_ready(const std::vector<common_msgs::msg::TaskDeviceCheck>& checks, std::string& reason) {
+        std::lock_guard<std::mutex> lock(devices_mutex_);
+        for (const auto& check : checks) {
+            bool found = false;
+            bool ready = false;
+            for (const auto& [key, status] : connected_devices_) {
+                if (!match_device(status, check)) continue;
+                found = true;
+                if (is_status_ready(status.status)) {
+                    ready = true;
+                    break;
+                }
+            }
+            if (!found) {
+                if (check.device_type == "orbbec" || check.device_type == "camera" || check.device_type == "vision_system") {
+                    if (check_vision_topics(check)) {
+                        continue;
+                    }
+                }
+                reason = "Missing device: " + check.device_type;
+                return false;
+            }
+            if (!ready) {
+                reason = "Device not ready: " + check.device_type;
+                return false;
+            }
+        }
+        reason.clear();
+        return true;
+    }
+
+    bool wait_for_devices_ready(const std::shared_ptr<GoalHandleExecuteTask> goal_handle,
+                                const std::shared_ptr<ExecuteTask::Feedback>& feedback,
+                                const std::vector<common_msgs::msg::TaskDeviceCheck>& checks) {
+        std::string reason;
+        if (are_devices_ready(checks, reason)) {
+            return true;
+        }
+        is_paused_ = true;
+        pause_reason_ = reason;
+        feedback->current_status = "Paused: " + reason;
+        goal_handle->publish_feedback(feedback);
+        while (rclcpp::ok()) {
+            if (goal_handle->is_canceling()) {
+                return false;
+            }
+            std::unique_lock<std::mutex> lock(pause_mutex_);
+            pause_cv_.wait(lock, [this, &goal_handle]{ return !is_paused_ || goal_handle->is_canceling(); });
+            if (goal_handle->is_canceling()) {
+                return false;
+            }
+            if (are_devices_ready(checks, reason)) {
+                pause_reason_.clear();
+                return true;
+            }
+            is_paused_ = true;
+            pause_reason_ = reason;
+            feedback->current_status = "Paused: " + reason;
+            goal_handle->publish_feedback(feedback);
+        }
+        return false;
     }
 
     rclcpp_action::GoalResponse handle_goal(
@@ -204,83 +294,34 @@ private:
         feedback->current_status = "Checking Devices";
         goal_handle->publish_feedback(feedback);
 
-        {
-            std::lock_guard<std::mutex> lock(devices_mutex_);
-            for (const auto& check : goal->task_config.device_checks) {
-                bool found = false;
-                // Look for device by SN or Type
-                for (const auto& [key, status] : connected_devices_) {
-                    if (!check.device_sn.empty()) {
-                         if (status.device_sn == check.device_sn) {
-                             found = true;
-                             break;
-                         }
-                    } else {
-                        // If SN is empty in check, match by type
-                        if (status.device_type == check.device_type) {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                // Fallback for vision devices: infer from topics if DeviceStatus not provided
-                if (!found && check.device_type == "orbbec") {
-                    auto topic_names_and_types = this->get_topic_names_and_types();
-                    auto matches_sn = [&](const std::string& name){
-                        return check.device_sn.empty() ? true : (name.find(check.device_sn) != std::string::npos);
-                    };
-                    for (const auto& [name, types] : topic_names_and_types) {
-                        if (name.find("color/image_raw") != std::string::npos || name.find("depth/image_raw") != std::string::npos) {
-                            if (matches_sn(name)) { found = true; break; }
-                        }
-                    }
-                }
-                
-                if (!found) {
-                    RCLCPP_ERROR(this->get_logger(), "Missing device: %s (%s)", check.device_type.c_str(), check.device_sn.c_str());
-                    result->success = false;
-                    result->message = "Missing device: " + check.device_type;
-                    goal_handle->abort(result);
-                    return;
-                }
-            }
+        if (!wait_for_devices_ready(goal_handle, feedback, goal->task_config.device_checks)) {
+            result->success = false;
+            result->message = "Canceled";
+            goal_handle->canceled(result);
+            return;
         }
         
         RCLCPP_INFO(this->get_logger(), "All devices found.");
 
         // 2. Execute Steps
         int step_index = 0;
-        is_paused_ = false; // Reset pause state
+        is_paused_ = false;
         for (const auto& step : goal->task_config.task_seqs) {
-            if (!step.device_sn.empty() && step.type != "camera") {
-                bool ok = false;
-                {
-                    std::lock_guard<std::mutex> lock(devices_mutex_);
-                    for (const auto& [key, status] : connected_devices_) {
-                        if (status.device_sn == step.device_sn) {
-                            ok = true;
-                            break;
-                        }
-                    }
-                }
-                if (!ok) {
-                    result->success = false;
-                    result->message = "Target device not available: " + step.device_sn;
-                    goal_handle->abort(result);
-                    return;
-                }
+            if (!wait_for_devices_ready(goal_handle, feedback, goal->task_config.device_checks)) {
+                result->success = false;
+                result->message = "Canceled";
+                goal_handle->canceled(result);
+                return;
             }
-            // Check for pause
+
             if (is_paused_) {
-                feedback->current_status = "Paused";
+                feedback->current_status = pause_reason_.empty() ? "Paused" : pause_reason_;
                 goal_handle->publish_feedback(feedback);
-                RCLCPP_INFO(this->get_logger(), "Task Paused...");
                 std::unique_lock<std::mutex> lock(pause_mutex_);
                 pause_cv_.wait(lock, [this, &goal_handle]{ return !is_paused_ || goal_handle->is_canceling(); });
                 if (goal_handle->is_canceling()) {
-                     // Handled below
                 } else {
-                     RCLCPP_INFO(this->get_logger(), "Task Resumed.");
+                    RCLCPP_INFO(this->get_logger(), "Task Resumed.");
                 }
             }
 

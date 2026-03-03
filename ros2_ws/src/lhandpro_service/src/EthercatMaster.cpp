@@ -254,6 +254,7 @@ bool EthercatMaster::start() {
     if (slave->state == EC_STATE_OPERATIONAL) {
       ECOUT << " all slaves are now operational\n";
       started_ = true;
+      cached_state_.store(EthercatState::Operational);
       return true;
     }
   }
@@ -334,6 +335,62 @@ void EthercatMaster::run() {
       }
 
       iteration++;
+      
+      // 每 500ms (100 * 5ms) 更新一次状态
+      if (iteration % 100 == 0) {
+        ecx_readstate(&context_);
+
+        EthercatState new_state = EthercatState::Initializing;
+        bool all_operational = true;
+        bool any_error = false;
+        bool any_safe_op = false;
+        bool early_exit = false;
+
+        for (int i = 1; i <= context_.slavecount; ++i) {
+          const ec_slavet* slave = context_.slavelist + i;
+          if (slave->group != group_)
+            continue;
+
+          if (slave->state == EC_STATE_NONE) {
+            new_state = EthercatState::Disconnected;
+            early_exit = true;
+            break;
+          }
+
+          if (slave->state == EC_STATE_INIT || slave->state == EC_STATE_PRE_OP) {
+            new_state = EthercatState::Initializing;
+            early_exit = true;
+            break;
+          }
+
+          if (slave->state == EC_STATE_SAFE_OP) {
+            any_safe_op = true;
+          }
+
+          if ((slave->state & 0x0F) != EC_STATE_OPERATIONAL) {
+            all_operational = false;
+          }
+
+          if (slave->state & EC_STATE_ERROR) {
+            any_error = true;
+          }
+        }
+
+        if (!early_exit) {
+          if (any_error) {
+            new_state = EthercatState::Error;
+          } else if (all_operational) {
+            new_state = EthercatState::Operational;
+          } else if (any_safe_op) {
+            new_state = EthercatState::SafeOperational;
+          } else {
+            new_state = EthercatState::Initializing;
+          }
+        }
+        
+        cached_state_.store(new_state);
+      }
+
       osal_usleep(5000);
     }
 
@@ -343,67 +400,7 @@ void EthercatMaster::run() {
 }
 
 EthercatMaster::EthercatState EthercatMaster::getState() const {
-  // 如果没运行，直接返回断开
-  if (!running_) {
-    return EthercatState::Disconnected;
-  }
-
-  // 如果没初始化
-  if (!initialized_) {
-    return EthercatState::Disconnected;
-  }
-
-  EthercatMaster* mutable_this = const_cast<EthercatMaster*>(this);
-  ecx_readstate(&mutable_this->context_);
-
-  // 检查从站状态
-  bool all_operational = true;
-  bool any_error = false;
-  bool any_safe_op = false;
-
-  for (int i = 1; i <= context_.slavecount; ++i) {
-    const ec_slavet* slave = context_.slavelist + i;
-    if (slave->group != group_)
-      continue;
-
-    if (slave->state == EC_STATE_NONE) {
-      return EthercatState::Disconnected;  // 从站丢失
-    }
-
-    if (slave->state == EC_STATE_INIT) {
-      return EthercatState::Initializing;
-    }
-
-    if (slave->state == EC_STATE_PRE_OP) {
-      return EthercatState::Initializing;
-    }
-
-    if (slave->state == EC_STATE_SAFE_OP) {
-      any_safe_op = true;
-    }
-
-    if ((slave->state & 0x0F) != EC_STATE_OPERATIONAL) {
-      all_operational = false;
-    }
-
-    if (slave->state & EC_STATE_ERROR) {
-      any_error = true;
-    }
-  }
-
-  if (any_error) {
-    return EthercatState::Error;
-  }
-
-  if (all_operational) {
-    return EthercatState::Operational;
-  }
-
-  if (any_safe_op) {
-    return EthercatState::SafeOperational;
-  }
-
-  return EthercatState::Initializing;
+  return cached_state_.load();
 }
 
 SlaveInfo EthercatMaster::getSlaveInfo() const {
@@ -453,6 +450,7 @@ void EthercatMaster::stop() {
 
   started_ = false;
   initialized_ = false;
+  cached_state_.store(EthercatState::Disconnected);
 }
 
 void EthercatMaster::setOutput(int index, uint8_t value) {

@@ -88,6 +88,7 @@ public:
   void update_camera_subscriptions(const std::string& camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::string pc_topic = "");
 
   bool check_device_availability(const common_msgs::msg::TaskDeviceCheck& check);
+  bool is_task_action_ready() const;
   std::vector<common_msgs::msg::DeviceStatus> get_connected_devices();
 
   // Getters for URDF paths

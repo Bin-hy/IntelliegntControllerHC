@@ -43,7 +43,13 @@ def generate_launch_description():
     # Robot State Publisher (TF Bridge)
     # We launch it here because we cannot modify duco_ros_driver
     # We need to construct the URDF path correctly
-    urdf_file_name = PythonExpression(["'duco_' + '", LaunchConfiguration('model'), "' + '.urdf'"])
+    urdf_file_name = PythonExpression([
+        "'duco_gcr5_910_with_dh116_lhand.urdf' if '",
+        LaunchConfiguration('model'),
+        "' == 'gcr5_910' else 'duco_' + '",
+        LaunchConfiguration('model'),
+        "' + '.urdf'"
+    ])
     urdf_path = PathJoinSubstitution([
         FindPackageShare('duco_support'),
         'urdf',
@@ -70,9 +76,10 @@ def generate_launch_description():
     )
 
     # LHand Description & State Publisher
-    lhand_desc_pkg = FindPackageShare('lhandpro_description')
-    # Default to Left Hand for now as requested
-    lhand_urdf_path = PathJoinSubstitution([lhand_desc_pkg, 'urdf', 'DH126S-L000-A1.urdf'])
+    lhand_desc_pkg = FindPackageShare('dh116_l000_a1')
+    lhand_urdf_path = PathJoinSubstitution([lhand_desc_pkg, 'urdf', 'DH116-L000-A1.urdf'])
+    rhand_desc_pkg = FindPackageShare('dh116_r000_a1')
+    rhand_urdf_path = PathJoinSubstitution([rhand_desc_pkg, 'urdf', 'DH116-R000-A1.urdf'])
     
     # Read URDF content for parameter
     lhand_desc_content = ParameterValue(Command(['cat ', lhand_urdf_path]), value_type=str)
@@ -104,7 +111,13 @@ def generate_launch_description():
     # Launched last with a delay
     
     # Construct URDF path for UI
-    urdf_file_name = PythonExpression(["'duco_' + '", LaunchConfiguration('model'), "' + '.urdf'"])
+    urdf_file_name = PythonExpression([
+        "'duco_gcr5_910_with_dh116_lhand.urdf' if '",
+        LaunchConfiguration('model'),
+        "' == 'gcr5_910' else 'duco_' + '",
+        LaunchConfiguration('model'),
+        "' + '.urdf'"
+    ])
     urdf_path = PathJoinSubstitution([
         FindPackageShare('duco_support'),
         'urdf',
@@ -120,6 +133,7 @@ def generate_launch_description():
             'robot_ip': LaunchConfiguration('robot_ip'),
             'robot_urdf_path': urdf_path,
             'left_hand_urdf_path': lhand_urdf_path,
+            'right_hand_urdf_path': rhand_urdf_path,
             'robot_model': LaunchConfiguration('model')
         }]
     )
