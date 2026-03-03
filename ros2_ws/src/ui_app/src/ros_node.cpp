@@ -54,6 +54,7 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     client_io_ = create_client<duco_msg::srv::RobotIoControl>("/ui/request_io");
     client_move_ = create_client<duco_msg::srv::RobotMove>("/ui/request_move");
     client_pause_task_ = create_client<std_srvs::srv::SetBool>("/system/pause_task");
+    client_set_user_ = create_client<common_msgs::srv::SetCurrentUser>("/system/set_current_user");
     // New Save Image Service (Vision Server)
     client_save_image_ = create_client<vision_server::srv::SaveImage>("save_image");
 
@@ -508,6 +509,32 @@ void RosNode::call_pause_task(bool pause) {
             RCLCPP_ERROR(this->get_logger(), "Pause Task Service call failed: %s", e.what());
         }
     });
+}
+
+void RosNode::set_user_context(const std::string& username,
+                               const std::string& role,
+                               const std::string& session_id) {
+    if (!client_set_user_->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(this->get_logger(), "SetCurrentUser service not available");
+        return;
+    }
+    auto request = std::make_shared<common_msgs::srv::SetCurrentUser::Request>();
+    request->username = username;
+    request->role = role;
+    request->session_id = session_id;
+    client_set_user_->async_send_request(request,
+        [this](rclcpp::Client<common_msgs::srv::SetCurrentUser>::SharedFuture future) {
+            try {
+                auto response = future.get();
+                if (!response->success) {
+                    RCLCPP_WARN(this->get_logger(), "SetCurrentUser failed: %s", response->message.c_str());
+                } else {
+                    RCLCPP_INFO(this->get_logger(), "SetCurrentUser ok: %s", response->message.c_str());
+                }
+            } catch (const std::exception& e) {
+                RCLCPP_ERROR(this->get_logger(), "SetCurrentUser call failed: %s", e.what());
+            }
+        });
 }
 
 

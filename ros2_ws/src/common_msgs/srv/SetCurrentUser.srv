@@ -1,0 +1,7 @@
+string username
+string role
+string session_id
+---
+bool success
+string message
+

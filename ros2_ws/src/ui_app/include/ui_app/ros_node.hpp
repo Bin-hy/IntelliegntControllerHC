@@ -25,7 +25,8 @@
 #elif __has_include(<cv_bridge/cv_bridge.h>)
 #include <cv_bridge/cv_bridge.h>
 #endif
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 #include <atomic>
 #include <mutex>
 #include <vector>
@@ -38,6 +39,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include "common_msgs/action/execute_task.hpp"
 #include "common_msgs/msg/device_status.hpp"
+#include "common_msgs/srv/set_current_user.hpp"
 
 class RosNode : public rclcpp::Node {
 public:
@@ -61,6 +63,9 @@ public:
                        const std::string& tool, const std::string& wobj);
   void call_robot_io(const std::string& command, int type, int port, bool value);
   void call_pause_task(bool pause);
+  void set_user_context(const std::string& username,
+                        const std::string& role,
+                        const std::string& session_id);
   // void save_image(); // Deprecated in favor of multi-camera
   void save_snapshot(const std::string& camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::function<void(bool, std::string)> callback = nullptr);
 
@@ -165,6 +170,7 @@ private:
   rclcpp_action::Client<ExecuteTask>::SharedPtr client_execute_task_;
   GoalHandleExecuteTask::SharedPtr current_goal_handle_;
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Client<common_msgs::srv::SetCurrentUser>::SharedPtr client_set_user_;
 };
 
 #endif // ROS_NODE_HPP
