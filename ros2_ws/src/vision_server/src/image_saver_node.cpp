@@ -39,7 +39,7 @@ private:
     {
         sensor_msgs::msg::Image msg;
         bool received = rclcpp::wait_for_message(
-            msg, this->shared_from_this(), request->topic_name, std::chrono::seconds(2));
+            msg, this->shared_from_this(), request->topic_name, std::chrono::seconds(5));
         if (!received) {
             response->success = false;
             response->message = "No image received from " + request->topic_name;
@@ -65,10 +65,32 @@ private:
         }
         auto stamp = this->now().nanoseconds();
         std::string file_tag = request->file_tag.empty() ? "image" : request->file_tag;
-        std::string filename = save_dir_ + "/" + file_tag + "_" + std::to_string(stamp) + ".png";
-        bool ok = cv::imwrite(filename, cv_ptr->image);
+        fs::path base_dir(save_dir_);
+        fs::path tag_path(file_tag);
+        fs::path target_dir = base_dir;
+        std::string prefix;
+        if (tag_path.has_parent_path()) {
+            target_dir /= tag_path.parent_path();
+            prefix = tag_path.filename().string();
+        } else {
+            prefix = tag_path.string();
+        }
+        if (prefix.empty()) {
+            prefix = "image";
+        }
+        try {
+            if (!fs::exists(target_dir)) {
+                fs::create_directories(target_dir);
+            }
+        } catch (const std::exception& e) {
+            response->success = false;
+            response->message = std::string("Failed to create directory: ") + e.what();
+            return;
+        }
+        fs::path filename = target_dir / (prefix + "_" + std::to_string(stamp) + ".png");
+        bool ok = cv::imwrite(filename.string(), cv_ptr->image);
         response->success = ok;
-        response->message = ok ? filename : ("Failed to write " + filename);
+        response->message = ok ? filename.string() : ("Failed to write " + filename.string());
     }
 
     std::string save_dir_;

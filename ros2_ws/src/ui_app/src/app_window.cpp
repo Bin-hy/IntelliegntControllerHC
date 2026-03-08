@@ -464,7 +464,7 @@ void AppWindow::showTaskDialog() {
     auto * dialog = new QDialog(this);
     dialog->setWindowTitle("任务模块");
     auto * layout = new QVBoxLayout(dialog);
-    auto * task_widget = new TaskWidget(node_, dialog);
+    auto * task_widget = new TaskWidget(node_, current_user_, current_role_, dialog);
     layout->addWidget(task_widget);
     dialog->resize(800, 600);
     dialog->exec();
@@ -826,7 +826,19 @@ void AppWindow::refreshCameraList() {
 
 void AppWindow::onCameraConfigChanged() {
     std::string cam_ns = combo_camera_->currentText().toStdString();
-    
+    if (cam_ns.empty()) return;
+
+    // Clear old images so stale frames from previous camera don't linger
+    {
+        std::lock_guard<std::mutex> lock(node_->image_mutex_);
+        node_->last_color_image_ = cv::Mat();
+        node_->last_depth_image_ = cv::Mat();
+        node_->last_ir_left_image_ = cv::Mat();
+        node_->last_ir_right_image_ = cv::Mat();
+    }
+    if (label_color_stream_) label_color_stream_->setText("Connecting...");
+    if (label_depth_stream_) label_depth_stream_->setText("Connecting...");
+
     // Auto-detect capabilities and update UI state (Enable/Disable/Hide)
     auto caps = node_->get_camera_capabilities(cam_ns);
 

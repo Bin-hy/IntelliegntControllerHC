@@ -20,12 +20,14 @@
 #include <QTableWidget>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDirIterator>
+#include <QPixmap>
 #include <iostream>
 #include "common_msgs/msg/task_config.hpp"
 // #include "ament_index_cpp/get_package_share_directory.hpp"
 
-TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, QWidget *parent)
-    : QWidget(parent), node_(node) {
+TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, const QString& username, UserRole role, QWidget *parent)
+    : QWidget(parent), node_(node), current_user_(username), current_role_(role) {
     // Initialize record manager
     QDir records_dir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation));
     record_manager_ = std::make_shared<TaskRecordManager>(records_dir.filePath("task_records"));
@@ -42,6 +44,7 @@ TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, QWidget *parent)
     auto * btn_del = new QPushButton("Delete Task");
     auto * btn_run = new QPushButton("Run Task");
     auto * btn_history = new QPushButton("历史记录");
+    auto * btn_photos = new QPushButton("照片管理");
     auto * btn_export = new QPushButton("导出 CSV");
 
     h_btn->addWidget(btn_add);
@@ -49,6 +52,7 @@ TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, QWidget *parent)
     h_btn->addWidget(btn_del);
     h_btn->addWidget(btn_run);
     h_btn->addWidget(btn_history);
+    h_btn->addWidget(btn_photos);
     h_btn->addWidget(btn_export);
     layout->addLayout(h_btn);
 
@@ -57,6 +61,7 @@ TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, QWidget *parent)
     connect(btn_del, &QPushButton::clicked, this, &TaskWidget::onDeleteTask);
     connect(btn_run, &QPushButton::clicked, this, &TaskWidget::onRunTask);
     connect(btn_history, &QPushButton::clicked, this, &TaskWidget::onShowHistory);
+    connect(btn_photos, &QPushButton::clicked, this, &TaskWidget::onShowPhotos);
     connect(btn_export, &QPushButton::clicked, this, &TaskWidget::onExportCSV);
 
     loadTasks();
@@ -107,7 +112,11 @@ void TaskWidget::updateTaskList() {
     task_list_->clear();
     for (const auto& task : tasks_) {
         QString name = QString::fromStdString(task.task_name);
-        QString info = QString("Steps: %1 | Devices: %2").arg(task.task_seqs.size()).arg(task.device_checks.size());
+        int rounds = task.exec_rounds > 0 ? task.exec_rounds : 1;
+        QString info = QString("Steps: %1 | Devices: %2 | Rounds: %3")
+                           .arg(task.task_seqs.size())
+                           .arg(task.device_checks.size())
+                           .arg(rounds);
         task_list_->addItem(name + " [" + info + "]");
     }
 }
@@ -128,6 +137,7 @@ void TaskWidget::saveTasks() {
     for (const auto& task : tasks_) {
         QJsonObject taskObj;
         taskObj["task_name"] = QString::fromStdString(task.task_name);
+        taskObj["exec_rounds"] = task.exec_rounds > 0 ? task.exec_rounds : 1;
         
         QJsonArray deviceChecks;
         for (const auto& check : task.device_checks) {
@@ -193,6 +203,8 @@ void TaskWidget::loadTasks() {
         
         common_msgs::msg::TaskConfig task;
         task.task_name = taskObj["task_name"].toString().toStdString();
+        int rounds = taskObj.contains("exec_rounds") ? taskObj["exec_rounds"].toInt() : 1;
+        task.exec_rounds = rounds > 0 ? rounds : 1;
         
         QJsonArray deviceChecks = taskObj["device_checks"].toArray();
         for (const auto& dVal : deviceChecks) {
@@ -269,6 +281,121 @@ void TaskWidget::onShowHistory() {
     auto * buttons = new QDialogButtonBox(QDialogButtonBox::Close);
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     layout->addWidget(buttons);
+
+    dlg.exec();
+}
+
+void TaskWidget::onShowPhotos() {
+    QString base_dir = QDir::homePath() + "/.ros/task_photos";
+    QDir root(base_dir);
+    if (!root.exists()) {
+        QMessageBox::information(this, "照片管理", "未找到照片目录: " + base_dir);
+        return;
+    }
+
+    struct PhotoItem {
+        QString task;
+        QString time;
+        QString round;
+        QString user;
+        QString file;
+        QString path;
+    };
+
+    QVector<PhotoItem> items;
+    QDirIterator it(base_dir, QStringList() << "*.png", QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        QString path = it.next();
+        QString rel = root.relativeFilePath(path);
+        QStringList parts = rel.split("/", Qt::SkipEmptyParts);
+        if (parts.size() < 5) {
+            continue;
+        }
+        PhotoItem item;
+        item.task = parts[0];
+        item.time = parts[1];
+        item.round = parts[2];
+        item.user = parts[3];
+        item.file = parts.last();
+        item.path = path;
+        if (current_role_ == UserRole::Operator) {
+            if (item.user != current_user_) {
+                continue;
+            }
+        }
+        items.append(item);
+    }
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("照片管理");
+    dlg.resize(900, 500);
+    auto * layout = new QHBoxLayout(&dlg);
+
+    auto * table = new QTableWidget();
+    table->setColumnCount(5);
+    table->setHorizontalHeaderLabels({"任务", "时间", "轮次", "用户", "文件"});
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setRowCount(items.size());
+    for (int i = 0; i < items.size(); ++i) {
+        const auto& p = items[i];
+        table->setItem(i, 0, new QTableWidgetItem(p.task));
+        table->setItem(i, 1, new QTableWidgetItem(p.time));
+        table->setItem(i, 2, new QTableWidgetItem(p.round));
+        table->setItem(i, 3, new QTableWidgetItem(p.user));
+        table->setItem(i, 4, new QTableWidgetItem(p.file));
+    }
+
+    auto * right = new QVBoxLayout();
+    auto * preview = new QLabel();
+    preview->setMinimumSize(320, 240);
+    preview->setAlignment(Qt::AlignCenter);
+    right->addWidget(preview, 1);
+
+    auto * btn_delete = new QPushButton("删除照片");
+    bool can_delete = current_role_ == UserRole::Admin || current_role_ == UserRole::Operator;
+    btn_delete->setEnabled(can_delete);
+    right->addWidget(btn_delete);
+
+    layout->addWidget(table, 2);
+    layout->addLayout(right, 1);
+
+    auto refresh_preview = [table, preview, &items]() {
+        int row = table->currentRow();
+        if (row < 0 || row >= items.size()) {
+            preview->clear();
+            return;
+        }
+        QPixmap pix(items[row].path);
+        if (!pix.isNull()) {
+            preview->setPixmap(pix.scaled(preview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        } else {
+            preview->setText("无法加载图片");
+        }
+    };
+
+    connect(table, &QTableWidget::itemSelectionChanged, &dlg, refresh_preview);
+
+    connect(btn_delete, &QPushButton::clicked, &dlg, [this, table, &items]() {
+        int row = table->currentRow();
+        if (row < 0 || row >= items.size()) return;
+        if (current_role_ == UserRole::Maintainer) return;
+        QString path = items[row].path;
+        if (QMessageBox::question(this, "删除照片", "确认删除所选照片？", QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+            return;
+        }
+        if (QFile::remove(path)) {
+            items.removeAt(row);
+            table->removeRow(row);
+        } else {
+            QMessageBox::warning(this, "删除失败", "无法删除文件: " + path);
+        }
+    });
+
+    if (items.size() > 0) {
+        table->selectRow(0);
+    }
 
     dlg.exec();
 }

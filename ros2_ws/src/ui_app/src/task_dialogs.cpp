@@ -287,6 +287,14 @@ TaskConfigDialog::TaskConfigDialog(std::shared_ptr<RosNode> node, QWidget *paren
     h_name->addWidget(edit_name_);
     layout->addLayout(h_name);
 
+    auto * h_rounds = new QHBoxLayout();
+    h_rounds->addWidget(new QLabel("执行轮次:"));
+    spin_rounds_ = new QSpinBox();
+    spin_rounds_->setRange(1, 999);
+    spin_rounds_->setValue(1);
+    h_rounds->addWidget(spin_rounds_);
+    layout->addLayout(h_rounds);
+
     layout->addWidget(new QLabel("Devices:"));
     table_devices_ = new QTableWidget();
     table_devices_->setColumnCount(4);
@@ -329,6 +337,8 @@ TaskConfigDialog::TaskConfigDialog(std::shared_ptr<RosNode> node, QWidget *paren
 
 void TaskConfigDialog::setTask(const common_msgs::msg::TaskConfig& task) {
     edit_name_->setText(QString::fromStdString(task.task_name));
+    int rounds = task.exec_rounds > 0 ? task.exec_rounds : 1;
+    spin_rounds_->setValue(rounds);
     devices_ = task.device_checks;
     steps_ = task.task_seqs;
     updateDeviceTable();
@@ -338,6 +348,7 @@ void TaskConfigDialog::setTask(const common_msgs::msg::TaskConfig& task) {
 common_msgs::msg::TaskConfig TaskConfigDialog::getTask() const {
     common_msgs::msg::TaskConfig task;
     task.task_name = edit_name_->text().toStdString();
+    task.exec_rounds = spin_rounds_->value();
     task.device_checks = devices_;
     task.task_seqs = steps_;
     return task;
@@ -418,7 +429,9 @@ TaskRunDialog::TaskRunDialog(std::shared_ptr<RosNode> node, const common_msgs::m
     layout->addWidget(label_status_);
 
     progress_steps_ = new QProgressBar();
-    progress_steps_->setRange(0, (int)task_.task_seqs.size());
+    int rounds = task_.exec_rounds > 0 ? task_.exec_rounds : 1;
+    int total_steps = static_cast<int>(task_.task_seqs.size()) * rounds;
+    progress_steps_->setRange(0, total_steps);
     progress_steps_->setValue(0);
     layout->addWidget(progress_steps_);
 

@@ -56,7 +56,7 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     client_pause_task_ = create_client<std_srvs::srv::SetBool>("/system/pause_task");
     client_set_user_ = create_client<common_msgs::srv::SetCurrentUser>("/system/set_current_user");
     // New Save Image Service (Vision Server)
-    client_save_image_ = create_client<vision_server::srv::SaveImage>("save_image");
+    client_save_image_ = create_client<vision_server::srv::SaveImage>("/image_saver/save_image");
 
     // LHand Clients
     client_lhand_enable_ = create_client<lhandpro_interfaces::srv::SetEnable>("/lhandpro_service/set_enable");

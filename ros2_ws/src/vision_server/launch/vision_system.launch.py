@@ -178,7 +178,7 @@ def generate_actions(context):
         name='image_saver_node',
         namespace='image_saver',
         output='screen',
-        parameters=[{'save_dir': '.'}]
+        parameters=[{'save_dir': os.path.expanduser('~/.ros/task_photos')}]
     ))
 
     return actions

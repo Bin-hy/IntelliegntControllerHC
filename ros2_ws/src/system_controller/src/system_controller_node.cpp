@@ -7,6 +7,7 @@
 #include <duco_msg/srv/robot_task_state_rquest.hpp>
 #include <common_msgs/action/execute_task.hpp>
 #include <common_msgs/msg/device_status.hpp>
+#include <common_msgs/srv/set_current_user.hpp>
 #include <lhandpro_interfaces/srv/set_all_position.hpp>
 #include <lhandpro_interfaces/srv/set_position.hpp>
 #include <lhandpro_interfaces/srv/move_motors.hpp>
@@ -22,6 +23,8 @@
 #include <string>
 #include <thread>
 #include <sstream>
+#include <iomanip>
+#include <ctime>
 
 using namespace std::chrono_literals;
 
@@ -66,6 +69,10 @@ public:
             "/system/pause_task",
             std::bind(&SystemController::handle_pause_request, this, std::placeholders::_1, std::placeholders::_2));
 
+        srv_set_user_ = this->create_service<common_msgs::srv::SetCurrentUser>(
+            "/system/set_current_user",
+            std::bind(&SystemController::handle_set_user_request, this, std::placeholders::_1, std::placeholders::_2));
+
         // Action Server for Task Execution
         action_server_ = rclcpp_action::create_server<ExecuteTask>(
             this,
@@ -92,6 +99,8 @@ private:
     std::mutex state_mutex_;
     std::mutex devices_mutex_;
     bool state_received_ = false;
+    std::string current_user_ = "guest";
+    std::string current_role_ = "operator";
 
     // Constants
     const int STATE_ENABLE = 6;
@@ -114,6 +123,7 @@ private:
     rclcpp::Service<duco_msg::srv::RobotControl>::SharedPtr srv_control_;
     rclcpp::Service<duco_msg::srv::RobotIoControl>::SharedPtr srv_io_;
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr srv_pause_;
+    rclcpp::Service<common_msgs::srv::SetCurrentUser>::SharedPtr srv_set_user_;
 
     void handle_pause_request(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                               std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
@@ -140,6 +150,14 @@ private:
                 response->message = "Not Paused";
             }
         }
+    }
+
+    void handle_set_user_request(const std::shared_ptr<common_msgs::srv::SetCurrentUser::Request> request,
+                                 std::shared_ptr<common_msgs::srv::SetCurrentUser::Response> response) {
+        current_user_ = request->username.empty() ? "guest" : request->username;
+        current_role_ = request->role.empty() ? "operator" : request->role;
+        response->success = true;
+        response->message = "user_context_updated";
     }
 
     // Callbacks
@@ -173,6 +191,39 @@ private:
 
     bool is_status_ready(const std::string& status) {
         return status == "ready" || status == "running";
+    }
+
+    std::string sanitize_component(const std::string& input) {
+        std::string out;
+        out.reserve(input.size());
+        for (char c : input) {
+            if ((c >= 'a' && c <= 'z') ||
+                (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') ||
+                c == '_' || c == '-') {
+                out.push_back(c);
+            } else {
+                out.push_back('_');
+            }
+        }
+        if (out.empty()) {
+            return "unnamed";
+        }
+        return out;
+    }
+
+    std::string current_run_time_tag() {
+        auto now = std::chrono::system_clock::now();
+        std::time_t tt = std::chrono::system_clock::to_time_t(now);
+        std::tm tm_time;
+#ifdef _WIN32
+        localtime_s(&tm_time, &tt);
+#else
+        localtime_r(&tt, &tm_time);
+#endif
+        std::ostringstream ss;
+        ss << std::put_time(&tm_time, "%Y%m%d_%H%M%S");
+        return ss.str();
     }
 
     bool match_device(const common_msgs::msg::DeviceStatus& status, const common_msgs::msg::TaskDeviceCheck& check) {
@@ -310,68 +361,69 @@ private:
         
         RCLCPP_INFO(this->get_logger(), "All devices found.");
 
-        // 2. Execute Steps
+        int rounds = goal->task_config.exec_rounds > 0 ? goal->task_config.exec_rounds : 1;
+        std::string run_time = current_run_time_tag();
         int step_index = 0;
         is_paused_ = false;
-        for (const auto& step : goal->task_config.task_seqs) {
-            if (!wait_for_devices_ready(goal_handle, feedback, goal->task_config.device_checks)) {
-                result->success = false;
-                result->message = "Canceled";
-                goal_handle->canceled(result);
-                return;
-            }
-
-            if (is_paused_) {
-                feedback->current_status = pause_reason_.empty() ? "Paused" : pause_reason_;
-                goal_handle->publish_feedback(feedback);
-                std::unique_lock<std::mutex> lock(pause_mutex_);
-                pause_cv_.wait(lock, [this, &goal_handle]{ return !is_paused_ || goal_handle->is_canceling(); });
-                if (goal_handle->is_canceling()) {
-                } else {
-                    RCLCPP_INFO(this->get_logger(), "Task Resumed.");
+        for (int round = 0; round < rounds; ++round) {
+            for (const auto& step : goal->task_config.task_seqs) {
+                if (!wait_for_devices_ready(goal_handle, feedback, goal->task_config.device_checks)) {
+                    result->success = false;
+                    result->message = "Canceled";
+                    goal_handle->canceled(result);
+                    return;
                 }
+
+                if (is_paused_) {
+                    feedback->current_status = pause_reason_.empty() ? "Paused" : pause_reason_;
+                    goal_handle->publish_feedback(feedback);
+                    std::unique_lock<std::mutex> lock(pause_mutex_);
+                    pause_cv_.wait(lock, [this, &goal_handle]{ return !is_paused_ || goal_handle->is_canceling(); });
+                    if (!goal_handle->is_canceling()) {
+                        RCLCPP_INFO(this->get_logger(), "Task Resumed.");
+                    }
+                }
+
+                if (goal_handle->is_canceling()) {
+                    result->success = false;
+                    result->message = "Canceled";
+                    goal_handle->canceled(result);
+                    return;
+                }
+
+                feedback->current_step_index = step_index;
+                feedback->current_status = "Executing Step " + std::to_string(step_index) + " Round " + std::to_string(round + 1) + "/" + std::to_string(rounds);
+                goal_handle->publish_feedback(feedback);
+
+                RCLCPP_INFO(this->get_logger(), "Executing Step %d: Name: %s, Type %s (Round %d/%d)", step_index, step.name.c_str(), step.type.c_str(), round + 1, rounds);
+
+                bool step_success = true;
+                if (step.type == "arm") {
+                    step_success = execute_arm_step(step, goal_handle);
+                } else if (step.type == "lhand" || step.type == "rhand") {
+                    step_success = execute_hand_step(step, goal_handle);
+                } else if (step.type == "camera") {
+                    step_success = execute_camera_step(step, goal_handle, goal->task_config.task_name, run_time, round);
+                } else {
+                    RCLCPP_WARN(this->get_logger(), "Unknown step type: %s", step.type.c_str());
+                }
+
+                if (goal_handle->is_canceling()) {
+                    result->success = false;
+                    result->message = "Canceled";
+                    goal_handle->canceled(result);
+                    return;
+                }
+
+                if (!step_success) {
+                    result->success = false;
+                    result->message = "Step " + std::to_string(step_index) + " failed";
+                    goal_handle->abort(result);
+                    return;
+                }
+
+                step_index++;
             }
-
-            if (goal_handle->is_canceling()) {
-                result->success = false;
-                result->message = "Canceled";
-                goal_handle->canceled(result);
-                return;
-            }
-
-            feedback->current_step_index = step_index;
-            feedback->current_status = "Executing Step " + std::to_string(step_index);
-            goal_handle->publish_feedback(feedback);
-
-            RCLCPP_INFO(this->get_logger(), "Executing Step %d: Name: %s, Type %s", step_index, step.name.c_str(), step.type.c_str());
-
-            bool step_success = true;
-            if (step.type == "arm") {
-                step_success = execute_arm_step(step, goal_handle);
-            } else if (step.type == "lhand" || step.type == "rhand") {
-                step_success = execute_hand_step(step, goal_handle);
-            } else if (step.type == "camera") {
-                step_success = execute_camera_step(step, goal_handle);
-            } else {
-                RCLCPP_WARN(this->get_logger(), "Unknown step type: %s", step.type.c_str());
-            }
-            
-            // Check cancel again after step execution (if long running)
-            if (goal_handle->is_canceling()) {
-                result->success = false;
-                result->message = "Canceled";
-                goal_handle->canceled(result);
-                return;
-            }
-
-            if (!step_success) {
-                result->success = false;
-                result->message = "Step " + std::to_string(step_index) + " failed";
-                goal_handle->abort(result);
-                return;
-            }
-
-            step_index++;
         }
 
         result->success = true;
@@ -495,7 +547,11 @@ private:
         return true;
     }
 
-    bool execute_camera_step(const common_msgs::msg::TaskStep& step, std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
+    bool execute_camera_step(const common_msgs::msg::TaskStep& step,
+                             std::shared_ptr<GoalHandleExecuteTask> goal_handle,
+                             const std::string& task_name,
+                             const std::string& run_time,
+                             int round_index) {
         auto client_primary = this->create_client<vision_server::srv::SaveImage>("/image_saver/save_image");
         auto client_fallback = this->create_client<vision_server::srv::SaveImage>("save_image");
         rclcpp::Client<vision_server::srv::SaveImage>::SharedPtr client;
@@ -508,18 +564,21 @@ private:
             return false;
         }
 
-        // Resolve camera namespace from topic_prefix in connected_devices_
-        // Falls back to topic scanning when SN is not specified or not yet registered.
-        std::string cam_ns = "/camera";  // default fallback
+        std::string cam_ns;
         {
             std::lock_guard<std::mutex> lock(devices_mutex_);
             if (!step.device_sn.empty()) {
-                auto it = connected_devices_.find(step.device_sn);
-                if (it != connected_devices_.end() && !it->second.topic_prefix.empty()) {
-                    cam_ns = it->second.topic_prefix;
+                if (!step.device_sn.empty() && step.device_sn.front() == '/') {
+                    cam_ns = step.device_sn;
+                } else {
+                    auto it = connected_devices_.find(step.device_sn);
+                    if (it != connected_devices_.end() && !it->second.topic_prefix.empty()) {
+                        cam_ns = it->second.topic_prefix;
+                    } else {
+                        cam_ns = "/" + step.device_sn;
+                    }
                 }
             } else {
-                // No SN specified: pick the first camera device with a topic_prefix
                 for (const auto& [key, dev] : connected_devices_) {
                     if (dev.device_type == "vision_system" && !dev.topic_prefix.empty()) {
                         cam_ns = dev.topic_prefix;
@@ -528,17 +587,37 @@ private:
                 }
             }
         }
-
-
+        if (cam_ns.empty()) {
+            std::string suffix = "/color/image_raw";
+            auto topic_names_and_types = this->get_topic_names_and_types();
+            for (const auto& [name, types] : topic_names_and_types) {
+                if (name.size() > suffix.size() && name.rfind(suffix) == name.size() - suffix.size()) {
+                    cam_ns = name.substr(0, name.size() - suffix.size());
+                    break;
+                }
+            }
+        }
+        if (cam_ns.empty()) {
+            RCLCPP_ERROR(this->get_logger(), "No camera namespace available for capture");
+            return false;
+        }
+        if (cam_ns.front() != '/') {
+            cam_ns = "/" + cam_ns;
+        }
 
         std::string color_topic = cam_ns + "/color/image_raw";
         std::string depth_topic = cam_ns + "/depth/image_raw";
         std::string ir_topic    = cam_ns + "/left_ir/image_raw";
 
+        std::string task_tag = sanitize_component(task_name);
+        std::string user_tag = sanitize_component(current_user_);
+        std::string round_tag = "round_" + std::to_string(round_index + 1);
+        std::string base_tag = task_tag + "/" + run_time + "/" + round_tag + "/" + user_tag;
+
         auto call_save = [&](std::string topic, std::string tag) {
             auto request = std::make_shared<vision_server::srv::SaveImage::Request>();
             request->topic_name = topic;
-            request->file_tag = tag;
+            request->file_tag = base_tag + "/" + tag;
             
             auto future = client->async_send_request(request);
             auto start_time = std::chrono::steady_clock::now();
@@ -571,18 +650,21 @@ private:
         };
 
         bool success = true;
+        std::string step_tag = sanitize_component(step.name);
         if (step.camera_type.empty()) {
-            // Default behavior: Capture Color and Depth
-            if (!call_save(color_topic, "Color")) success = false;
-            if (!call_save(depth_topic, "Depth")) success = false;
+            if (!call_save(color_topic, step_tag + "_Color")) success = false;
+            if (!call_save(depth_topic, step_tag + "_Depth")) success = false;
         } else {
             for (const auto& type : step.camera_type) {
                 if (type == "color") {
-                    if (!call_save(color_topic, "Color")) success = false;
+                    if (!call_save(color_topic, step_tag + "_Color")) success = false;
                 } else if (type == "depth") {
-                    if (!call_save(depth_topic, "Depth")) success = false;
-                } else if (type == "ir") {
-                     if (!call_save(ir_topic, "IR")) success = false;
+                    if (!call_save(depth_topic, step_tag + "_Depth")) success = false;
+                } else if (type == "ir" || type == "ir_left") {
+                     if (!call_save(ir_topic, step_tag + "_IRLeft")) success = false;
+                } else if (type == "ir_right") {
+                     std::string right_ir = cam_ns + "/right_ir/image_raw";
+                     if (!call_save(right_ir, step_tag + "_IRRight")) success = false;
                 }
             }
         }

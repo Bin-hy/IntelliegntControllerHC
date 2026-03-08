@@ -95,6 +95,7 @@ private slots:
 private:
     std::shared_ptr<RosNode> node_;
     QLineEdit* edit_name_;
+    QSpinBox* spin_rounds_;
     QTableWidget* table_devices_;
     QListWidget* list_steps_;
     
