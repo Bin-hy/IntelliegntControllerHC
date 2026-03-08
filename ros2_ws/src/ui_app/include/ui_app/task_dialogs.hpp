@@ -7,6 +7,7 @@
 #include "common_msgs/msg/task_device_check.hpp"
 #include "common_msgs/msg/task_step.hpp"
 #include "ui_app/ros_node.hpp"
+#include "ui_app/task_record_manager.hpp"
 
 class QLineEdit;
 class QComboBox;
@@ -48,6 +49,7 @@ class StepAddDialog : public QDialog {
 public:
     explicit StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<common_msgs::msg::TaskDeviceCheck>& devices, QWidget *parent = nullptr);
     common_msgs::msg::TaskStep getStep() const;
+    void setStep(const common_msgs::msg::TaskStep& step);
 
 private slots:
     void onTypeChanged(const QString& type);
@@ -87,6 +89,7 @@ private slots:
     void onAddDevice();
     void onDeleteDevice();
     void onAddStep();
+    void onEditStep();
     void onDeleteStep();
 
 private:
@@ -106,7 +109,10 @@ private:
 class TaskRunDialog : public QDialog {
     Q_OBJECT
 public:
-    explicit TaskRunDialog(std::shared_ptr<RosNode> node, const common_msgs::msg::TaskConfig& task, QWidget *parent = nullptr);
+    explicit TaskRunDialog(std::shared_ptr<RosNode> node,
+                           const common_msgs::msg::TaskConfig& task,
+                           std::shared_ptr<TaskRecordManager> record_manager = nullptr,
+                           QWidget *parent = nullptr);
 
 private slots:
     void onStart();
@@ -120,20 +126,20 @@ private slots:
 
 private:
     std::shared_ptr<RosNode> node_;
+    std::shared_ptr<TaskRecordManager> record_manager_;
     common_msgs::msg::TaskConfig task_;
-    
+    TaskExecutionRecord current_record_;
+
     QLabel* label_status_;
     QProgressBar* progress_steps_;
-    
+
     QPushButton* btn_start_;
-    QPushButton* btn_pause_; // Actually pause logic might need action cancellation or preemption
+    QPushButton* btn_pause_;
     QPushButton* btn_stop_;
 
-    // Visualization
     RobotVizWidget* robot_viz_;
     RobotVizWidget* lhand_viz_;
-    // Camera view?
-    
+
     void checkDevices();
     bool devices_ready_;
 };

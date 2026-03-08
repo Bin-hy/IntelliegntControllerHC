@@ -1,4 +1,4 @@
-﻿#include <QApplication>
+#include <QApplication>
 #include <QFile>
 #include <QTimer>
 #include <QMessageBox>
@@ -57,8 +57,10 @@ int main(int argc, char ** argv) {
                          session.session_id.toStdString());
 
   AppWindow w(node, auth_manager, auth_log_manager, &permission_manager, session.role);
+  w.setUserSession(session.username, session.role, session.session_id, true);
   w.setWindowTitle("机器臂手上位机");
-  w.resize(800, 600);
+  w.resize(1440, 900);
+  w.setMinimumSize(1200, 720);
   w.show();
 
   IdleLogoutWatcher watcher(10 * 60 * 1000, &app);
@@ -70,7 +72,7 @@ int main(int argc, char ** argv) {
           node->set_user_context(session.username.toStdString(),
                                  permission_manager.roleToString(session.role).toStdString(),
                                  session.session_id.toStdString());
-          w.setCurrentRole(session.role);
+          w.setUserSession(session.username, session.role, session.session_id, true);
           w.show();
       } else {
           app.quit();

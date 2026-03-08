@@ -15,12 +15,21 @@
 #include <QJsonArray>
 #include <QJsonValue>
 #include <QDateTime>
+#include <QFileDialog>
+#include <QHeaderView>
+#include <QTableWidget>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <iostream>
 #include "common_msgs/msg/task_config.hpp"
 // #include "ament_index_cpp/get_package_share_directory.hpp"
 
 TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, QWidget *parent)
     : QWidget(parent), node_(node) {
+    // Initialize record manager
+    QDir records_dir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation));
+    record_manager_ = std::make_shared<TaskRecordManager>(records_dir.filePath("task_records"));
+
     auto * layout = new QVBoxLayout(this);
 
     layout->addWidget(new QLabel("Task List"));
@@ -32,17 +41,23 @@ TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, QWidget *parent)
     auto * btn_edit = new QPushButton("Edit Task");
     auto * btn_del = new QPushButton("Delete Task");
     auto * btn_run = new QPushButton("Run Task");
+    auto * btn_history = new QPushButton("历史记录");
+    auto * btn_export = new QPushButton("导出 CSV");
 
     h_btn->addWidget(btn_add);
     h_btn->addWidget(btn_edit);
     h_btn->addWidget(btn_del);
     h_btn->addWidget(btn_run);
+    h_btn->addWidget(btn_history);
+    h_btn->addWidget(btn_export);
     layout->addLayout(h_btn);
 
     connect(btn_add, &QPushButton::clicked, this, &TaskWidget::onAddTask);
     connect(btn_edit, &QPushButton::clicked, this, &TaskWidget::onEditTask);
     connect(btn_del, &QPushButton::clicked, this, &TaskWidget::onDeleteTask);
     connect(btn_run, &QPushButton::clicked, this, &TaskWidget::onRunTask);
+    connect(btn_history, &QPushButton::clicked, this, &TaskWidget::onShowHistory);
+    connect(btn_export, &QPushButton::clicked, this, &TaskWidget::onExportCSV);
 
     loadTasks();
 }
@@ -83,7 +98,7 @@ void TaskWidget::onDeleteTask() {
 void TaskWidget::onRunTask() {
     int row = task_list_->currentRow();
     if (row >= 0 && row < (int)tasks_.size()) {
-        TaskRunDialog dlg(node_, tasks_[row], this);
+        TaskRunDialog dlg(node_, tasks_[row], record_manager_, this);
         dlg.exec();
     }
 }
@@ -218,4 +233,96 @@ void TaskWidget::loadTasks() {
         tasks_.push_back(task);
     }
     updateTaskList();
+}
+
+void TaskWidget::onShowHistory() {
+    if (!record_manager_) return;
+
+    auto records = record_manager_->loadAllRecords();
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("任务执行历史");
+    dlg.resize(700, 400);
+    auto * layout = new QVBoxLayout(&dlg);
+
+    auto * table = new QTableWidget();
+    table->setColumnCount(5);
+    table->setHorizontalHeaderLabels({"任务名称", "开始时间", "结束时间", "结果", "错误信息"});
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setRowCount(records.size());
+
+    for (int i = 0; i < records.size(); ++i) {
+        const auto& r = records[i];
+        table->setItem(i, 0, new QTableWidgetItem(r.task_name));
+        table->setItem(i, 1, new QTableWidgetItem(r.start_time.toLocalTime().toString("yyyy-MM-dd HH:mm:ss")));
+        table->setItem(i, 2, new QTableWidgetItem(r.end_time.toLocalTime().toString("yyyy-MM-dd HH:mm:ss")));
+        auto * result_item = new QTableWidgetItem(r.success ? "成功" : "失败");
+        result_item->setForeground(r.success ? Qt::darkGreen : Qt::red);
+        table->setItem(i, 3, result_item);
+        table->setItem(i, 4, new QTableWidgetItem(r.error_msg));
+    }
+
+    layout->addWidget(table);
+
+    auto * buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    dlg.exec();
+}
+
+void TaskWidget::onExportCSV() {
+    int row = task_list_->currentRow();
+    if (row < 0 || row >= static_cast<int>(tasks_.size())) {
+        QMessageBox::warning(this, "导出 CSV", "请先选择一个任务");
+        return;
+    }
+
+    QString path = QFileDialog::getSaveFileName(this, "导出任务 CSV", QString(), "CSV Files (*.csv)");
+    if (path.isEmpty()) return;
+
+    const auto& task = tasks_[row];
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, "导出失败", "无法打开文件: " + path);
+        return;
+    }
+
+    QTextStream out(&file);
+    // Header
+    out << "step_name,type,J1,J2,J3,J4,J5,J6,H1,H2,H3,H4,H5,H6,camera_type\n";
+
+    for (const auto& step : task.task_seqs) {
+        out << QString::fromStdString(step.name) << ","
+            << QString::fromStdString(step.type) << ",";
+
+        // Arm positions (J1-J6)
+        for (int i = 0; i < 6; ++i) {
+            if (i < static_cast<int>(step.arm_pos.size())) {
+                out << step.arm_pos[i];
+            }
+            out << ",";
+        }
+
+        // Hand positions (H1-H6)
+        for (int i = 0; i < 6; ++i) {
+            if (i < static_cast<int>(step.hand_pos.size())) {
+                out << step.hand_pos[i];
+            }
+            if (i < 5) out << ",";
+        }
+
+        // Camera type
+        out << ",";
+        if (!step.camera_type.empty()) {
+            out << QString::fromStdString(step.camera_type[0]);
+        }
+        out << "\n";
+    }
+
+    file.close();
+    QMessageBox::information(this, "导出成功", "CSV 文件已保存到:\n" + path);
 }

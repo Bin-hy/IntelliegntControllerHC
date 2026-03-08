@@ -33,7 +33,12 @@ public:
     ~RobotVizWidget();
 
     // Load URDF and create entities
-    void loadRobotModel(const std::string& urdf_path);
+    // tf_root: if non-empty, use this frame as the TF root for all links
+    //          (used to attach hand models to the arm's base frame)
+    void loadRobotModel(const std::string& urdf_path, const std::string& tf_root = "");
+
+    // Get the root link name of the first loaded model
+    std::string getRootLinkName() const { return root_link_name_; }
 
     // Set camera position
     void setCameraPosition(const QVector3D& pos, const QVector3D& view_center);
@@ -44,8 +49,8 @@ protected:
 private:
     void setupScene();
     void updateTransforms();
-    Qt3DCore::QEntity* createLinkNode(const std::string& name, std::shared_ptr<const urdf::Link> link, const QMatrix4x4& initial_transform);
-    void processLinkRecursive(std::shared_ptr<const urdf::Link> link, const QMatrix4x4& parent_transform);
+    Qt3DCore::QEntity* createLinkNode(const std::string& name, std::shared_ptr<const urdf::Link> link, const QMatrix4x4& initial_transform, const std::string& root_name);
+    void processLinkRecursive(std::shared_ptr<const urdf::Link> link, const QMatrix4x4& parent_transform, const std::string& root_name);
 
     // Custom STL Loader helper
     Qt3DRender::QGeometryRenderer* loadSTLGeometry(const QString& path, Qt3DCore::QEntity* parent);
@@ -60,6 +65,7 @@ private:
         Qt3DCore::QEntity* entity;
         Qt3DCore::QTransform* transform;
         std::string name;
+        std::string root_name;
     };
     
     std::map<std::string, LinkInfo> links_;

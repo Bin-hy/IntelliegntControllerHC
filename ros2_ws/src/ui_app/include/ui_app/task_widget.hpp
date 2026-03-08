@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include "ui_app/ros_node.hpp"
+#include "ui_app/task_record_manager.hpp"
 #include "common_msgs/msg/task_config.hpp"
 
 class QListWidget;
@@ -23,14 +24,17 @@ private slots:
     void onEditTask();
     void onDeleteTask();
     void onRunTask();
+    void onShowHistory();
+    void onExportCSV();
 
 private:
     std::shared_ptr<RosNode> node_;
+    std::shared_ptr<TaskRecordManager> record_manager_;
     QListWidget* task_list_;
     std::vector<common_msgs::msg::TaskConfig> tasks_;
 
-    void loadTasks(); // Load from file/storage
-    void saveTasks(); // Save to file/storage
+    void loadTasks();
+    void saveTasks();
     void updateTaskList();
 };
 

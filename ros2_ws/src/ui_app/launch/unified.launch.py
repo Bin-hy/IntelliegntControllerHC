@@ -26,11 +26,27 @@ def generate_launch_description():
         description='EtherCAT network interface channel index'
     )
 
+    camera1_serial_arg = DeclareLaunchArgument(
+        'camera1_serial',
+        default_value='',
+        description='Serial number of camera 1 (e.g. CV2R1610004Y). Empty = first detected device.'
+    )
+
+    camera2_serial_arg = DeclareLaunchArgument(
+        'camera2_serial',
+        default_value='',
+        description='Serial number of camera 2 (e.g. CV2R1610004H). Empty = single camera mode.'
+    )
+
     # 1. Vision System (Camera + Image Saver)
-    # Launches Orbbec Gemini 305 + Vision Server Node
+    # Launches Orbbec Gemini 330 + Vision Server Node
     vision_pkg = FindPackageShare('vision_server')
     vision_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([vision_pkg, '/launch/vision_system.launch.py'])
+        PythonLaunchDescriptionSource([vision_pkg, '/launch/vision_system.launch.py']),
+        launch_arguments={
+            'camera1_serial': LaunchConfiguration('camera1_serial'),
+            'camera2_serial': LaunchConfiguration('camera2_serial'),
+        }.items()
     )
 
     # 2. Robot Driver
@@ -80,23 +96,16 @@ def generate_launch_description():
     lhand_urdf_path = PathJoinSubstitution([lhand_desc_pkg, 'urdf', 'DH116-L000-A1.urdf'])
     rhand_desc_pkg = FindPackageShare('dh116_r000_a1')
     rhand_urdf_path = PathJoinSubstitution([rhand_desc_pkg, 'urdf', 'DH116-R000-A1.urdf'])
-    
-    # Read URDF content for parameter
-    lhand_desc_content = ParameterValue(Command(['cat ', lhand_urdf_path]), value_type=str)
 
-    lhand_robot_state_publisher = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        name='lhand_robot_state_publisher',
-        output='screen',
-        parameters=[{'robot_description': lhand_desc_content}]
-    )
-
+    # Hand joint state publisher (publishes L_finger* names to /joint_states)
+    # The combined robot_state_publisher above handles TF for the full chain
+    # (base_link -> link_6 -> L_base_link -> L_finger*_Link)
     lhand_state_publisher = Node(
         package='lhandpro_description',
         executable='lhandpro_state_publisher',
         name='lhandpro_state_publisher',
-        output='screen'
+        output='screen',
+        parameters=[{'joint_prefix': 'L_'}]
     )
 
     # 4. System Controller (Flow Control)
@@ -147,11 +156,12 @@ def generate_launch_description():
         robot_ip_arg,
         model_arg,
         ethercat_channel_arg,
+        camera1_serial_arg,
+        camera2_serial_arg,
         vision_launch,
         robot_launch,
         robot_state_publisher_node,
         lhand_launch,
-        lhand_robot_state_publisher,
         lhand_state_publisher,
         sys_ctrl_node,
         ui_delayed

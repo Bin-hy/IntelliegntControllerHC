@@ -11,6 +11,7 @@
 #include <duco_msg/msg/duco_robot_state.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <std_srvs/srv/set_bool.hpp>
+#include <std_srvs/srv/empty.hpp>
 #include "vision_server/srv/save_image.hpp"
 #include "lhandpro_interfaces/srv/set_enable.hpp"
 #include "lhandpro_interfaces/srv/set_position.hpp"
@@ -25,8 +26,7 @@
 #elif __has_include(<cv_bridge/cv_bridge.h>)
 #include <cv_bridge/cv_bridge.h>
 #endif
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
+#include <opencv2/opencv.hpp>
 #include <atomic>
 #include <mutex>
 #include <vector>
@@ -63,9 +63,7 @@ public:
                        const std::string& tool, const std::string& wobj);
   void call_robot_io(const std::string& command, int type, int port, bool value);
   void call_pause_task(bool pause);
-  void set_user_context(const std::string& username,
-                        const std::string& role,
-                        const std::string& session_id);
+  void set_user_context(const std::string& username, const std::string& role, const std::string& session_id);
   // void save_image(); // Deprecated in favor of multi-camera
   void save_snapshot(const std::string& camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::function<void(bool, std::string)> callback = nullptr);
 
@@ -87,14 +85,19 @@ public:
       bool has_ir_left = false;
       bool has_ir_right = false;
       bool has_point_cloud = false;
+      std::string ir_left_topic;      // e.g. "/SN/left_ir/image_raw" or "/SN/ir/image_raw"
+      std::string ir_right_topic;     // e.g. "/SN/right_ir/image_raw"
+      std::string point_cloud_topic;  // e.g. "/SN/depth_registered/points" or "/SN/depth/points"
   };
   CameraCapabilities get_camera_capabilities(std::string camera_ns);
+  CameraCapabilities last_caps_;
 
   void update_camera_subscriptions(const std::string& camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::string pc_topic = "");
 
   bool check_device_availability(const common_msgs::msg::TaskDeviceCheck& check);
   bool is_task_action_ready() const;
   std::vector<common_msgs::msg::DeviceStatus> get_connected_devices();
+  bool is_hand_connected(const std::string& side);
 
   // Getters for URDF paths
   std::string get_robot_urdf_path() const { return robot_urdf_path_; }
@@ -146,6 +149,7 @@ private:
   rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedPtr client_io_;
   rclcpp::Client<duco_msg::srv::RobotMove>::SharedPtr client_move_;
   rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr client_pause_task_;
+  rclcpp::Client<common_msgs::srv::SetCurrentUser>::SharedPtr client_set_user_;
 
   // URDF Paths
   std::string robot_urdf_path_;
@@ -170,7 +174,6 @@ private:
   rclcpp_action::Client<ExecuteTask>::SharedPtr client_execute_task_;
   GoalHandleExecuteTask::SharedPtr current_goal_handle_;
   rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::Client<common_msgs::srv::SetCurrentUser>::SharedPtr client_set_user_;
 };
 
 #endif // ROS_NODE_HPP

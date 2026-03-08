@@ -5,6 +5,51 @@ QWidget {
     font-size: 14px;
 }
 
+#top_bar {
+    background-color: #15203A;
+    border: 1px solid rgba(0, 191, 255, 0.35);
+    border-radius: 10px;
+}
+
+#user_panel {
+    background-color: rgba(0, 191, 255, 0.08);
+    border: 1px solid rgba(0, 191, 255, 0.5);
+    border-radius: 8px;
+}
+
+#content_area {
+    background: transparent;
+}
+
+#left_panel, #right_panel, #center_panel {
+    background-color: #16213E;
+    border: 1px solid rgba(176, 196, 222, 0.25);
+    border-radius: 10px;
+}
+
+#avatar_button {
+    background-color: rgba(0, 191, 255, 0.15);
+    border: 1px solid rgba(0, 191, 255, 0.85);
+    border-radius: 16px;
+    padding: 6px 14px;
+    color: #00BFFF;
+    font-size: 14px;
+}
+
+#action_button {
+    background-color: rgba(0, 191, 255, 0.18);
+    border: 1px solid rgba(0, 191, 255, 0.85);
+    color: #00BFFF;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 15px;
+}
+
+#action_button:hover {
+    background-color: rgba(0, 191, 255, 0.3);
+    color: #E6F7FF;
+}
+
 QGroupBox {
     border: 1px solid rgba(0, 191, 255, 0.7);
     border-radius: 8px;

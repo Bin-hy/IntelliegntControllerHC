@@ -215,6 +215,47 @@ void StepAddDialog::onCaptureCurrent() {
     }
 }
 
+void StepAddDialog::setStep(const common_msgs::msg::TaskStep& step) {
+    edit_name_->setText(QString::fromStdString(step.name));
+
+    // Set combo_type_ which triggers onTypeChanged (refreshes device list & stacked widget)
+    int type_idx = combo_type_->findText(QString::fromStdString(step.type));
+    if (type_idx >= 0) {
+        combo_type_->setCurrentIndex(type_idx);
+    }
+
+    // Try to match device_sn in combo_device_
+    if (!step.device_sn.empty()) {
+        QString sn = QString::fromStdString(step.device_sn);
+        // First try matching by data (sn stored in itemData)
+        for (int i = 0; i < combo_device_->count(); ++i) {
+            if (combo_device_->itemData(i).toString() == sn ||
+                combo_device_->itemText(i) == sn) {
+                combo_device_->setCurrentIndex(i);
+                break;
+            }
+        }
+    }
+
+    // Fill type-specific fields
+    if (step.type == "arm") {
+        int n = std::min(static_cast<int>(step.arm_pos.size()), 6);
+        for (int i = 0; i < n; ++i) {
+            spin_arm_pos_[i]->setValue(step.arm_pos[i]);
+        }
+    } else if (step.type == "lhand" || step.type == "rhand") {
+        int n = std::min(static_cast<int>(step.hand_pos.size()), 6);
+        for (int i = 0; i < n; ++i) {
+            spin_hand_pos_[i]->setValue(static_cast<int>(step.hand_pos[i]));
+        }
+    } else if (step.type == "camera") {
+        if (!step.camera_type.empty()) {
+            int ct_idx = combo_camera_type_->findText(QString::fromStdString(step.camera_type[0]));
+            if (ct_idx >= 0) combo_camera_type_->setCurrentIndex(ct_idx);
+        }
+    }
+}
+
 common_msgs::msg::TaskStep StepAddDialog::getStep() const {
     common_msgs::msg::TaskStep step;
     step.name = edit_name_->text().toStdString();
@@ -266,8 +307,10 @@ TaskConfigDialog::TaskConfigDialog(std::shared_ptr<RosNode> node, QWidget *paren
 
     auto * h_step_btn = new QHBoxLayout();
     auto * btn_add_step = new QPushButton("Add Step");
+    auto * btn_edit_step = new QPushButton("Edit Step");
     auto * btn_del_step = new QPushButton("Delete Step");
     h_step_btn->addWidget(btn_add_step);
+    h_step_btn->addWidget(btn_edit_step);
     h_step_btn->addWidget(btn_del_step);
     layout->addLayout(h_step_btn);
 
@@ -277,7 +320,9 @@ TaskConfigDialog::TaskConfigDialog(std::shared_ptr<RosNode> node, QWidget *paren
     connect(btn_add_dev, &QPushButton::clicked, this, &TaskConfigDialog::onAddDevice);
     connect(btn_del_dev, &QPushButton::clicked, this, &TaskConfigDialog::onDeleteDevice);
     connect(btn_add_step, &QPushButton::clicked, this, &TaskConfigDialog::onAddStep);
+    connect(btn_edit_step, &QPushButton::clicked, this, &TaskConfigDialog::onEditStep);
     connect(btn_del_step, &QPushButton::clicked, this, &TaskConfigDialog::onDeleteStep);
+    connect(list_steps_, &QListWidget::itemDoubleClicked, this, &TaskConfigDialog::onEditStep);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
@@ -341,6 +386,21 @@ void TaskConfigDialog::onAddStep() {
     }
 }
 
+void TaskConfigDialog::onEditStep() {
+    int row = list_steps_->currentRow();
+    if (row < 0 || row >= static_cast<int>(steps_.size())) {
+        QMessageBox::information(this, "Edit Step", "Please select a step to edit.");
+        return;
+    }
+    StepAddDialog dlg(node_, devices_, this);
+    dlg.setWindowTitle("Edit Step");
+    dlg.setStep(steps_[row]);
+    if (dlg.exec() == QDialog::Accepted) {
+        steps_[row] = dlg.getStep();
+        updateStepList();
+    }
+}
+
 void TaskConfigDialog::onDeleteStep() {
     int row = list_steps_->currentRow();
     if (row >= 0 && row < (int)steps_.size()) {
@@ -349,8 +409,8 @@ void TaskConfigDialog::onDeleteStep() {
     }
 }
 
-TaskRunDialog::TaskRunDialog(std::shared_ptr<RosNode> node, const common_msgs::msg::TaskConfig& task, QWidget *parent)
-    : QDialog(parent), node_(node), task_(task), devices_ready_(false) {
+TaskRunDialog::TaskRunDialog(std::shared_ptr<RosNode> node, const common_msgs::msg::TaskConfig& task, std::shared_ptr<TaskRecordManager> record_manager, QWidget *parent)
+    : QDialog(parent), node_(node), record_manager_(record_manager), task_(task), devices_ready_(false) {
     setWindowTitle("Run Task");
     auto * layout = new QVBoxLayout(this);
 
@@ -417,6 +477,11 @@ void TaskRunDialog::onStart() {
     btn_pause_->setEnabled(true);
     label_status_->setText("Running...");
 
+    current_record_ = TaskExecutionRecord();
+    current_record_.task_name = QString::fromStdString(task_.task_name);
+    current_record_.start_time = QDateTime::currentDateTimeUtc();
+    current_record_.success = false;
+
     node_->call_execute_task(task_,
         std::bind(&TaskRunDialog::onTaskResult, this, std::placeholders::_1),
         std::bind(&TaskRunDialog::onTaskFeedback, this, std::placeholders::_1)
@@ -444,12 +509,24 @@ void TaskRunDialog::onEdit() {
 
 void TaskRunDialog::onTaskResult(const rclcpp_action::ClientGoalHandle<common_msgs::action::ExecuteTask>::WrappedResult& result) {
     btn_pause_->setEnabled(false);
+    current_record_.end_time = QDateTime::currentDateTimeUtc();
+
     if (result.code == rclcpp_action::ResultCode::SUCCEEDED && result.result && result.result->success) {
         label_status_->setText("Task Completed: " + QString::fromStdString(result.result->message));
+        current_record_.success = true;
+        current_record_.error_msg.clear();
     } else if (result.result) {
         label_status_->setText("Task Failed: " + QString::fromStdString(result.result->message));
+        current_record_.success = false;
+        current_record_.error_msg = QString::fromStdString(result.result->message);
     } else {
         label_status_->setText("Task Finished with no result");
+        current_record_.success = false;
+        current_record_.error_msg = "No result received";
+    }
+
+    if (record_manager_) {
+        record_manager_->saveRecord(current_record_);
     }
 }
 
@@ -457,4 +534,16 @@ void TaskRunDialog::onTaskFeedback(const std::shared_ptr<const common_msgs::acti
     int idx = feedback->current_step_index;
     progress_steps_->setValue(idx + 1);
     label_status_->setText(QString::fromStdString(feedback->current_status));
+
+    // Track step completion in the record
+    while (current_record_.steps.size() <= idx) {
+        StepRecord sr;
+        if (idx < static_cast<int>(task_.task_seqs.size())) {
+            sr.name = QString::fromStdString(task_.task_seqs[idx].name);
+            sr.type = QString::fromStdString(task_.task_seqs[idx].type);
+        }
+        sr.success = true;
+        sr.duration_ms = 0;
+        current_record_.steps.append(sr);
+    }
 }

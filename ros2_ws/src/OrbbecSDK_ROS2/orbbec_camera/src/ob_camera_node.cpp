@@ -124,28 +124,41 @@ OBCameraNode::OBCameraNode(rclcpp::Node *node, std::shared_ptr<ob::Device> devic
   fps_delay_status_color_ = std::make_unique<FpsDelayStatus>(logger_);
   fps_delay_status_depth_ = std::make_unique<FpsDelayStatus>(logger_);
 
+  // Create device status publisher early so status is always reported (even on init failure)
+  device_status_pub_ = node_->create_publisher<common_msgs::msg::DeviceStatus>(
+      "/system/device_status", rclcpp::SystemDefaultsQoS());
+
   device_status_timer_ = node_->create_wall_timer(std::chrono::seconds(1), [this]() {
-      if (!device_status_pub_) return;
       common_msgs::msg::DeviceStatus status;
-      status.device_type = "camera";
-      status.device_usage = "vision";
-      
+      status.device_type  = "vision_system";
+      status.device_usage = "depth_camera";
+      // topic_prefix is the ROS namespace this camera publishes under (e.g. "/CV2R1610004Y")
+      status.topic_prefix = "/" + camera_name_;
+
       try {
           if (device_) {
               auto info = device_->getDeviceInfo();
               if (info) {
-                  status.device_model = info->name();
-                  status.device_name = info->name();
-                  status.device_sn = info->serialNumber();
+                  std::string raw_name = info->name() ? info->name() : "";
+                  status.device_model = raw_name;
+                  status.device_name  = raw_name.empty() ? "Orbbec Camera" : ("Orbbec " + raw_name);
+                  std::string sn = info->serialNumber() ? info->serialNumber() : "";
+                  status.device_sn = sn.empty() ? (camera_name_ + "_unknown_sn") : sn;
                   status.status = "ready";
               } else {
-                  status.status = "error";
+                  status.device_name = "Orbbec Camera";
+                  status.device_sn   = camera_name_ + "_no_info";
+                  status.status      = "error";
               }
           } else {
-              status.status = "disconnected";
+              status.device_name = "Orbbec Camera";
+              status.device_sn   = camera_name_ + "_disconnected";
+              status.status      = "disconnected";
           }
       } catch (...) {
-          status.status = "error";
+          status.device_name = "Orbbec Camera";
+          status.device_sn   = camera_name_ + "_exception";
+          status.status      = "error";
       }
       device_status_pub_->publish(status);
   });
@@ -405,20 +418,28 @@ void OBCameraNode::setupDevices() {
   if (sensors_.find(DEPTH) != sensors_.end() &&
       device_->isPropertySupported(OB_PROP_DISPARITY_TO_DEPTH_BOOL, OB_PERMISSION_READ_WRITE) &&
       device_->isPropertySupported(OB_PROP_SDK_DISPARITY_TO_DEPTH_BOOL, OB_PERMISSION_READ_WRITE)) {
-    if (disparity_to_depth_mode_ == "HW") {
-      device_->setBoolProperty(OB_PROP_DISPARITY_TO_DEPTH_BOOL, 1);
-      device_->setBoolProperty(OB_PROP_SDK_DISPARITY_TO_DEPTH_BOOL, 0);
-      RCLCPP_INFO_STREAM(logger_, "Depth process is HW");
-    } else if (disparity_to_depth_mode_ == "SW") {
-      device_->setBoolProperty(OB_PROP_DISPARITY_TO_DEPTH_BOOL, 0);
-      device_->setBoolProperty(OB_PROP_SDK_DISPARITY_TO_DEPTH_BOOL, 1);
-      RCLCPP_INFO_STREAM(logger_, "Depth process is SW");
-    } else if (disparity_to_depth_mode_ == "disable") {
-      device_->setBoolProperty(OB_PROP_DISPARITY_TO_DEPTH_BOOL, 0);
-      device_->setBoolProperty(OB_PROP_SDK_DISPARITY_TO_DEPTH_BOOL, 0);
-      RCLCPP_INFO_STREAM(logger_, "Depth process is disable");
-    } else {
-      RCLCPP_ERROR_STREAM(logger_, "Depth process is keep default");
+    try {
+      if (disparity_to_depth_mode_ == "HW") {
+        device_->setBoolProperty(OB_PROP_DISPARITY_TO_DEPTH_BOOL, 1);
+        device_->setBoolProperty(OB_PROP_SDK_DISPARITY_TO_DEPTH_BOOL, 0);
+        RCLCPP_INFO_STREAM(logger_, "Depth process is HW");
+      } else if (disparity_to_depth_mode_ == "SW") {
+        device_->setBoolProperty(OB_PROP_DISPARITY_TO_DEPTH_BOOL, 0);
+        device_->setBoolProperty(OB_PROP_SDK_DISPARITY_TO_DEPTH_BOOL, 1);
+        RCLCPP_INFO_STREAM(logger_, "Depth process is SW");
+      } else if (disparity_to_depth_mode_ == "disable") {
+        device_->setBoolProperty(OB_PROP_DISPARITY_TO_DEPTH_BOOL, 0);
+        device_->setBoolProperty(OB_PROP_SDK_DISPARITY_TO_DEPTH_BOOL, 0);
+        RCLCPP_INFO_STREAM(logger_, "Depth process is disable");
+      } else {
+        RCLCPP_ERROR_STREAM(logger_, "Depth process is keep default");
+      }
+    } catch (const ob::Error &e) {
+      RCLCPP_WARN_STREAM(logger_, "Failed to set disparity_to_depth mode (" << disparity_to_depth_mode_
+                                      << "): " << e.getMessage() << " -- keeping device default");
+    } catch (const std::exception &e) {
+      RCLCPP_WARN_STREAM(logger_, "Failed to set disparity_to_depth mode (" << disparity_to_depth_mode_
+                                      << "): " << e.what() << " -- keeping device default");
     }
   }
   if (device_->isPropertySupported(OB_PROP_LDP_BOOL, OB_PERMISSION_READ_WRITE)) {
@@ -1226,9 +1247,30 @@ void OBCameraNode::setupRightIrPostProcessFilter() {
   }
 }
 void OBCameraNode::setupDepthPostProcessFilter() {
-  auto depth_sensor = device_->getSensor(OB_SENSOR_DEPTH);
+  std::shared_ptr<ob::Sensor> depth_sensor;
+  try {
+    depth_sensor = device_->getSensor(OB_SENSOR_DEPTH);
+  } catch (const ob::Error &e) {
+    RCLCPP_WARN_STREAM(logger_, "Could not get depth sensor: " << e.getMessage()
+                                    << " -- continuing without depth filters");
+    return;
+  } catch (const std::exception &e) {
+    RCLCPP_WARN_STREAM(logger_, "Could not get depth sensor: " << e.what()
+                                    << " -- continuing without depth filters");
+    return;
+  }
   // set depth sensor to filter
-  depth_filter_list_ = depth_sensor->createRecommendedFilters();
+  try {
+    depth_filter_list_ = depth_sensor->createRecommendedFilters();
+  } catch (const ob::Error &e) {
+    RCLCPP_WARN_STREAM(logger_, "Could not create recommended depth filters: "
+                                    << e.getMessage() << " -- continuing without depth filters");
+    return;
+  } catch (const std::exception &e) {
+    RCLCPP_WARN_STREAM(logger_, "Could not create recommended depth filters: "
+                                    << e.what() << " -- continuing without depth filters");
+    return;
+  }
   if (depth_filter_list_.empty()) {
     RCLCPP_WARN_STREAM(logger_, "Failed to get depth sensor filter list");
     return;
@@ -1504,8 +1546,9 @@ void OBCameraNode::setupProfiles() {
                      "configuration and try again. The current process will now exit.");
         RCLCPP_INFO_STREAM(logger_, "Available profiles:");
         printSensorProfiles(sensor);
-        RCLCPP_ERROR(logger_, "Because can not set this stream, so exit.");
-        exit(-1);
+        RCLCPP_ERROR(logger_, "Because can not set this stream, throwing to allow retry.");
+        throw std::runtime_error("No matched video stream profile found for " +
+                                 std::string(magic_enum::enum_name(elem.first)));
       }
 
       if (!selected_profile) {
@@ -2327,37 +2370,54 @@ void OBCameraNode::getParameters() {
 }
 
 void OBCameraNode::setupTopics() {
+  // getParameters must succeed — without it nothing else works
+  getParameters();
+
+  // setupDevices is best-effort: mirror/flip/disparity failures should not
+  // prevent the camera from publishing frames.
   try {
-    getParameters();
     setupDevices();
-    if (enable_stream_[DEPTH]) {
-      setupDepthPostProcessFilter();
-    }
-    if (enable_stream_[COLOR] || enable_stream_[COLOR_LEFT] || enable_stream_[COLOR_RIGHT]) {
-      setupColorPostProcessFilter();
-    }
-    if (enable_stream_[INFRA2]) {
-      setupRightIrPostProcessFilter();
-    }
-    if (enable_stream_[INFRA1]) {
-      setupLeftIrPostProcessFilter();
-    }
-    setupProfiles();
-    setupCameraInfo();
-    selectBaseStream();
-    setupCameraCtrlServices();
-    setupPublishers();
-    setupDiagnosticUpdater();
   } catch (const ob::Error &e) {
-    RCLCPP_ERROR_STREAM(logger_, "Failed to setup topics: " << e.getMessage());
-    throw std::runtime_error(e.getMessage());
+    RCLCPP_WARN_STREAM(logger_, "setupDevices partially failed: " << e.getMessage()
+                                    << " -- continuing with defaults");
   } catch (const std::exception &e) {
-    RCLCPP_ERROR_STREAM(logger_, "Failed to setup topics: " << e.what());
-    throw std::runtime_error(e.what());
+    RCLCPP_WARN_STREAM(logger_, "setupDevices partially failed: " << e.what()
+                                    << " -- continuing with defaults");
   } catch (...) {
-    RCLCPP_ERROR(logger_, "Failed to setup topics");
-    throw std::runtime_error("Failed to setup topics");
+    RCLCPP_WARN(logger_, "setupDevices partially failed -- continuing with defaults");
   }
+
+  // Post-process filters are optional
+  auto try_step = [this](const char* name, std::function<void()> fn) {
+    try { fn(); } catch (const ob::Error &e) {
+      RCLCPP_WARN_STREAM(logger_, name << " failed: " << e.getMessage() << " -- skipped");
+    } catch (const std::exception &e) {
+      RCLCPP_WARN_STREAM(logger_, name << " failed: " << e.what() << " -- skipped");
+    } catch (...) {
+      RCLCPP_WARN_STREAM(logger_, name << " failed -- skipped");
+    }
+  };
+
+  if (enable_stream_[DEPTH]) {
+    try_step("setupDepthPostProcessFilter", [this]() { setupDepthPostProcessFilter(); });
+  }
+  if (enable_stream_[COLOR] || enable_stream_[COLOR_LEFT] || enable_stream_[COLOR_RIGHT]) {
+    try_step("setupColorPostProcessFilter", [this]() { setupColorPostProcessFilter(); });
+  }
+  if (enable_stream_[INFRA2]) {
+    try_step("setupRightIrPostProcessFilter", [this]() { setupRightIrPostProcessFilter(); });
+  }
+  if (enable_stream_[INFRA1]) {
+    try_step("setupLeftIrPostProcessFilter", [this]() { setupLeftIrPostProcessFilter(); });
+  }
+
+  // These steps are critical for publishing — let them throw if they fail
+  setupProfiles();
+  setupCameraInfo();
+  selectBaseStream();
+  setupCameraCtrlServices();
+  setupPublishers();
+  setupDiagnosticUpdater();
 }
 
 void OBCameraNode::onTemperatureUpdate(diagnostic_updater::DiagnosticStatusWrapper &status) {
@@ -2550,8 +2610,6 @@ void OBCameraNode::setupPublishers() {
         "depth/points", rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(point_cloud_qos_profile),
                                     point_cloud_qos_profile));
   }
-  device_status_pub_ = node_->create_publisher<common_msgs::msg::DeviceStatus>(
-      "/system/device_status", rclcpp::SystemDefaultsQoS());
   auto device_info = device_->getDeviceInfo();
   CHECK_NOTNULL(device_info.get());
   for (const auto &stream_index : IMAGE_STREAMS) {

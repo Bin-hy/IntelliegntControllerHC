@@ -122,10 +122,10 @@ void HandControlService::cleanup_resources() {
 void HandControlService::check_and_reconnect() {
   common_msgs::msg::DeviceStatus status_msg;
   status_msg.device_type = "lhand";
-  status_msg.device_usage = "hand";
-  status_msg.device_model = "LHandPro";
-  status_msg.device_name = "LHandPro";
-  status_msg.device_sn = "lhand_1"; // Placeholder
+  status_msg.device_usage = "left_hand";
+  status_msg.device_model = "DH116-L000-A1";
+  status_msg.device_name = "DH116 左手";
+  status_msg.device_sn = "lhand_1";
 
   if (is_connected_) {
     // 检查是否仍然有效

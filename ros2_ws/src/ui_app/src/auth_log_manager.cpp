@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFile>
 #include <QTextStream>
+#include <sys/stat.h>
 
 AuthLogManager::AuthLogManager(const QString& log_dir)
     : log_dir_(log_dir) {
@@ -9,6 +10,8 @@ AuthLogManager::AuthLogManager(const QString& log_dir)
     if (!dir.exists()) {
         dir.mkpath(".");
     }
+    // Harden log directory permissions to 700 (owner only)
+    ::chmod(log_dir_.toLocal8Bit().constData(), 0700);
     cleanupOldLogs(6);
 }
 

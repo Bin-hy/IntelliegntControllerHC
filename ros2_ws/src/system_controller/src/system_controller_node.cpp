@@ -7,7 +7,6 @@
 #include <duco_msg/srv/robot_task_state_rquest.hpp>
 #include <common_msgs/action/execute_task.hpp>
 #include <common_msgs/msg/device_status.hpp>
-#include <common_msgs/srv/set_current_user.hpp>
 #include <lhandpro_interfaces/srv/set_all_position.hpp>
 #include <lhandpro_interfaces/srv/set_position.hpp>
 #include <lhandpro_interfaces/srv/move_motors.hpp>
@@ -30,7 +29,6 @@ class SystemController : public rclcpp::Node {
 public:
     using ExecuteTask = common_msgs::action::ExecuteTask;
     using GoalHandleExecuteTask = rclcpp_action::ServerGoalHandle<ExecuteTask>;
-    using SetCurrentUser = common_msgs::srv::SetCurrentUser;
 
     SystemController() : Node("system_controller_node"), is_busy_(false), is_paused_(false) {
         // Subscribers
@@ -67,10 +65,6 @@ public:
         srv_pause_ = this->create_service<std_srvs::srv::SetBool>(
             "/system/pause_task",
             std::bind(&SystemController::handle_pause_request, this, std::placeholders::_1, std::placeholders::_2));
-
-        srv_set_user_ = this->create_service<SetCurrentUser>(
-            "/system/set_current_user",
-            std::bind(&SystemController::handle_set_current_user, this, std::placeholders::_1, std::placeholders::_2));
 
         // Action Server for Task Execution
         action_server_ = rclcpp_action::create_server<ExecuteTask>(
@@ -120,16 +114,6 @@ private:
     rclcpp::Service<duco_msg::srv::RobotControl>::SharedPtr srv_control_;
     rclcpp::Service<duco_msg::srv::RobotIoControl>::SharedPtr srv_io_;
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr srv_pause_;
-    rclcpp::Service<SetCurrentUser>::SharedPtr srv_set_user_;
-
-    struct CurrentUser {
-        std::string username;
-        std::string role;
-        std::string session_id;
-    };
-
-    CurrentUser current_user_;
-    std::mutex user_mutex_;
 
     void handle_pause_request(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                               std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
@@ -158,61 +142,6 @@ private:
         }
     }
 
-    void handle_set_current_user(const std::shared_ptr<SetCurrentUser::Request> request,
-                                 std::shared_ptr<SetCurrentUser::Response> response) {
-        std::lock_guard<std::mutex> lock(user_mutex_);
-        if (request->username.empty() || request->role.empty() || request->session_id.empty()) {
-            response->success = false;
-            response->message = "invalid user information";
-            return;
-        }
-        current_user_.username = request->username;
-        current_user_.role = request->role;
-        current_user_.session_id = request->session_id;
-        response->success = true;
-        response->message = "user context updated";
-        RCLCPP_INFO(this->get_logger(), "Current user set to %s (%s)", current_user_.username.c_str(), current_user_.role.c_str());
-    }
-
-    bool has_permission(const std::string& role, const std::string& action) {
-        if (role == "admin") {
-            return true;
-        }
-        if (role == "maintainer") {
-            if (action == "power_on" || action == "power_off" ||
-                action == "start_task" || action == "stop_task" ||
-                action == "modify_param" || action == "calibrate_system") {
-                return true;
-            }
-            return false;
-        }
-        if (role == "operator") {
-            if (action == "power_on" || action == "power_off" ||
-                action == "start_task" || action == "stop_task") {
-                return true;
-            }
-            return false;
-        }
-        return false;
-    }
-
-    bool check_user_permission(const std::string& action, std::string& message) {
-        std::lock_guard<std::mutex> lock(user_mutex_);
-        if (current_user_.username.empty()) {
-            message = "no authenticated user";
-            return false;
-        }
-        std::string role_lower = current_user_.role;
-        for (char& c : role_lower) {
-            c = static_cast<char>(::tolower(c));
-        }
-        if (!has_permission(role_lower, action)) {
-            message = "permission denied";
-            return false;
-        }
-        return true;
-    }
-
     // Callbacks
     void robot_state_callback(const duco_msg::msg::DucoRobotState::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -224,10 +153,11 @@ private:
         // DucoRobotState doesn't seem to have SN. We might need another way or just assume type "duco" is present.
         common_msgs::msg::DeviceStatus status;
         status.device_type = "duco";
-        status.device_model = "unknown";
+        status.device_name = "DUCO 协作机械臂";
+        status.device_model = "GCR5-910";
         status.device_usage = "arm";
         status.status = (msg->robot_state == STATE_ENABLE) ? "ready" : "connected";
-        status.device_sn = "duco_arm_1"; // Placeholder
+        status.device_sn = "duco_arm_1";
         
         std::lock_guard<std::mutex> dev_lock(devices_mutex_);
         connected_devices_["duco"] = status;
@@ -253,14 +183,20 @@ private:
 
     bool check_vision_topics(const common_msgs::msg::TaskDeviceCheck& check) {
         auto topic_names_and_types = this->get_topic_names_and_types();
-        auto matches_sn = [&](const std::string& name){
-            return check.device_sn.empty() ? true : (name.find(check.device_sn) != std::string::npos);
-        };
+        // First try to resolve topic_prefix from connected_devices_ using SN
+        if (!check.device_sn.empty()) {
+            auto it = connected_devices_.find(check.device_sn);
+            if (it != connected_devices_.end() && !it->second.topic_prefix.empty()) {
+                std::string prefix = it->second.topic_prefix;
+                std::string color_t = prefix + "/color/image_raw";
+                return topic_names_and_types.count(color_t) > 0;
+            }
+        }
+        // Fallback: any color/depth topic exists
         for (const auto& [name, types] : topic_names_and_types) {
-            if (name.find("color/image_raw") != std::string::npos || name.find("depth/image_raw") != std::string::npos) {
-                if (matches_sn(name)) {
-                    return true;
-                }
+            if (name.find("color/image_raw") != std::string::npos ||
+                name.find("depth/image_raw") != std::string::npos) {
+                return true;
             }
         }
         return false;
@@ -458,7 +394,7 @@ private:
         request->v = 20.0; // % velocity? or rad/s? Duco usually uses % or specific units. RosNode used 20.0
         request->a = 100.0; // % accel?
         request->r = 0.0; // blend radius
-        request->arm_num = 1;
+        request->arm_num = 0;
         request->block = true; // Wait for completion
 
         auto future = client_move_->async_send_request(request);
@@ -572,26 +508,32 @@ private:
             return false;
         }
 
-        // Auto-detect camera topics
-        auto topic_names_and_types = this->get_topic_names_and_types();
-        std::string color_topic, depth_topic, ir_topic;
-
-        auto match_sn = [&](const std::string& name){ return !step.device_sn.empty() && name.find(step.device_sn) != std::string::npos; };
-        for (const auto& [name, types] : topic_names_and_types) {
-            if (name.find("color/image_raw") != std::string::npos) {
-                if (color_topic.empty() || match_sn(name) || name.find("/camera/") != std::string::npos) color_topic = name;
-            }
-            else if (name.find("depth/image_raw") != std::string::npos) {
-                if (depth_topic.empty() || match_sn(name) || name.find("/camera/") != std::string::npos) depth_topic = name;
-            }
-            else if (name.find("ir/image_raw") != std::string::npos || name.find("left_ir/image_raw") != std::string::npos) {
-                 if (ir_topic.empty() || match_sn(name) || name.find("/camera/") != std::string::npos) ir_topic = name;
+        // Resolve camera namespace from topic_prefix in connected_devices_
+        // Falls back to topic scanning when SN is not specified or not yet registered.
+        std::string cam_ns = "/camera";  // default fallback
+        {
+            std::lock_guard<std::mutex> lock(devices_mutex_);
+            if (!step.device_sn.empty()) {
+                auto it = connected_devices_.find(step.device_sn);
+                if (it != connected_devices_.end() && !it->second.topic_prefix.empty()) {
+                    cam_ns = it->second.topic_prefix;
+                }
+            } else {
+                // No SN specified: pick the first camera device with a topic_prefix
+                for (const auto& [key, dev] : connected_devices_) {
+                    if (dev.device_type == "vision_system" && !dev.topic_prefix.empty()) {
+                        cam_ns = dev.topic_prefix;
+                        break;
+                    }
+                }
             }
         }
 
-        if (color_topic.empty()) color_topic = "/camera/color/image_raw"; // Fallback
-        if (depth_topic.empty()) depth_topic = "/camera/depth/image_raw"; // Fallback
-        if (ir_topic.empty()) ir_topic = "/camera/ir/image_raw"; // Fallback
+
+
+        std::string color_topic = cam_ns + "/color/image_raw";
+        std::string depth_topic = cam_ns + "/depth/image_raw";
+        std::string ir_topic    = cam_ns + "/left_ir/image_raw";
 
         auto call_save = [&](std::string topic, std::string tag) {
             auto request = std::make_shared<vision_server::srv::SaveImage::Request>();
@@ -650,13 +592,6 @@ private:
 
     void handle_move_request(const std::shared_ptr<duco_msg::srv::RobotMove::Request> request,
                              std::shared_ptr<duco_msg::srv::RobotMove::Response> response) {
-        std::string msg;
-        if (!check_user_permission("start_task", msg)) {
-            response->response = "DENY:" + msg;
-            RCLCPP_WARN(this->get_logger(), "Move request denied: %s", msg.c_str());
-            return;
-        }
-
         if (is_paused_) {
             response->response = "System paused";
             return;
@@ -684,13 +619,6 @@ private:
     
     void handle_control_request(const std::shared_ptr<duco_msg::srv::RobotControl::Request> request,
                              std::shared_ptr<duco_msg::srv::RobotControl::Response> response) {
-        std::string msg;
-        if (!check_user_permission("power_on", msg)) {
-            response->response = "DENY:" + msg;
-            RCLCPP_WARN(this->get_logger(), "Control request denied: %s", msg.c_str());
-            return;
-        }
-
         if (!client_control_->wait_for_service(std::chrono::seconds(1))) {
             RCLCPP_ERROR(this->get_logger(), "DucoRobot control service not available");
             response->response = "Service unavailable";
@@ -713,13 +641,6 @@ private:
 
     void handle_io_request(const std::shared_ptr<duco_msg::srv::RobotIoControl::Request> request,
                              std::shared_ptr<duco_msg::srv::RobotIoControl::Response> response) {
-        std::string msg;
-        if (!check_user_permission("modify_param", msg)) {
-            response->response = "DENY:" + msg;
-            RCLCPP_WARN(this->get_logger(), "IO request denied: %s", msg.c_str());
-            return;
-        }
-
         if (!client_io_->wait_for_service(std::chrono::seconds(1))) {
             RCLCPP_ERROR(this->get_logger(), "DucoRobot IO service not available");
             response->response = "Service unavailable";

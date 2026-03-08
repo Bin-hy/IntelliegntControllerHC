@@ -29,30 +29,32 @@ find_package(rclcpp_action REQUIRED)
   set(CMAKE_AUTOUIC ON)
   set(CMAKE_AUTORCC ON)
 
-  add_executable(ui_app 
+  add_executable(ui_app
     src/main.cpp
     src/ros_node.cpp
     src/app_window.cpp
     src/app_window_task.cpp
     src/task_widget.cpp
     src/task_dialogs.cpp
+    src/task_record_manager.cpp
+    src/auth_manager.cpp
+    src/auth_log_manager.cpp
+    src/permission_manager.cpp
+    src/login_window.cpp
+    src/idle_logout_watcher.cpp
     src/point_cloud_widget.cpp
     src/robot_viz_widget.cpp
-    src/auth_manager.cpp
-    src/permission_manager.cpp
-    src/auth_log_manager.cpp
-    src/idle_logout_watcher.cpp
-    src/login_window.cpp
     resources/resources.qrc
     include/ui_app/point_cloud_widget.hpp
     include/ui_app/robot_viz_widget.hpp
     include/ui_app/task_widget.hpp
     include/ui_app/task_dialogs.hpp
+    include/ui_app/task_record_manager.hpp
     include/ui_app/auth_manager.hpp
-    include/ui_app/permission_manager.hpp
     include/ui_app/auth_log_manager.hpp
-    include/ui_app/idle_logout_watcher.hpp
+    include/ui_app/permission_manager.hpp
     include/ui_app/login_window.hpp
+    include/ui_app/idle_logout_watcher.hpp
   )
 
   target_include_directories(ui_app PUBLIC

@@ -7,6 +7,38 @@
 #include <QDir>
 #include <QDateTime>
 #include <QRandomGenerator>
+#include <QFileInfo>
+#include <iostream>
+#include <sys/stat.h>
+
+namespace {
+QString generateRandomPassword() {
+    const QString upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const QString lower = "abcdefghijklmnopqrstuvwxyz";
+    const QString digits = "0123456789";
+    const QString special = "!@#$%^&*()-_=+";
+    const QString all = upper + lower + digits + special;
+
+    QString password;
+    // Ensure at least one from each category
+    password += upper[QRandomGenerator::global()->bounded(upper.size())];
+    password += lower[QRandomGenerator::global()->bounded(lower.size())];
+    password += digits[QRandomGenerator::global()->bounded(digits.size())];
+    password += special[QRandomGenerator::global()->bounded(special.size())];
+    // Fill remaining 8 chars randomly
+    for (int i = 0; i < 8; ++i) {
+        password += all[QRandomGenerator::global()->bounded(all.size())];
+    }
+    // Shuffle
+    for (int i = password.size() - 1; i > 0; --i) {
+        int j = QRandomGenerator::global()->bounded(i + 1);
+        QChar tmp = password[i];
+        password[i] = password[j];
+        password[j] = tmp;
+    }
+    return password;
+}
+} // anonymous namespace
 
 AuthManager::AuthManager(const QString& user_file_path)
     : user_file_path_(user_file_path) {
@@ -71,9 +103,14 @@ void AuthManager::load() {
         InternalUser admin;
         admin.username = "admin";
         QByteArray salt = generateSalt();
-        QString default_password = "Admin@123";
+        QString default_password = generateRandomPassword();
         admin.salt = salt;
         admin.password_hash = hashPassword(default_password, salt);
+        std::cout << "========================================" << std::endl;
+        std::cout << "  FIRST-TIME SETUP" << std::endl;
+        std::cout << "  Default admin password: " << default_password.toStdString() << std::endl;
+        std::cout << "  Please change it after first login." << std::endl;
+        std::cout << "========================================" << std::endl;
         admin.role = UserRole::Admin;
         admin.failed_attempts = 0;
         admin.lock_until = 0;
@@ -125,6 +162,8 @@ void AuthManager::save() const {
     if (!dir.exists()) {
         dir.mkpath(".");
     }
+    // Harden directory permissions to 700 (owner only)
+    ::chmod(dir.absolutePath().toLocal8Bit().constData(), 0700);
     QJsonArray arr;
     for (const InternalUser& u : users_) {
         QJsonObject obj;
@@ -151,6 +190,8 @@ void AuthManager::save() const {
     }
     file.write(doc.toJson(QJsonDocument::Compact));
     file.close();
+    // Harden file permissions to 600 (owner read/write only)
+    ::chmod(user_file_path_.toLocal8Bit().constData(), 0600);
 }
 
 bool AuthManager::verifyPassword(const QString& username,

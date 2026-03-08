@@ -8,6 +8,8 @@
 #include <urdf/model.h>
 #include <fstream>
 #include <iostream>
+#include <cstring>
+#include <limits>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -67,10 +69,11 @@ void RobotVizWidget::setupScene() {
     camera->setPosition(QVector3D(1.6f, 1.0f, 1.2f)); 
     camera->setViewCenter(QVector3D(0.0f, 0.4f, 0.0f));
 
-    // Manipulator
+    // Manipulator — orbit around model center
     cam_controller_ = new Qt3DExtras::QOrbitCameraController(root_entity_);
-    cam_controller_->setLinearSpeed(50.0f);
-    cam_controller_->setLookSpeed(180.0f);
+    cam_controller_->setLinearSpeed(3.0f);
+    cam_controller_->setLookSpeed(120.0f);
+    cam_controller_->setZoomInLimit(0.3f);
     cam_controller_->setCamera(camera);
 
     // Light
@@ -117,17 +120,17 @@ void RobotVizWidget::setupScene() {
     view_->setRootEntity(root_entity_);
 }
 
-void RobotVizWidget::loadRobotModel(const std::string& urdf_path) {
+void RobotVizWidget::loadRobotModel(const std::string& urdf_path, const std::string& tf_root) {
     urdf::Model model;
     if (!model.initFile(urdf_path)) {
         std::cerr << "Failed to parse URDF: " << urdf_path << std::endl;
-        QMessageBox::critical(this, "Model Load Error", 
+        QMessageBox::critical(this, "Model Load Error",
             QString("Failed to load URDF file:\n%1\n\nPlease check if the file exists.").arg(QString::fromStdString(urdf_path)));
         return;
     }
-    
+
     std::cout << "Loaded robot: " << model.getName() << std::endl;
-    
+
     // Debug info collector
     QString debug_msg = QString("Attempting to load URDF: %1\n").arg(QString::fromStdString(urdf_path));
     debug_msg += QString("Robot Name: %1\n").arg(QString::fromStdString(model.getName()));
@@ -137,9 +140,14 @@ void RobotVizWidget::loadRobotModel(const std::string& urdf_path) {
     // Start recursive processing from root link
     std::shared_ptr<const urdf::Link> root = model.getRoot();
     if (root) {
-        root_link_name_ = root->name;
-        QMatrix4x4 identity; // Identity matrix for root
-        processLinkRecursive(root, identity);
+        // If tf_root is provided, use it as TF reference frame (e.g. arm's base_link
+        // for hand models). Otherwise use this model's own root (first/primary model).
+        std::string effective_root = tf_root.empty() ? root->name : tf_root;
+        if (tf_root.empty()) {
+            root_link_name_ = root->name;
+        }
+        QMatrix4x4 identity;
+        processLinkRecursive(root, identity, effective_root);
         
         // Count links and visuals for debugging
         std::vector<std::shared_ptr<const urdf::Link>> stack;
@@ -181,7 +189,7 @@ void RobotVizWidget::setCameraPosition(const QVector3D& pos, const QVector3D& vi
     camera->setViewCenter(view_center);
 }
 
-void RobotVizWidget::processLinkRecursive(std::shared_ptr<const urdf::Link> link, const QMatrix4x4& parent_transform) {
+void RobotVizWidget::processLinkRecursive(std::shared_ptr<const urdf::Link> link, const QMatrix4x4& parent_transform, const std::string& root_name) {
     if (!link) return;
 
     QMatrix4x4 current_transform = parent_transform;
@@ -203,13 +211,13 @@ void RobotVizWidget::processLinkRecursive(std::shared_ptr<const urdf::Link> link
     }
 
     // Create visual entity if visual exists
-    if (link->visual && link->visual->geometry->type == urdf::Geometry::MESH) {
+    if (link->visual && link->visual->geometry && link->visual->geometry->type == urdf::Geometry::MESH) {
         auto mesh = std::dynamic_pointer_cast<urdf::Mesh>(link->visual->geometry);
         if (mesh) {
             std::string mesh_path = resolvePath(mesh->filename);
             if (!mesh_path.empty()) {
                 // Now passing the link object itself to handle visual origin
-                createLinkNode(link->name, link, current_transform);
+                createLinkNode(link->name, link, current_transform, root_name);
             }
         }
     } else if (link->visual) {
@@ -220,11 +228,11 @@ void RobotVizWidget::processLinkRecursive(std::shared_ptr<const urdf::Link> link
 
     // Process children
     for (auto child : link->child_links) {
-        processLinkRecursive(child, current_transform);
+        processLinkRecursive(child, current_transform, root_name);
     }
 }
 
-Qt3DCore::QEntity* RobotVizWidget::createLinkNode(const std::string& name, std::shared_ptr<const urdf::Link> link, const QMatrix4x4& initial_transform) {
+Qt3DCore::QEntity* RobotVizWidget::createLinkNode(const std::string& name, std::shared_ptr<const urdf::Link> link, const QMatrix4x4& initial_transform, const std::string& root_name) {
     // 1. Create Link Entity (Represents the Joint/Link Frame)
     // This entity will be moved by TF updates
     Qt3DCore::QEntity *link_entity = new Qt3DCore::QEntity(root_entity_);
@@ -235,7 +243,7 @@ Qt3DCore::QEntity* RobotVizWidget::createLinkNode(const std::string& name, std::
 
     // 2. Create Visual Entity (Child of Link Entity)
     // This entity holds the mesh and applies the constant Visual Origin offset
-    if (link->visual && link->visual->geometry->type == urdf::Geometry::MESH) {
+    if (link->visual && link->visual->geometry && link->visual->geometry->type == urdf::Geometry::MESH) {
         auto urdf_mesh = std::dynamic_pointer_cast<urdf::Mesh>(link->visual->geometry);
         if (urdf_mesh) {
             std::string mesh_path = resolvePath(urdf_mesh->filename);
@@ -246,38 +254,18 @@ Qt3DCore::QEntity* RobotVizWidget::createLinkNode(const std::string& name, std::
                 Qt3DRender::QGeometryRenderer *mesh = nullptr;
                 if (mesh_path.find(".stl") != std::string::npos || mesh_path.find(".STL") != std::string::npos) {
                     mesh = loadSTLGeometry(QString::fromStdString(mesh_path), visual_entity);
-                    if (!mesh) {
-                        // Fallback to QMesh if custom loader fails (or for other formats)
-                         Qt3DRender::QMesh *qmesh = new Qt3DRender::QMesh();
-                         qmesh->setSource(QUrl::fromLocalFile(QString::fromStdString(mesh_path)));
-                         mesh = qmesh;
-                         
-                         // Debug: Print that we fell back to QMesh
-                         std::cout << "Falling back to QMesh for: " << mesh_path << std::endl;
-                    }
-                } else {
-                    Qt3DRender::QMesh *qmesh = new Qt3DRender::QMesh();
-                    qmesh->setSource(QUrl::fromLocalFile(QString::fromStdString(mesh_path)));
-                    mesh = qmesh;
+                }
+                if (!mesh) {
+                    Qt3DExtras::QCuboidMesh *box = new Qt3DExtras::QCuboidMesh();
+                    box->setXExtent(0.05f);
+                    box->setYExtent(0.05f);
+                    box->setZExtent(0.05f);
+                    visual_entity->addComponent(box);
                 }
                 
-                // Debug Mesh Loading
-                if (auto qmesh = dynamic_cast<Qt3DRender::QMesh*>(mesh)) {
-                     QObject::connect(qmesh, &Qt3DRender::QMesh::statusChanged, [this, qmesh, mesh_path, name, visual_entity](Qt3DRender::QMesh::Status status){
-                         if (status == Qt3DRender::QMesh::Error) {
-                             QString err = QString("Mesh Load Error [%1]:\n%2").arg(QString::fromStdString(name)).arg(QString::fromStdString(mesh_path));
-                             std::cerr << err.toStdString() << std::endl;
-                             // Fallback visualization: Red Box
-                             Qt3DExtras::QCuboidMesh *box = new Qt3DExtras::QCuboidMesh();
-                             box->setXExtent(0.05f); box->setYExtent(0.05f); box->setZExtent(0.05f);
-                             visual_entity->addComponent(box);
-                         } else if (status == Qt3DRender::QMesh::Ready) {
-                             std::cout << "Mesh Ready: " << mesh_path << std::endl;
-                         }
-                     });
+                if (mesh) {
+                    visual_entity->addComponent(mesh);
                 }
-
-                visual_entity->addComponent(mesh);
                 
                 // Material
                 Qt3DExtras::QPhongMaterial *material = new Qt3DExtras::QPhongMaterial();
@@ -311,6 +299,7 @@ Qt3DCore::QEntity* RobotVizWidget::createLinkNode(const std::string& name, std::
     info.entity = link_entity;
     info.transform = link_transform; // We only update the Link Frame transform
     info.name = name;
+    info.root_name = root_name;
     links_[name] = info;
     
     return link_entity;
@@ -330,13 +319,14 @@ Qt3DRender::QGeometryRenderer* RobotVizWidget::loadSTLGeometry(const QString& pa
     // Binary STL: 80 byte header + 4 byte count + 50 bytes * count
     if (data.size() < 84) return nullptr;
     
-    quint32 triangleCount = *reinterpret_cast<const quint32*>(ptr + 80);
-    if (data.size() != 84 + static_cast<int>(triangleCount) * 50) {
-        // Size mismatch for binary, might be ASCII or corrupt. 
-        // For this task we assume binary as per analysis.
-        std::cerr << "STL size mismatch. Expected " << (84 + triangleCount * 50) << ", got " << data.size() << std::endl;
-        // Proceeding anyway with read limit check
+    quint32 triangleCount = 0;
+    std::memcpy(&triangleCount, ptr + 80, sizeof(quint32));
+    if (triangleCount == 0) return nullptr;
+    quint64 expected_size = 84ull + static_cast<quint64>(triangleCount) * 50ull;
+    if (expected_size != static_cast<quint64>(data.size())) {
+        return nullptr;
     }
+    if (triangleCount > 2000000) return nullptr;
 
     // Vertex buffer
     // 3 vertices * 3 floats * 4 bytes = 36 bytes per triangle for position
@@ -344,32 +334,32 @@ Qt3DRender::QGeometryRenderer* RobotVizWidget::loadSTLGeometry(const QString& pa
     // Total buffer size: triangleCount * 3 * (3 pos + 3 normal) * 4 bytes
     
     QByteArray bufferData;
-    bufferData.resize(triangleCount * 3 * 2 * 3 * sizeof(float)); // 3 verts, 2 vectors (pos, norm), 3 floats each
+    quint64 buffer_bytes = static_cast<quint64>(triangleCount) * 3ull * 2ull * 3ull * sizeof(float);
+    if (buffer_bytes > static_cast<quint64>(std::numeric_limits<int>::max())) return nullptr;
+    bufferData.resize(static_cast<int>(buffer_bytes));
     float* fptr = reinterpret_cast<float*>(bufferData.data());
     
     const char* dataPtr = ptr + 84;
+    quint32 actualTriangles = 0;
     for (quint32 i = 0; i < triangleCount; ++i) {
         if (dataPtr + 50 > ptr + data.size()) break;
 
-        // Normal
-        float nx = *reinterpret_cast<const float*>(dataPtr);
-        float ny = *reinterpret_cast<const float*>(dataPtr + 4);
-        float nz = *reinterpret_cast<const float*>(dataPtr + 8);
-        
-        // Vertex 1
-        float v1x = *reinterpret_cast<const float*>(dataPtr + 12);
-        float v1y = *reinterpret_cast<const float*>(dataPtr + 16);
-        float v1z = *reinterpret_cast<const float*>(dataPtr + 20);
-        
-        // Vertex 2
-        float v2x = *reinterpret_cast<const float*>(dataPtr + 24);
-        float v2y = *reinterpret_cast<const float*>(dataPtr + 28);
-        float v2z = *reinterpret_cast<const float*>(dataPtr + 32);
-        
-        // Vertex 3
-        float v3x = *reinterpret_cast<const float*>(dataPtr + 36);
-        float v3y = *reinterpret_cast<const float*>(dataPtr + 40);
-        float v3z = *reinterpret_cast<const float*>(dataPtr + 44);
+        float nx, ny, nz;
+        float v1x, v1y, v1z;
+        float v2x, v2y, v2z;
+        float v3x, v3y, v3z;
+        std::memcpy(&nx, dataPtr + 0, 4);
+        std::memcpy(&ny, dataPtr + 4, 4);
+        std::memcpy(&nz, dataPtr + 8, 4);
+        std::memcpy(&v1x, dataPtr + 12, 4);
+        std::memcpy(&v1y, dataPtr + 16, 4);
+        std::memcpy(&v1z, dataPtr + 20, 4);
+        std::memcpy(&v2x, dataPtr + 24, 4);
+        std::memcpy(&v2y, dataPtr + 28, 4);
+        std::memcpy(&v2z, dataPtr + 32, 4);
+        std::memcpy(&v3x, dataPtr + 36, 4);
+        std::memcpy(&v3y, dataPtr + 40, 4);
+        std::memcpy(&v3z, dataPtr + 44, 4);
 
         // Fill buffer (flat shading: duplicate normal for each vertex)
         // V1
@@ -383,6 +373,11 @@ Qt3DRender::QGeometryRenderer* RobotVizWidget::loadSTLGeometry(const QString& pa
         *fptr++ = nx;  *fptr++ = ny;  *fptr++ = nz;
 
         dataPtr += 50;
+        actualTriangles++;
+    }
+    if (actualTriangles == 0) return nullptr;
+    if (actualTriangles != triangleCount) {
+        bufferData.resize(actualTriangles * 3 * 2 * 3 * sizeof(float));
     }
 
     Qt3DRender::QGeometry *geometry = new Qt3DRender::QGeometry(parent);
@@ -399,7 +394,7 @@ Qt3DRender::QGeometryRenderer* RobotVizWidget::loadSTLGeometry(const QString& pa
     posAttr->setBuffer(vertexBuffer);
     posAttr->setByteStride(6 * sizeof(float));
     posAttr->setByteOffset(0);
-    posAttr->setCount(triangleCount * 3);
+    posAttr->setCount(actualTriangles * 3);
     geometry->addAttribute(posAttr);
     
     // Normal Attribute
@@ -411,11 +406,13 @@ Qt3DRender::QGeometryRenderer* RobotVizWidget::loadSTLGeometry(const QString& pa
     normAttr->setBuffer(vertexBuffer);
     normAttr->setByteStride(6 * sizeof(float));
     normAttr->setByteOffset(3 * sizeof(float));
-    normAttr->setCount(triangleCount * 3);
+    normAttr->setCount(actualTriangles * 3);
     geometry->addAttribute(normAttr);
 
     Qt3DRender::QGeometryRenderer *renderer = new Qt3DRender::QGeometryRenderer(parent);
     renderer->setGeometry(geometry);
+    renderer->setPrimitiveType(Qt3DRender::QGeometryRenderer::Triangles);
+    renderer->setVertexCount(actualTriangles * 3);
     
     return renderer;
 }
@@ -437,7 +434,7 @@ void RobotVizWidget::updateTransforms() {
             // Usually "base" or "base_link" is the root.
             geometry_msgs::msg::TransformStamped t;
             // Use dynamic root link
-            t = tf_buffer->lookupTransform(root_link_name_, name, tf2::TimePointZero);
+            t = tf_buffer->lookupTransform(info.root_name, name, tf2::TimePointZero);
             
             QVector3D pos(t.transform.translation.x, t.transform.translation.y, t.transform.translation.z);
             QQuaternion rot(t.transform.rotation.w, t.transform.rotation.x, t.transform.rotation.y, t.transform.rotation.z);

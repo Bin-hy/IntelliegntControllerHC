@@ -70,8 +70,7 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     // Task Execution Action Client
     client_execute_task_ = rclcpp_action::create_client<ExecuteTask>(this, "execute_task");
 
-    // Default Camera Subscriptions (camera, Color+Depth)
-    update_camera_subscriptions("camera", true, true, false, false, false);
+    // Camera subscriptions will be set up after UI auto-scan detects actual cameras
 
     // TF Listener
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -112,8 +111,8 @@ std::vector<std::string> RosNode::scan_cameras() {
         }
     }
     if (cameras.empty()) {
-        RCLCPP_WARN(this->get_logger(), "No cameras found via topic scanning. Defaulting to 'camera'.");
-        cameras.push_back("camera");
+        RCLCPP_WARN(this->get_logger(), "No cameras found via topic scanning. Defaulting to '/camera'.");
+        cameras.push_back("/camera");
     }
     return cameras;
 }
@@ -138,14 +137,9 @@ void RosNode::update_camera_subscriptions(const std::string& camera_ns, bool col
         sub_depth_ = create_subscription<sensor_msgs::msg::Image>(topic, 10, std::bind(&RosNode::depth_callback, this, std::placeholders::_1));
     }
     if (ir_left) {
-        // Some cameras use "ir/image_raw", others "left_ir/image_raw"
-        // Try to guess or just use standard convention for Orbbec/Realsense
-        std::string topic = camera_ns + "/ir/image_raw"; 
-        if (camera_ns.find("camera_A") != std::string::npos) { // Custom logic based on user hint
-             topic = camera_ns + "/ir/image_raw";
-        } else {
-             topic = camera_ns + "/left_ir/image_raw"; 
-        }
+        std::string topic = !last_caps_.ir_left_topic.empty()
+            ? last_caps_.ir_left_topic
+            : (camera_ns + "/left_ir/image_raw");
         RCLCPP_INFO(this->get_logger(), "Subscribing to IR Left: %s", topic.c_str());
         sub_ir_left_ = create_subscription<sensor_msgs::msg::Image>(topic, 10, std::bind(&RosNode::ir_left_callback, this, std::placeholders::_1));
     }
@@ -155,7 +149,14 @@ void RosNode::update_camera_subscriptions(const std::string& camera_ns, bool col
         sub_ir_right_ = create_subscription<sensor_msgs::msg::Image>(topic, 10, std::bind(&RosNode::ir_right_callback, this, std::placeholders::_1));
     }
     if (point_cloud) {
-        std::string topic = pc_topic.empty() ? (camera_ns + "/depth/color/points") : pc_topic;
+        std::string topic;
+        if (!pc_topic.empty()) {
+            topic = pc_topic;
+        } else if (!last_caps_.point_cloud_topic.empty()) {
+            topic = last_caps_.point_cloud_topic;
+        } else {
+            topic = camera_ns + "/depth_registered/points";
+        }
         RCLCPP_INFO(this->get_logger(), "Subscribing to PointCloud: %s", topic.c_str());
         sub_point_cloud_ = create_subscription<sensor_msgs::msg::PointCloud2>(topic, 10, std::bind(&RosNode::point_cloud_callback, this, std::placeholders::_1));
     }
@@ -201,11 +202,10 @@ void RosNode::robot_state_callback(const duco_msg::msg::DucoRobotState::SharedPt
 
 void RosNode::device_status_callback(const common_msgs::msg::DeviceStatus::SharedPtr msg) {
     std::lock_guard<std::mutex> lock(data_mutex_);
-    // Use device_type as key for simplicity in this context, or device_sn if available for multiples
-    std::string key = msg->device_type;
-    if (!msg->device_sn.empty()) {
-        key += ":" + msg->device_sn;
-    }
+    // 用 device_sn 作为 key（优先），保证多个同类设备（如两个 Orbbec 相机）各自独立存储
+    std::string key = msg->device_sn.empty()
+        ? (msg->device_type + ":" + msg->device_name)
+        : msg->device_sn;
     connected_devices_[key] = *msg;
 }
 
@@ -216,6 +216,41 @@ std::vector<common_msgs::msg::DeviceStatus> RosNode::get_connected_devices() {
         devices.push_back(kv.second);
     }
     return devices;
+}
+
+bool RosNode::is_hand_connected(const std::string& side) {
+    auto to_lower = [](std::string value) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return std::tolower(c); });
+        return value;
+    };
+    auto contains = [](const std::string& text, const std::string& key) {
+        return text.find(key) != std::string::npos;
+    };
+    std::string side_lower = to_lower(side);
+    if (side_lower != "left" && side_lower != "right") return false;
+
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    for (const auto& kv : connected_devices_) {
+        const auto& status = kv.second;
+        if (!(status.status == "ready" || status.status == "running" || status.status == "connected")) {
+            continue;
+        }
+        std::string type = to_lower(status.device_type);
+        std::string usage = to_lower(status.device_usage);
+        std::string name = to_lower(status.device_name);
+        std::string sn = to_lower(status.device_sn);
+        std::string model = to_lower(status.device_model);
+
+        bool left_hint = contains(type, "lhand") || contains(usage, "left") || contains(sn, "left") || contains(name, "left") || contains(model, "left") || contains(sn, "lhand");
+        bool right_hint = contains(type, "rhand") || contains(usage, "right") || contains(sn, "right") || contains(name, "right") || contains(model, "right") || contains(sn, "rhand");
+
+        if (side_lower == "left") {
+            if (left_hint || type == "lhand") return true;
+        } else {
+            if (right_hint || type == "rhand") return true;
+        }
+    }
+    return false;
 }
 
 bool RosNode::check_device_availability(const common_msgs::msg::TaskDeviceCheck& check) {
@@ -357,14 +392,34 @@ void RosNode::save_snapshot(const std::string& camera_ns, bool color, bool depth
     if (color) send_request(camera_ns + "/color/image_raw", "Color");
     if (depth) send_request(camera_ns + "/depth/image_raw", "Depth");
     if (ir_left) {
-        if (camera_ns.find("camera_A") != std::string::npos) {
-             send_request(camera_ns + "/ir/image_raw", "IR");
-        } else {
-             send_request(camera_ns + "/left_ir/image_raw", "IR_Left");
-        }
+        std::string ir_topic = !last_caps_.ir_left_topic.empty()
+            ? last_caps_.ir_left_topic
+            : (camera_ns + "/left_ir/image_raw");
+        send_request(ir_topic, "IR_Left");
     }
     if (ir_right) send_request(camera_ns + "/right_ir/image_raw", "IR_Right");
-    if (point_cloud) send_request(camera_ns + "/depth/color/points", "PointCloud");
+    if (point_cloud) {
+        // PointCloud2 cannot be saved via SaveImage service; use Orbbec's built-in save_point_cloud service
+        std::string save_pc_service = camera_ns + "/save_point_cloud";
+        auto client_save_pc = this->create_client<std_srvs::srv::Empty>(save_pc_service);
+        if (!client_save_pc->wait_for_service(std::chrono::seconds(1))) {
+            RCLCPP_WARN(get_logger(), "save_point_cloud service not available: %s", save_pc_service.c_str());
+            if (callback) callback(false, "save_point_cloud service not available");
+        } else {
+            auto request = std::make_shared<std_srvs::srv::Empty::Request>();
+            client_save_pc->async_send_request(request,
+                [this, save_pc_service, callback](rclcpp::Client<std_srvs::srv::Empty>::SharedFuture future) {
+                    try {
+                        future.get();
+                        RCLCPP_INFO(get_logger(), "Point cloud saved via %s", save_pc_service.c_str());
+                        if (callback) callback(true, "Point cloud saved");
+                    } catch (const std::exception& e) {
+                        RCLCPP_ERROR(get_logger(), "save_point_cloud failed: %s", e.what());
+                        if (callback) callback(false, std::string("Exception: ") + e.what());
+                    }
+                });
+        }
+    }
 }
 
 void RosNode::color_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
@@ -724,11 +779,14 @@ void RosNode::call_robot_move(const std::string& command,
 std::vector<std::string> RosNode::scan_point_clouds() {
     std::vector<std::string> topics;
     auto topic_names_and_types = this->get_topic_names_and_types();
-    
+
     RCLCPP_INFO(this->get_logger(), "Scanning for point clouds...");
     for (const auto& [name, types] : topic_names_and_types) {
-        if (name.find("points") != std::string::npos || name.find("PointCloud") != std::string::npos) {
-             topics.push_back(name);
+        for (const auto& t : types) {
+            if (t == "sensor_msgs/msg/PointCloud2") {
+                topics.push_back(name);
+                break;
+            }
         }
     }
     return topics;
@@ -736,17 +794,48 @@ std::vector<std::string> RosNode::scan_point_clouds() {
 
 RosNode::CameraCapabilities RosNode::get_camera_capabilities(std::string camera_ns) {
     CameraCapabilities caps;
+    // Normalize: topics from get_topic_names_and_types() always have a leading '/'
+    if (!camera_ns.empty() && camera_ns[0] != '/') {
+        camera_ns = "/" + camera_ns;
+    }
     auto topic_names_and_types = this->get_topic_names_and_types();
-    
+
     for (const auto& [name, types] : topic_names_and_types) {
         if (name.find(camera_ns) != 0) continue; // Must start with ns
-        
-        if (name.find("color/image_raw") != std::string::npos) caps.has_color = true;
-        if (name.find("depth/image_raw") != std::string::npos) caps.has_depth = true;
-        if (name.find("ir/image_raw") != std::string::npos) caps.has_ir_left = true; 
-        if (name.find("left_ir/image_raw") != std::string::npos) caps.has_ir_left = true;
-        if (name.find("right_ir/image_raw") != std::string::npos) caps.has_ir_right = true;
-        if (name.find("points") != std::string::npos) caps.has_point_cloud = true;
+        // Extract the part after the namespace
+        std::string suffix = name.substr(camera_ns.size());
+
+        if (suffix == "/color/image_raw") caps.has_color = true;
+        if (suffix == "/depth/image_raw") caps.has_depth = true;
+
+        // IR Left: prefer /left_ir/image_raw, fallback to /ir/image_raw (mono IR)
+        if (suffix == "/left_ir/image_raw") {
+            caps.has_ir_left = true;
+            caps.ir_left_topic = name;
+        } else if (suffix == "/ir/image_raw" && caps.ir_left_topic.empty()) {
+            caps.has_ir_left = true;
+            caps.ir_left_topic = name;
+        }
+
+        if (suffix == "/right_ir/image_raw") {
+            caps.has_ir_right = true;
+            caps.ir_right_topic = name;
+        }
+
+        // Point Cloud: prefer /depth_registered/points (colored), fallback to /depth/points
+        for (const auto& t : types) {
+            if (t == "sensor_msgs/msg/PointCloud2") {
+                if (suffix == "/depth_registered/points") {
+                    caps.has_point_cloud = true;
+                    caps.point_cloud_topic = name;
+                } else if (suffix == "/depth/points" && caps.point_cloud_topic.empty()) {
+                    caps.has_point_cloud = true;
+                    caps.point_cloud_topic = name;
+                }
+            }
+        }
     }
+
+    last_caps_ = caps;
     return caps;
 }

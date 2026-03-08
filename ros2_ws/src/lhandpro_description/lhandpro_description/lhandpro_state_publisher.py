@@ -17,31 +17,36 @@ class LHandProStatePublisher(Node):
 
         self.data_lock = Lock()
 
-        # 初始化关节信息
-        self.joint_names = [
+        # 关节名前缀，需要和 URDF 中的关节名匹配 (L_ 或 R_)
+        self.declare_parameter('joint_prefix', 'L_')
+        prefix = self.get_parameter('joint_prefix').get_parameter_value().string_value
+
+        # 初始化关节信息 (前缀 + 关节名，与 URDF 一致)
+        base_names = [
             'finger11', 'finger12', 'finger13', 'finger14',
             'finger21', 'finger22', 'finger23',
             'finger31', 'finger32', 'finger33',
             'finger41', 'finger42', 'finger43',
             'finger51', 'finger52', 'finger53'
         ]
+        self.joint_names = [prefix + n for n in base_names]
         self.joint_positions = [0.0] * len(self.joint_names)
         self.map_index = {
-            1: 'finger11',
-            2: 'finger12',
-            3: 'finger21',
-            4: 'finger31',
-            5: 'finger41',
-            6: 'finger51'
+            1: prefix + 'finger11',
+            2: prefix + 'finger12',
+            3: prefix + 'finger21',
+            4: prefix + 'finger31',
+            5: prefix + 'finger41',
+            6: prefix + 'finger51'
         }
 
         # joint_relations: {从动关节名: (主动关节名, 比例)}
         self.joint_relations = {
-            'finger13': ('finger12', 1),
-            'finger22': ('finger21', 1),
-            'finger32': ('finger31', 1),
-            'finger42': ('finger41', 1),
-            'finger52': ('finger51', 1),
+            prefix + 'finger13': (prefix + 'finger12', 1),
+            prefix + 'finger22': (prefix + 'finger21', 1),
+            prefix + 'finger32': (prefix + 'finger31', 1),
+            prefix + 'finger42': (prefix + 'finger41', 1),
+            prefix + 'finger52': (prefix + 'finger51', 1),
         }
 
         self.now_angles_sub = self.create_subscription(

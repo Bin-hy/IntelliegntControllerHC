@@ -22,6 +22,8 @@ class QTabWidget;
 class QTableWidget;
 class QLineEdit;
 class QDateTimeEdit;
+class QToolButton;
+class QMenu;
 class PointCloudWidget;
 
 class AppWindow : public QWidget {
@@ -34,9 +36,11 @@ public:
             QWidget *parent = nullptr);
 
   void setCurrentRole(UserRole role);
+  void setUserSession(const QString& username, UserRole role, const QString& session_id, bool logged_in);
 
 private:
   QWidget* createControlTab();
+  void buildDashboard();
   QWidget* createMoveTab();
   QWidget* createIOTab();
   QWidget* createLHandTab();
@@ -51,6 +55,12 @@ private:
   void rebuildAdminTab();
   void applyPermissionToControls();
 
+  void showDeviceInfoDialog();
+  void showTaskDialog();
+  void onLogin();
+  void onLogout();
+  void onPermission();
+  void updateUserModule();
   std::shared_ptr<RosNode> node_;
   std::shared_ptr<AuthManager> auth_manager_;
   std::shared_ptr<AuthLogManager> auth_log_manager_;
@@ -59,9 +69,18 @@ private:
 
   QLabel * label_count_;
   QTextEdit * text_robot_state_;
+  QLabel * label_user_name_;
+  QLabel * label_user_role_;
+  QToolButton * btn_avatar_;
+  QMenu * menu_user_;
+  bool logged_in_;
+  QString current_user_;
+  QString session_id_;
   QTimer * timer_;
   QTabWidget* tabs_;
   QWidget* admin_tab_;
+  bool left_hand_loaded_;
+  bool right_hand_loaded_;
   
   QPushButton * btn_power_on_;
   QPushButton * btn_enable_;
