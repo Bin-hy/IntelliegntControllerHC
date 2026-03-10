@@ -190,20 +190,13 @@ void AppWindow::buildDashboard() {
 
     main_layout->addWidget(top_bar);
 
-    auto * content = new QWidget();
-    content->setObjectName("content_area");
-    auto * content_layout = new QHBoxLayout(content);
-    content_layout->setContentsMargins(0, 0, 0, 0);
-    content_layout->setSpacing(10);
-
     auto * left_panel = createCameraTab();
     left_panel->setObjectName("left_panel");
-    left_panel->setMinimumWidth(420);
-    left_panel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    left_panel->setMinimumWidth(300);
 
     robot_viz_ = new RobotVizWidget(node_);
     robot_viz_->setObjectName("center_panel");
-    robot_viz_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    robot_viz_->setMinimumWidth(200);
 
     // Load arm-only URDF for 3D visualization.
     // Hand models are loaded dynamically in updateUI() when detected as connected.
@@ -217,8 +210,7 @@ void AppWindow::buildDashboard() {
 
     auto * right_panel = new QWidget();
     right_panel->setObjectName("right_panel");
-    right_panel->setMinimumWidth(220);
-    right_panel->setMaximumWidth(320);
+    right_panel->setMinimumWidth(180);
     auto * right_layout = new QVBoxLayout(right_panel);
     right_layout->setContentsMargins(12, 12, 12, 12);
     right_layout->setSpacing(12);
@@ -235,13 +227,19 @@ void AppWindow::buildDashboard() {
     connect(btn_device_info, &QPushButton::clicked, this, &AppWindow::showDeviceInfoDialog);
     connect(btn_task_module, &QPushButton::clicked, this, &AppWindow::showTaskDialog);
 
-    content_layout->addWidget(left_panel, 3);
-    content_layout->addWidget(robot_viz_, 6);
-    content_layout->addWidget(right_panel, 2);
+    // Horizontal splitter: camera panel | 3D view | right panel (all drag-resizable)
+    auto * h_splitter = new QSplitter(Qt::Horizontal);
+    h_splitter->setObjectName("content_area");
+    h_splitter->addWidget(left_panel);
+    h_splitter->addWidget(robot_viz_);
+    h_splitter->addWidget(right_panel);
+    h_splitter->setStretchFactor(0, 3);
+    h_splitter->setStretchFactor(1, 6);
+    h_splitter->setStretchFactor(2, 2);
 
     // Use QSplitter for resizable content/tabs layout
     auto * splitter = new QSplitter(Qt::Vertical);
-    splitter->addWidget(content);
+    splitter->addWidget(h_splitter);
 
     // Bottom TabWidget for control panels
     tabs_ = new QTabWidget();
@@ -812,15 +810,48 @@ QWidget* AppWindow::createVideoWidget(const QString& title, QLabel*& label_ptr, 
     label_ptr->setMinimumSize(240, 160);
     label_ptr->setAlignment(Qt::AlignCenter);
     label_ptr->setObjectName("video_label");
-    // label_ptr->setStyleSheet("border: 1px solid #555; background-color: #222; color: #aaa;");
     layout->addWidget(label_ptr);
 
+    // Button row: Capture + Enlarge
+    auto * btn_row = new QHBoxLayout();
     auto * btn = new QPushButton(tr_ui("截图", "Capture"));
-    layout->addWidget(btn);
-    
+    auto * btn_enlarge = new QPushButton(tr_ui("放大", "Enlarge"));
+    btn_row->addWidget(btn);
+    btn_row->addWidget(btn_enlarge);
+    layout->addLayout(btn_row);
+
     // Connect save button
     QObject::connect(btn, &QPushButton::clicked, btn, [save_callback](){
         if(save_callback) save_callback();
+    });
+
+    // Connect enlarge button — opens a live-updating resizable dialog
+    QLabel* source_label = label_ptr;  // capture by value after assignment
+    QObject::connect(btn_enlarge, &QPushButton::clicked, group, [source_label, title](){
+        auto * dlg = new QDialog();
+        dlg->setWindowTitle(title);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->resize(960, 720);
+        auto * dlg_layout = new QVBoxLayout(dlg);
+        dlg_layout->setContentsMargins(4, 4, 4, 4);
+        auto * enlarged = new QLabel();
+        enlarged->setAlignment(Qt::AlignCenter);
+        enlarged->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        enlarged->setMinimumSize(400, 300);
+        dlg_layout->addWidget(enlarged);
+
+        // Refresh the enlarged view from the source label's pixmap every 100ms
+        auto * refresh_timer = new QTimer(dlg);
+        QObject::connect(refresh_timer, &QTimer::timeout, enlarged, [source_label, enlarged](){
+            QPixmap pix = source_label->pixmap(Qt::ReturnByValue);
+            if (!pix.isNull()) {
+                enlarged->setPixmap(pix.scaled(enlarged->size(),
+                                               Qt::KeepAspectRatio,
+                                               Qt::SmoothTransformation));
+            }
+        });
+        refresh_timer->start(100);
+        dlg->show();
     });
 
     group->setLayout(layout);
@@ -946,9 +977,9 @@ void AppWindow::rebuildAdminTab() {
     if (can_admin) {
         if (!admin_tab_) {
             admin_tab_ = createAdminTab();
-            tabs_->addTab(admin_tab_, "Admin Console");
+            tabs_->addTab(admin_tab_, tr_ui("管理界面","Admin Console"));
         } else if (idx < 0) {
-            tabs_->addTab(admin_tab_, "Admin Console");
+            tabs_->addTab(admin_tab_, tr_ui("管理界面","Admin Console"));
         }
     } else {
         if (idx >= 0) {

@@ -76,19 +76,29 @@ void LoginWindow::onLoginClicked() {
         label_status_->setText(tr_ui("请输入用户名和密码", "Please enter username and password"));
         return;
     }
-    UserInfo info;
+    UserInfo info{};
     QString reason;
     if (!auth_manager_->verifyPassword(username, password, info, reason)) {
         label_status_->setText(tr_ui("登录失败: ", "Login failed: ") + reason);
-        label_fail_count_->setText(tr_ui("失败次数或已锁定", "Too many failures or locked"));
         if (log_manager_) {
             log_manager_->logFailure(username, reason);
         }
         qint64 now = QDateTime::currentSecsSinceEpoch();
         if (info.lock_until > now) {
+            // Account just got locked or was already locked
             qint64 remain = info.lock_until - now;
             int minutes = static_cast<int>((remain + 59) / 60);
-            label_lock_info_->setText(tr_ui("账号锁定，剩余约 %1 分钟", "Account locked, ~%1 min remaining").arg(minutes));
+            label_fail_count_->setText(tr_ui("账号已锁定", "Account locked"));
+            label_lock_info_->setText(tr_ui("剩余约 %1 分钟后解锁", "Unlocks in ~%1 min").arg(minutes));
+        } else {
+            // Still within allowed attempts — show remaining chances (threshold = 3)
+            constexpr int kMaxAttempts = 3;
+            int remaining = kMaxAttempts - info.failed_attempts;
+            label_fail_count_->setText(tr_ui("已失败 %1 次，还可尝试 %2 次",
+                                             "Failed %1 time(s), %2 attempt(s) left")
+                                           .arg(info.failed_attempts)
+                                           .arg(remaining > 0 ? remaining : 0));
+            label_lock_info_->clear();
         }
         return;
     }
@@ -101,6 +111,7 @@ void LoginWindow::onLoginClicked() {
     label_status_->setText(tr_ui("登录成功", "Login successful"));
     label_fail_count_->clear();
     label_lock_info_->clear();
+
     if (log_manager_) {
         log_manager_->logSuccess(username);
     }

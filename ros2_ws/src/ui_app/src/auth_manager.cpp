@@ -204,12 +204,25 @@ bool AuthManager::verifyPassword(const QString& username,
         return false;
     }
     InternalUser& u = users_[key];
+
+    // Always populate out_user so the caller can inspect state even on failure
+    auto populate_out = [&]() {
+        out_user.username = u.username;
+        out_user.role = u.role;
+        out_user.failed_attempts = u.failed_attempts;
+        out_user.lock_until = u.lock_until;
+        out_user.must_change_password = u.must_change_password;
+        out_user.disabled = u.disabled;
+    };
+
     qint64 now = QDateTime::currentSecsSinceEpoch();
     if (u.disabled) {
+        populate_out();
         out_error_reason = "账号已禁用";
         return false;
     }
     if (u.lock_until > now) {
+        populate_out();
         out_error_reason = "账号已锁定";
         return false;
     }
@@ -218,21 +231,17 @@ bool AuthManager::verifyPassword(const QString& username,
         u.failed_attempts = 0;
         u.lock_until = 0;
         save();
-        out_user.username = u.username;
-        out_user.role = u.role;
-        out_user.failed_attempts = u.failed_attempts;
-        out_user.lock_until = u.lock_until;
-        out_user.must_change_password = u.must_change_password;
-        out_user.disabled = u.disabled;
+        populate_out();
         out_error_reason.clear();
         return true;
     }
     ++u.failed_attempts;
-    if (u.failed_attempts >= 5) {
+    if (u.failed_attempts >= 3) {   // Lock after 3 consecutive failures
         u.lock_until = now + 10 * 60;
         u.failed_attempts = 0;
     }
     save();
+    populate_out();
     out_error_reason = "密码错误";
     return false;
 }
