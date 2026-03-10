@@ -136,7 +136,6 @@ private:
   QPushButton* btn_lhand_set_vel_;
 
   RobotVizWidget* robot_viz_;
-  RobotVizWidget* lhand_viz_;
 };
 
 #endif // APP_WINDOW_HPP

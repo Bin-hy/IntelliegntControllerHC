@@ -2,12 +2,13 @@
 #define ROBOT_VIZ_WIDGET_HPP
 
 #include <QWidget>
+#include <QMouseEvent>
+#include <QWheelEvent>
 #include <Qt3DExtras/Qt3DWindow>
 #include <Qt3DCore/QEntity>
 #include <Qt3DRender/QCamera>
 #include <Qt3DRender/QCameraLens>
 #include <Qt3DCore/QTransform>
-#include <Qt3DExtras/QOrbitCameraController>
 #include <Qt3DExtras/QPhongMaterial>
 #include <Qt3DRender/QGeometryRenderer>
 #include <Qt3DRender/QBuffer>
@@ -43,8 +44,13 @@ public:
     // Set camera position
     void setCameraPosition(const QVector3D& pos, const QVector3D& view_center);
 
+    // Enable/disable rendering (for multi-Qt3DWindow coexistence)
+    void setRenderingEnabled(bool enabled);
+    bool isRenderingEnabled() const { return rendering_enabled_; }
+
 protected:
     void timerEvent(QTimerEvent *event) override;
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
     void setupScene();
@@ -55,25 +61,38 @@ private:
     // Custom STL Loader helper
     Qt3DRender::QGeometryRenderer* loadSTLGeometry(const QString& path, Qt3DCore::QEntity* parent);
 
+    // Custom orbit camera helpers
+    void orbitCamera(float deltaX, float deltaY);
+    void panCamera(float deltaX, float deltaY);
+    void zoomCamera(float delta);
+
     std::shared_ptr<RosNode> node_;
     QWidget *container_;
     Qt3DExtras::Qt3DWindow *view_;
     Qt3DCore::QEntity *root_entity_;
-    Qt3DExtras::QOrbitCameraController *cam_controller_;
-    
+
     struct LinkInfo {
         Qt3DCore::QEntity* entity;
         Qt3DCore::QTransform* transform;
         std::string name;
         std::string root_name;
     };
-    
+
     std::map<std::string, LinkInfo> links_;
-    int timer_id_;
-    
+    int timer_id_ = 0;
+    bool rendering_enabled_ = true;
+
+    // Custom orbit camera state
+    bool mouse_pressed_ = false;
+    bool middle_pressed_ = false;
+    QPoint last_mouse_pos_;
+    float orbit_speed_ = 0.3f;
+    float pan_speed_ = 0.005f;
+    float zoom_speed_ = 0.15f;
+
     // Base path for resolving package://
     std::string package_path_;
-    
+
     // Root link name for TF lookup
     std::string root_link_name_ = "base_link";
 };

@@ -1,5 +1,8 @@
 #include "ui_app/app_window.hpp"
 #include "ui_app/point_cloud_widget.hpp"
+#include "ui_app/i18n_manager.hpp"
+#include <QProcess>
+#include <QApplication>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -96,7 +99,6 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node,
     btn_lhand_move_ = nullptr;
     btn_lhand_set_vel_ = nullptr;
     robot_viz_ = nullptr;
-    lhand_viz_ = nullptr;
     for (int i = 0; i < 7; ++i) spin_joints_[i] = nullptr;
     for (int i = 0; i < 6; ++i) spin_cart_[i] = nullptr;
     for (int i = 0; i < 6; ++i) spin_lhand_pos_[i] = nullptr;
@@ -141,13 +143,13 @@ void AppWindow::buildDashboard() {
 
     btn_avatar_ = new QToolButton();
     btn_avatar_->setObjectName("avatar_button");
-    btn_avatar_->setText("用户");
+    btn_avatar_->setText(tr_ui("用户", "User"));
     btn_avatar_->setPopupMode(QToolButton::InstantPopup);
 
     menu_user_ = new QMenu(btn_avatar_);
-    auto * action_login = new QAction("登录", menu_user_);
-    auto * action_logout = new QAction("退出登录", menu_user_);
-    auto * action_perm = new QAction("权限管理", menu_user_);
+    auto * action_login = new QAction(tr_ui("登录", "Login"), menu_user_);
+    auto * action_logout = new QAction(tr_ui("退出登录", "Logout"), menu_user_);
+    auto * action_perm = new QAction(tr_ui("权限管理", "Permissions"), menu_user_);
     menu_user_->addAction(action_login);
     menu_user_->addAction(action_logout);
     menu_user_->addSeparator();
@@ -158,10 +160,32 @@ void AppWindow::buildDashboard() {
     connect(action_logout, &QAction::triggered, this, &AppWindow::onLogout);
     connect(action_perm, &QAction::triggered, this, &AppWindow::onPermission);
 
+    // Language switcher
+    auto * lang_combo = new QComboBox();
+    lang_combo->addItem(tr_ui("中文", "Chinese"));
+    lang_combo->addItem(tr_ui("英文", "English"));
+    lang_combo->setCurrentIndex(I18nManager::isEnglish() ? 1 : 0);
+    connect(lang_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        AppLanguage newLang = (index == 1) ? AppLanguage::English : AppLanguage::Chinese;
+        I18nManager::setLanguage(newLang);
+        auto reply = QMessageBox::question(
+            this,
+            tr_ui("语言切换", "Language Switch"),
+            tr_ui("语言将在重启后生效，是否立即重启？",
+                  "Language will take effect after restart. Restart now?"),
+            QMessageBox::Yes | QMessageBox::No
+        );
+        if (reply == QMessageBox::Yes) {
+            QProcess::startDetached(qApp->applicationFilePath(), qApp->arguments());
+            qApp->quit();
+        }
+    });
+
     top_layout->addWidget(label_count_);
     top_layout->addStretch();
     top_layout->addWidget(user_panel, 0, Qt::AlignCenter);
     top_layout->addStretch();
+    top_layout->addWidget(lang_combo, 0, Qt::AlignRight);
     top_layout->addWidget(btn_avatar_, 0, Qt::AlignRight);
 
     main_layout->addWidget(top_bar);
@@ -199,9 +223,9 @@ void AppWindow::buildDashboard() {
     right_layout->setContentsMargins(12, 12, 12, 12);
     right_layout->setSpacing(12);
 
-    auto * btn_device_info = new QPushButton("连接设备信息");
+    auto * btn_device_info = new QPushButton(tr_ui("连接设备信息", "Device Info"));
     btn_device_info->setObjectName("action_button");
-    auto * btn_task_module = new QPushButton("任务模块");
+    auto * btn_task_module = new QPushButton(tr_ui("任务模块", "Task Module"));
     btn_task_module->setObjectName("action_button");
 
     right_layout->addWidget(btn_device_info);
@@ -222,21 +246,21 @@ void AppWindow::buildDashboard() {
     // Bottom TabWidget for control panels
     tabs_ = new QTabWidget();
     tabs_->setObjectName("control_tabs");
-    tabs_->addTab(createControlTab(), "电源控制");
+    tabs_->addTab(createControlTab(), tr_ui("电源控制", "Power Control"));
 
     // Wrap MoveTab in QScrollArea
     auto * move_scroll = new QScrollArea();
     move_scroll->setWidgetResizable(true);
     move_scroll->setWidget(createMoveTab());
-    tabs_->addTab(move_scroll, "运动控制");
+    tabs_->addTab(move_scroll, tr_ui("运动控制", "Motion Control"));
 
-    tabs_->addTab(createIOTab(), "IO 控制");
+    tabs_->addTab(createIOTab(), tr_ui("IO 控制", "IO Control"));
 
     // Wrap LHandTab in QScrollArea
     auto * lhand_scroll = new QScrollArea();
     lhand_scroll->setWidgetResizable(true);
     lhand_scroll->setWidget(createLHandTab());
-    tabs_->addTab(lhand_scroll, "灵巧手");
+    tabs_->addTab(lhand_scroll, tr_ui("灵巧手", "Dexterous Hand"));
 
     tabs_->setMinimumHeight(200);
     splitter->addWidget(tabs_);
@@ -276,12 +300,12 @@ QWidget* AppWindow::createControlTab() {
       auto * layout = new QVBoxLayout();
 
       // Power Control
-      auto * group_ctrl = new QGroupBox("Power Management");
+      auto * group_ctrl = new QGroupBox(tr_ui("电源管理", "Power Management"));
       auto * layout_ctrl = new QHBoxLayout();
-      btn_power_on_ = new QPushButton("Power ON");
-      btn_enable_ = new QPushButton("Enable");
-      btn_disable_ = new QPushButton("Disable");
-      btn_power_off_ = new QPushButton("Power OFF");
+      btn_power_on_ = new QPushButton(tr_ui("上电", "Power ON"));
+      btn_enable_ = new QPushButton(tr_ui("使能", "Enable"));
+      btn_disable_ = new QPushButton(tr_ui("去使能", "Disable"));
+      btn_power_off_ = new QPushButton(tr_ui("下电", "Power OFF"));
       
       btn_power_on_->setObjectName("btn_power_on");
       btn_power_off_->setObjectName("btn_power_off");
@@ -294,7 +318,7 @@ QWidget* AppWindow::createControlTab() {
       layout->addWidget(group_ctrl);
 
       // Status
-      auto * group_status = new QGroupBox("Robot Status");
+      auto * group_status = new QGroupBox(tr_ui("机器人状态", "Robot Status"));
       auto * layout_status = new QVBoxLayout();
       text_robot_state_ = new QTextEdit();
       text_robot_state_->setReadOnly(true);
@@ -307,7 +331,8 @@ QWidget* AppWindow::createControlTab() {
       connect(btn_power_on_, &QPushButton::clicked, this, [this](){
           if (permission_manager_ &&
               !permission_manager_->hasPermission(current_role_, ActionType::PowerOn)) {
-              QMessageBox::warning(this, "权限不足", "当前用户无权执行 Power ON 操作");
+              QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                   tr_ui("当前用户无权执行 Power ON 操作", "Insufficient permission for Power ON"));
               return;
           }
           node_->call_robot_control("poweron");
@@ -316,7 +341,8 @@ QWidget* AppWindow::createControlTab() {
       connect(btn_enable_, &QPushButton::clicked, this, [this](){
           if (permission_manager_ &&
               !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-              QMessageBox::warning(this, "权限不足", "当前用户无权执行 Enable 操作");
+              QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                   tr_ui("当前用户无权执行 Enable 操作", "Insufficient permission for Enable"));
               return;
           }
           node_->call_robot_control("enable");
@@ -325,7 +351,8 @@ QWidget* AppWindow::createControlTab() {
       connect(btn_disable_, &QPushButton::clicked, this, [this](){
           if (permission_manager_ &&
               !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-              QMessageBox::warning(this, "权限不足", "当前用户无权执行 Disable 操作");
+              QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                   tr_ui("当前用户无权执行 Disable 操作", "Insufficient permission for Disable"));
               return;
           }
           node_->call_robot_control("disable");
@@ -334,7 +361,8 @@ QWidget* AppWindow::createControlTab() {
       connect(btn_power_off_, &QPushButton::clicked, this, [this](){
           if (permission_manager_ &&
               !permission_manager_->hasPermission(current_role_, ActionType::PowerOff)) {
-              QMessageBox::warning(this, "权限不足", "当前用户无权执行 Power OFF 操作");
+              QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                   tr_ui("当前用户无权执行 Power OFF 操作", "Insufficient permission for Power OFF"));
               return;
           }
           node_->call_robot_control("poweroff");
@@ -407,29 +435,30 @@ void AppWindow::updateUI() {
 
 void AppWindow::showDeviceInfoDialog() {
     auto * dialog = new QDialog(this);
-    dialog->setWindowTitle("连接设备信息");
+    dialog->setWindowTitle(tr_ui("连接设备信息", "Device Info"));
     auto * layout = new QVBoxLayout(dialog);
 
     auto * table = new QTableWidget();
     table->setColumnCount(5);
-    table->setHorizontalHeaderLabels({"设备类型", "设备名称/型号", "SN码", "用途", "状态"});
+    table->setHorizontalHeaderLabels({tr_ui("设备类型", "Type"), tr_ui("设备名称/型号", "Name/Model"),
+                                       tr_ui("SN码", "SN"), tr_ui("用途", "Usage"), tr_ui("状态", "Status")});
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     // 将友好的中文名称映射到设备类型
     auto friendly_type = [](const std::string& t) -> QString {
-        if (t == "duco") return "DUCO 机械臂";
-        if (t == "lhand") return "DH116 左手";
-        if (t == "rhand") return "DH116 右手";
-        if (t == "vision_system" || t == "orbbec" || t == "camera_server") return "Orbbec 相机";
+        if (t == "duco") return tr_ui("DUCO 机械臂", "DUCO Arm");
+        if (t == "lhand") return tr_ui("DH116 左手", "DH116 Left Hand");
+        if (t == "rhand") return tr_ui("DH116 右手", "DH116 Right Hand");
+        if (t == "vision_system" || t == "orbbec" || t == "camera_server") return tr_ui("Orbbec 相机", "Orbbec Camera");
         return QString::fromStdString(t);
     };
     auto friendly_status = [](const std::string& s) -> QString {
-        if (s == "ready") return "✓ 就绪";
-        if (s == "running") return "▶ 运行中";
-        if (s == "connected") return "~ 已连接";
-        if (s == "error") return "✗ 错误";
-        if (s == "disconnected") return "✗ 断开";
+        if (s == "ready") return tr_ui("✓ 就绪", "✓ Ready");
+        if (s == "running") return tr_ui("▶ 运行中", "▶ Running");
+        if (s == "connected") return tr_ui("~ 已连接", "~ Connected");
+        if (s == "error") return tr_ui("✗ 错误", "✗ Error");
+        if (s == "disconnected") return tr_ui("✗ 断开", "✗ Disconnected");
         return QString::fromStdString(s);
     };
     auto status_color = [](const std::string& s) -> QColor {
@@ -462,7 +491,7 @@ void AppWindow::showDeviceInfoDialog() {
 
 void AppWindow::showTaskDialog() {
     auto * dialog = new QDialog(this);
-    dialog->setWindowTitle("任务模块");
+    dialog->setWindowTitle(tr_ui("任务模块", "Task Module"));
     auto * layout = new QVBoxLayout(dialog);
     auto * task_widget = new TaskWidget(node_, current_user_, current_role_, dialog);
     layout->addWidget(task_widget);
@@ -472,7 +501,8 @@ void AppWindow::showTaskDialog() {
 
 void AppWindow::onLogin() {
     if (!auth_manager_ || !auth_log_manager_) {
-        QMessageBox::warning(this, "登录失败", "认证模块未初始化");
+        QMessageBox::warning(this, tr_ui("登录失败", "Login Failed"),
+                             tr_ui("认证模块未初始化", "Authentication module not initialized"));
         return;
     }
     LoginWindow dlg(auth_manager_, auth_log_manager_, this);
@@ -497,21 +527,23 @@ void AppWindow::onLogout() {
 
 void AppWindow::onPermission() {
     if (!permission_manager_) {
-        QMessageBox::warning(this, "权限管理", "权限模块未初始化");
+        QMessageBox::warning(this, tr_ui("权限管理", "Permissions"),
+                             tr_ui("权限模块未初始化", "Permission module not initialized"));
         return;
     }
     if (!logged_in_ ||
         !(permission_manager_->hasPermission(current_role_, ActionType::ViewAuthLog) ||
           permission_manager_->hasPermission(current_role_, ActionType::CreateUser) ||
           permission_manager_->hasPermission(current_role_, ActionType::ModifyUser))) {
-        QMessageBox::warning(this, "权限不足", "当前用户无权访问权限管理");
+        QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                             tr_ui("当前用户无权访问权限管理", "Insufficient permission to access Permissions"));
         return;
     }
     if (!admin_tab_) {
         admin_tab_ = createAdminTab();
     }
     auto * dialog = new QDialog(this);
-    dialog->setWindowTitle("权限管理");
+    dialog->setWindowTitle(tr_ui("权限管理", "Permissions"));
     dialog->resize(860, 520);
     auto * layout = new QVBoxLayout(dialog);
     layout->addWidget(admin_tab_);
@@ -522,19 +554,19 @@ void AppWindow::onPermission() {
 
 void AppWindow::updateUserModule() {
     if (!label_user_name_ || !label_user_role_) return;
-    label_user_name_->setText("当前用户: " + current_user_);
+    label_user_name_->setText(tr_ui("当前用户: ", "Current User: ") + current_user_);
     if (!logged_in_) {
-        label_user_role_->setText("权限: 访客");
+        label_user_role_->setText(tr_ui("权限: 访客", "Role: Guest"));
         return;
     }
     QString role_text = "operator";
     if (permission_manager_) {
         role_text = permission_manager_->roleToString(current_role_);
     }
-    if (role_text == "admin") role_text = "管理员";
-    else if (role_text == "maintainer") role_text = "维护员";
-    else if (role_text == "operator") role_text = "操作员";
-    label_user_role_->setText("权限: " + role_text);
+    if (role_text == "admin") role_text = tr_ui("管理员", "Admin");
+    else if (role_text == "maintainer") role_text = tr_ui("维护员", "Maintainer");
+    else if (role_text == "operator") role_text = tr_ui("操作员", "Operator");
+    label_user_role_->setText(tr_ui("权限: ", "Role: ") + role_text);
 }
 
 QWidget* AppWindow::createMoveTab() {
@@ -542,9 +574,9 @@ QWidget* AppWindow::createMoveTab() {
       auto * layout = new QVBoxLayout();
 
       // --- Joint Move ---
-      auto * group_joint = new QGroupBox("Joint Movement (MoveJ)");
+      auto * group_joint = new QGroupBox(tr_ui("关节运动 (MoveJ)", "Joint Movement (MoveJ)"));
       auto * layout_joint = new QGridLayout();
-      
+
       for(int i=0; i<7; ++i) {
           layout_joint->addWidget(new QLabel(QString("J%1 (rad):").arg(i+1)), 0, i);
           spin_joints_[i] = new QDoubleSpinBox();
@@ -553,15 +585,15 @@ QWidget* AppWindow::createMoveTab() {
           layout_joint->addWidget(spin_joints_[i], 1, i);
       }
       
-      auto * btn_get_joints = new QPushButton("Get Current");
-      auto * btn_movej = new QPushButton("Execute MoveJ");
+      auto * btn_get_joints = new QPushButton(tr_ui("获取当前", "Get Current"));
+      auto * btn_movej = new QPushButton(tr_ui("执行 MoveJ", "Execute MoveJ"));
       layout_joint->addWidget(btn_get_joints, 2, 0, 1, 2);
       layout_joint->addWidget(btn_movej, 2, 5, 1, 2);
       group_joint->setLayout(layout_joint);
       layout->addWidget(group_joint);
 
       // --- Cartesian Move ---
-      auto * group_cart = new QGroupBox("Cartesian Movement (MoveL)");
+      auto * group_cart = new QGroupBox(tr_ui("笛卡尔运动 (MoveL)", "Cartesian Movement (MoveL)"));
       auto * layout_cart = new QGridLayout();
       QStringList labels = {"X", "Y", "Z", "RX", "RY", "RZ"};
       for(int i=0; i<6; ++i) {
@@ -571,21 +603,21 @@ QWidget* AppWindow::createMoveTab() {
           spin_cart_[i]->setSingleStep(0.01);
           layout_cart->addWidget(spin_cart_[i], 1, i);
       }
-      auto * btn_movel = new QPushButton("Execute MoveL");
+      auto * btn_movel = new QPushButton(tr_ui("执行 MoveL", "Execute MoveL"));
       layout_cart->addWidget(btn_movel, 2, 5, 1, 1);
       group_cart->setLayout(layout_cart);
       layout->addWidget(group_cart);
 
       // --- Parameters ---
-      auto * group_params = new QGroupBox("Motion Parameters");
+      auto * group_params = new QGroupBox(tr_ui("运动参数", "Motion Parameters"));
       auto * layout_params = new QHBoxLayout();
-      layout_params->addWidget(new QLabel("Vel (m/s or rad/s):"));
+      layout_params->addWidget(new QLabel(tr_ui("速度 (m/s 或 rad/s):", "Vel (m/s or rad/s):")));
       spin_vel_ = new QDoubleSpinBox();
       spin_vel_->setValue(0.2);
       spin_vel_->setRange(0.01, 2.0);
       layout_params->addWidget(spin_vel_);
 
-      layout_params->addWidget(new QLabel("Acc (m/s²):"));
+      layout_params->addWidget(new QLabel(tr_ui("加速度 (m/s²):", "Acc (m/s²):")));
       spin_acc_ = new QDoubleSpinBox();
       spin_acc_->setValue(0.5);
       spin_acc_->setRange(0.01, 5.0);
@@ -609,7 +641,8 @@ QWidget* AppWindow::createMoveTab() {
       connect(btn_movej, &QPushButton::clicked, this, [this](){
           if (permission_manager_ &&
               !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-              QMessageBox::warning(this, "权限不足", "当前用户无权执行运动控制操作");
+              QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                   tr_ui("当前用户无权执行运动控制操作", "Insufficient permission for motion control"));
               return;
           }
           std::vector<float> q;
@@ -622,7 +655,8 @@ QWidget* AppWindow::createMoveTab() {
       connect(btn_movel, &QPushButton::clicked, this, [this](){
           if (permission_manager_ &&
               !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-              QMessageBox::warning(this, "权限不足", "当前用户无权执行运动控制操作");
+              QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                   tr_ui("当前用户无权执行运动控制操作", "Insufficient permission for motion control"));
               return;
           }
           std::vector<float> p;
@@ -641,25 +675,25 @@ QWidget* AppWindow::createCameraTab() {
     layout->setSpacing(10);
     
     // --- Configuration Area ---
-    auto * group_config = new QGroupBox("Camera Selection");
+    auto * group_config = new QGroupBox(tr_ui("相机选择", "Camera Selection"));
     auto * layout_config = new QGridLayout();
     layout_config->setContentsMargins(8, 6, 8, 6);
     layout_config->setHorizontalSpacing(8);
     layout_config->setVerticalSpacing(6);
-    
-    auto * label_camera = new QLabel("Camera Namespace:");
+
+    auto * label_camera = new QLabel(tr_ui("相机命名空间:", "Camera Namespace:"));
     combo_camera_ = new QComboBox();
     combo_camera_->setEditable(true);
     combo_camera_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     combo_camera_->setMinimumWidth(140);
 
-    auto * label_pc = new QLabel("PC Topic:");
+    auto * label_pc = new QLabel(tr_ui("点云话题:", "PC Topic:"));
     combo_pc_topic_ = new QComboBox();
     combo_pc_topic_->setEditable(true);
     combo_pc_topic_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     combo_pc_topic_->setMinimumWidth(160);
 
-    btn_scan_ = new QPushButton("Scan");
+    btn_scan_ = new QPushButton(tr_ui("扫描", "Scan"));
     btn_scan_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     layout_config->addWidget(label_camera, 0, 0);
@@ -671,16 +705,16 @@ QWidget* AppWindow::createCameraTab() {
     layout->addWidget(group_config);
 
     // --- Stream Selection ---
-    auto * group_sensors = new QGroupBox("Active Sensors");
+    auto * group_sensors = new QGroupBox(tr_ui("活跃传感器", "Active Sensors"));
     auto * layout_sensors = new QGridLayout();
     layout_sensors->setContentsMargins(8, 6, 8, 6);
     layout_sensors->setHorizontalSpacing(12);
     layout_sensors->setVerticalSpacing(6);
-    check_color_ = new QCheckBox("Color Stream");
-    check_depth_ = new QCheckBox("Depth Stream");
-    check_point_cloud_ = new QCheckBox("Point Cloud");
-    check_ir_left_ = new QCheckBox("IR Left");
-    check_ir_right_ = new QCheckBox("IR Right");
+    check_color_ = new QCheckBox(tr_ui("彩色流", "Color Stream"));
+    check_depth_ = new QCheckBox(tr_ui("深度流", "Depth Stream"));
+    check_point_cloud_ = new QCheckBox(tr_ui("点云", "Point Cloud"));
+    check_ir_left_ = new QCheckBox(tr_ui("红外左", "IR Left"));
+    check_ir_right_ = new QCheckBox(tr_ui("红外右", "IR Right"));
     
     // Defaults: Color and Depth checked
     check_color_->setChecked(true);
@@ -713,24 +747,25 @@ QWidget* AppWindow::createCameraTab() {
             QString qmsg = QString::fromStdString(msg);
             QMetaObject::invokeMethod(this, [this, success, qmsg](){
                 if(success) {
-                    QMessageBox::information(this, "Snapshot Saved", "Saved successfully to:\n" + qmsg);
+                    QMessageBox::information(this, tr_ui("截图已保存", "Snapshot Saved"),
+                                             tr_ui("成功保存到:\n", "Saved successfully to:\n") + qmsg);
                 } else {
-                    QMessageBox::warning(this, "Snapshot Failed", qmsg);
+                    QMessageBox::warning(this, tr_ui("截图失败", "Snapshot Failed"), qmsg);
                 }
             }, Qt::QueuedConnection);
         };
     };
 
-    widget_color_ = createVideoWidget("Color Stream", label_color_stream_, [this, make_callback](){
+    widget_color_ = createVideoWidget(tr_ui("彩色流", "Color Stream"), label_color_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), true, false, false, false, false, make_callback());
     });
-    widget_depth_ = createVideoWidget("Depth Stream", label_depth_stream_, [this, make_callback](){
+    widget_depth_ = createVideoWidget(tr_ui("深度流", "Depth Stream"), label_depth_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), false, true, false, false, false, make_callback());
     });
-    widget_ir_left_ = createVideoWidget("IR Left Stream", label_ir_left_stream_, [this, make_callback](){
+    widget_ir_left_ = createVideoWidget(tr_ui("红外左流", "IR Left Stream"), label_ir_left_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, true, false, false, make_callback());
     });
-    widget_ir_right_ = createVideoWidget("IR Right Stream", label_ir_right_stream_, [this, make_callback](){
+    widget_ir_right_ = createVideoWidget(tr_ui("红外右流", "IR Right Stream"), label_ir_right_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, false, true, false, make_callback());
     });
 
@@ -773,14 +808,14 @@ QWidget* AppWindow::createVideoWidget(const QString& title, QLabel*& label_ptr, 
     auto * layout = new QVBoxLayout();
     layout->setContentsMargins(8, 8, 8, 8);
     
-    label_ptr = new QLabel("No Signal");
+    label_ptr = new QLabel(tr_ui("无信号", "No Signal"));
     label_ptr->setMinimumSize(240, 160);
     label_ptr->setAlignment(Qt::AlignCenter);
     label_ptr->setObjectName("video_label");
     // label_ptr->setStyleSheet("border: 1px solid #555; background-color: #222; color: #aaa;");
     layout->addWidget(label_ptr);
 
-    auto * btn = new QPushButton("Capture");
+    auto * btn = new QPushButton(tr_ui("截图", "Capture"));
     layout->addWidget(btn);
     
     // Connect save button
@@ -836,8 +871,8 @@ void AppWindow::onCameraConfigChanged() {
         node_->last_ir_left_image_ = cv::Mat();
         node_->last_ir_right_image_ = cv::Mat();
     }
-    if (label_color_stream_) label_color_stream_->setText("Connecting...");
-    if (label_depth_stream_) label_depth_stream_->setText("Connecting...");
+    if (label_color_stream_) label_color_stream_->setText(tr_ui("连接中...", "Connecting..."));
+    if (label_depth_stream_) label_depth_stream_->setText(tr_ui("连接中...", "Connecting..."));
 
     // Auto-detect capabilities and update UI state (Enable/Disable/Hide)
     auto caps = node_->get_camera_capabilities(cam_ns);
@@ -853,11 +888,11 @@ void AppWindow::onCameraConfigChanged() {
     check_ir_left_->setEnabled(caps.has_ir_left);
     if (caps.has_ir_left && !caps.has_ir_right) {
         // Mono IR: rename label and hide IR Right
-        check_ir_left_->setText("IR Stream");
+        check_ir_left_->setText(tr_ui("红外流", "IR Stream"));
         check_ir_right_->setVisible(false);
         check_ir_right_->setChecked(false);
     } else {
-        check_ir_left_->setText("IR Left");
+        check_ir_left_->setText(tr_ui("红外左", "IR Left"));
         check_ir_right_->setVisible(true);
         check_ir_right_->setEnabled(caps.has_ir_right);
         if (!caps.has_ir_right) check_ir_right_->setChecked(false);
@@ -892,11 +927,11 @@ void AppWindow::onCameraConfigChanged() {
     if (caps.has_ir_left && !caps.has_ir_right) {
         // widget_ir_left_ is a QGroupBox* because createVideoWidget returns a group box
         if (QGroupBox* gb = qobject_cast<QGroupBox*>(widget_ir_left_)) {
-            gb->setTitle("IR Stream");
+            gb->setTitle(tr_ui("红外流", "IR Stream"));
         }
     } else {
         if (QGroupBox* gb = qobject_cast<QGroupBox*>(widget_ir_left_)) {
-            gb->setTitle("IR Left Stream");
+            gb->setTitle(tr_ui("红外左流", "IR Left Stream"));
         }
     }
 }
@@ -1035,7 +1070,8 @@ QWidget* AppWindow::createIOTab() {
     connect(btn_set_io, &QPushButton::clicked, this, [this]() {
         if (permission_manager_ &&
             !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-            QMessageBox::warning(this, "权限不足", "当前用户无权执行 IO 控制操作");
+            QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                 tr_ui("当前用户无权执行 IO 控制操作", "Insufficient permission for IO control"));
             return;
         }
         int type = combo_io_type_->currentIndex(); // 0 = DO, 1 = DI
@@ -1062,12 +1098,12 @@ QWidget* AppWindow::createLHandTab() {
     auto * layout = new QVBoxLayout();
 
     // --- Global Controls ---
-    auto * group_global = new QGroupBox("Global Control");
+    auto * group_global = new QGroupBox(tr_ui("全局控制", "Global Control"));
     auto * layout_global = new QHBoxLayout();
-    
-    btn_lhand_enable_ = new QPushButton("Enable All");
-    btn_lhand_disable_ = new QPushButton("Disable All");
-    btn_lhand_home_ = new QPushButton("Home All");
+
+    btn_lhand_enable_ = new QPushButton(tr_ui("全部使能", "Enable All"));
+    btn_lhand_disable_ = new QPushButton(tr_ui("全部去使能", "Disable All"));
+    btn_lhand_home_ = new QPushButton(tr_ui("全部回零", "Home All"));
     
     layout_global->addWidget(btn_lhand_enable_);
     layout_global->addWidget(btn_lhand_disable_);
@@ -1077,12 +1113,12 @@ QWidget* AppWindow::createLHandTab() {
     layout->addWidget(group_global);
 
     // --- Joint Controls ---
-    auto * group_joints = new QGroupBox("Joint Control");
+    auto * group_joints = new QGroupBox(tr_ui("关节控制", "Joint Control"));
     auto * layout_joints = new QGridLayout();
-    
-    layout_joints->addWidget(new QLabel("Joint"), 0, 0);
-    layout_joints->addWidget(new QLabel("Position (0-1000)"), 0, 1);
-    layout_joints->addWidget(new QLabel("Action"), 0, 2);
+
+    layout_joints->addWidget(new QLabel(tr_ui("关节", "Joint")), 0, 0);
+    layout_joints->addWidget(new QLabel(tr_ui("位置 (0-1000)", "Position (0-1000)")), 0, 1);
+    layout_joints->addWidget(new QLabel(tr_ui("操作", "Action")), 0, 2);
 
     for(int i=0; i<6; ++i) {
         layout_joints->addWidget(new QLabel(QString("J%1").arg(i+1)), i+1, 0);
@@ -1092,13 +1128,14 @@ QWidget* AppWindow::createLHandTab() {
         spin_lhand_pos_[i]->setValue(0);
         layout_joints->addWidget(spin_lhand_pos_[i], i+1, 1);
         
-        lhand_joint_buttons_[i] = new QPushButton("Set & Move");
+        lhand_joint_buttons_[i] = new QPushButton(tr_ui("设置并运动", "Set & Move"));
         layout_joints->addWidget(lhand_joint_buttons_[i], i+1, 2);
         
         connect(lhand_joint_buttons_[i], &QPushButton::clicked, this, [this, i](){
             if (permission_manager_ &&
                 !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-                QMessageBox::warning(this, "权限不足", "当前用户无权单独控制手指关节");
+                QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                     tr_ui("当前用户无权单独控制手指关节", "Insufficient permission for finger joint control"));
                 return;
             }
             int pos = spin_lhand_pos_[i]->value();
@@ -1111,46 +1148,37 @@ QWidget* AppWindow::createLHandTab() {
     layout->addWidget(group_joints);
 
     // --- Global Velocity ---
-    auto * group_vel = new QGroupBox("Velocity Control");
+    auto * group_vel = new QGroupBox(tr_ui("速度控制", "Velocity Control"));
     auto * layout_vel = new QHBoxLayout();
-    layout_vel->addWidget(new QLabel("Velocity (0-20000):"));
+    layout_vel->addWidget(new QLabel(tr_ui("速度 (0-20000):", "Velocity (0-20000):")));
     
     spin_lhand_vel_ = new QSpinBox();
     spin_lhand_vel_->setRange(0, 50000);
     spin_lhand_vel_->setValue(20000);
     layout_vel->addWidget(spin_lhand_vel_);
     
-    btn_lhand_set_vel_ = new QPushButton("Set Velocity (All)");
+    btn_lhand_set_vel_ = new QPushButton(tr_ui("设置速度 (全部)", "Set Velocity (All)"));
     layout_vel->addWidget(btn_lhand_set_vel_);
     
     group_vel->setLayout(layout_vel);
     layout->addWidget(group_vel);
 
     // --- Global Move ---
-    btn_lhand_move_ = new QPushButton("Move All Joints to Target");
+    btn_lhand_move_ = new QPushButton(tr_ui("所有关节运动到目标", "Move All Joints to Target"));
     layout->addWidget(btn_lhand_move_);
     
     layout->addStretch();
 
     widget->setLayout(layout);
-    
-    // Right 3D Panel
-    lhand_viz_ = new RobotVizWidget(node_);
-    std::string lhand_path = node_->get_left_hand_urdf_path();
-    if (!lhand_path.empty()) {
-        lhand_viz_->loadRobotModel(lhand_path);
-        // Adjust camera for hand scale
-        lhand_viz_->setCameraPosition(QVector3D(0.3f, 0.2f, 0.3f), QVector3D(0.0f, 0.05f, 0.0f));
-    }
-    
+
     main_layout->addWidget(widget, 1);
-    main_layout->addWidget(lhand_viz_, 2);
 
     // Connections
     connect(btn_lhand_enable_, &QPushButton::clicked, this, [this](){
         if (permission_manager_ &&
             !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-            QMessageBox::warning(this, "权限不足", "当前用户无权使能灵巧手");
+            QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                 tr_ui("当前用户无权使能灵巧手", "Insufficient permission to enable hand"));
             return;
         }
         node_->call_lhand_enable(true);
@@ -1159,7 +1187,8 @@ QWidget* AppWindow::createLHandTab() {
     connect(btn_lhand_disable_, &QPushButton::clicked, this, [this](){
         if (permission_manager_ &&
             !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-            QMessageBox::warning(this, "权限不足", "当前用户无权去使能灵巧手");
+            QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                 tr_ui("当前用户无权去使能灵巧手", "Insufficient permission to disable hand"));
             return;
         }
         node_->call_lhand_enable(false);
@@ -1168,7 +1197,8 @@ QWidget* AppWindow::createLHandTab() {
     connect(btn_lhand_home_, &QPushButton::clicked, this, [this](){
         if (permission_manager_ &&
             !permission_manager_->hasPermission(current_role_, ActionType::CalibrateSystem)) {
-            QMessageBox::warning(this, "权限不足", "当前用户无权执行灵巧手回零");
+            QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                 tr_ui("当前用户无权执行灵巧手回零", "Insufficient permission for hand homing"));
             return;
         }
         node_->call_lhand_home(0);
@@ -1177,7 +1207,8 @@ QWidget* AppWindow::createLHandTab() {
     connect(btn_lhand_set_vel_, &QPushButton::clicked, this, [this](){
         if (permission_manager_ &&
             !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-            QMessageBox::warning(this, "权限不足", "当前用户无权修改灵巧手速度");
+            QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                 tr_ui("当前用户无权修改灵巧手速度", "Insufficient permission to set hand velocity"));
             return;
         }
         int vel = spin_lhand_vel_->value();
@@ -1187,7 +1218,8 @@ QWidget* AppWindow::createLHandTab() {
     connect(btn_lhand_move_, &QPushButton::clicked, this, [this](){
         if (permission_manager_ &&
             !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
-            QMessageBox::warning(this, "权限不足", "当前用户无权整体移动灵巧手");
+            QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                 tr_ui("当前用户无权整体移动灵巧手", "Insufficient permission to move hand"));
             return;
         }
         std::array<int, 6> positions;

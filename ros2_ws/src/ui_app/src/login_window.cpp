@@ -1,4 +1,5 @@
 ﻿#include "ui_app/login_window.hpp"
+#include "ui_app/i18n_manager.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -15,19 +16,19 @@ LoginWindow::LoginWindow(std::shared_ptr<AuthManager> auth_manager,
       auth_manager_(std::move(auth_manager)),
       log_manager_(std::move(log_manager)),
       login_succeeded_(false) {
-    setWindowTitle("设备安全登录系统");
+    setWindowTitle(tr_ui("设备安全登录系统", "Secure Login"));
     resize(400, 260);
 
     auto* layout = new QVBoxLayout(this);
 
     auto* row_user = new QHBoxLayout();
-    row_user->addWidget(new QLabel("用户名:"));
+    row_user->addWidget(new QLabel(tr_ui("用户名:", "Username:")));
     edit_username_ = new QLineEdit();
     row_user->addWidget(edit_username_);
     layout->addLayout(row_user);
 
     auto* row_pass = new QHBoxLayout();
-    row_pass->addWidget(new QLabel("密  码:"));
+    row_pass->addWidget(new QLabel(tr_ui("密  码:", "Password:")));
     edit_password_ = new QLineEdit();
     edit_password_->setEchoMode(QLineEdit::Password);
     row_pass->addWidget(edit_password_);
@@ -36,7 +37,7 @@ LoginWindow::LoginWindow(std::shared_ptr<AuthManager> auth_manager,
     row_pass->addWidget(btn_toggle_password_);
     layout->addLayout(row_pass);
 
-    btn_login_ = new QPushButton("登录");
+    btn_login_ = new QPushButton(tr_ui("登录", "Login"));
     layout->addWidget(btn_login_);
 
     label_status_ = new QLabel();
@@ -72,14 +73,14 @@ void LoginWindow::onLoginClicked() {
     QString username = edit_username_->text().trimmed();
     QString password = edit_password_->text();
     if (username.isEmpty() || password.isEmpty()) {
-        label_status_->setText("请输入用户名和密码");
+        label_status_->setText(tr_ui("请输入用户名和密码", "Please enter username and password"));
         return;
     }
     UserInfo info;
     QString reason;
     if (!auth_manager_->verifyPassword(username, password, info, reason)) {
-        label_status_->setText("登录失败: " + reason);
-        label_fail_count_->setText("失败次数或已锁定");
+        label_status_->setText(tr_ui("登录失败: ", "Login failed: ") + reason);
+        label_fail_count_->setText(tr_ui("失败次数或已锁定", "Too many failures or locked"));
         if (log_manager_) {
             log_manager_->logFailure(username, reason);
         }
@@ -87,7 +88,7 @@ void LoginWindow::onLoginClicked() {
         if (info.lock_until > now) {
             qint64 remain = info.lock_until - now;
             int minutes = static_cast<int>((remain + 59) / 60);
-            label_lock_info_->setText(QString("账号锁定，剩余约 %1 分钟").arg(minutes));
+            label_lock_info_->setText(tr_ui("账号锁定，剩余约 %1 分钟", "Account locked, ~%1 min remaining").arg(minutes));
         }
         return;
     }
@@ -97,7 +98,7 @@ void LoginWindow::onLoginClicked() {
     session_.session_id = QString::number(QDateTime::currentMSecsSinceEpoch()) +
                           "_" +
                           QString::number(QRandomGenerator::global()->generate64(), 16);
-    label_status_->setText("登录成功");
+    label_status_->setText(tr_ui("登录成功", "Login successful"));
     label_fail_count_->clear();
     label_lock_info_->clear();
     if (log_manager_) {
