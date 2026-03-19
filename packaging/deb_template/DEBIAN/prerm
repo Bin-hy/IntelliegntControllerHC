@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+
+# 移除 udev 规则
+if [ -f /etc/udev/rules.d/99-obsensor-libusb.rules ]; then
+    rm -f /etc/udev/rules.d/99-obsensor-libusb.rules
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules 2>/dev/null || true
+    fi
+fi
+
+# 移除 ldconfig 配置
+rm -f /etc/ld.so.conf.d/robotapp.conf
+ldconfig
+
+exit 0

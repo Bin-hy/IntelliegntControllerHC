@@ -1,0 +1,45 @@
+#!/bin/bash
+# RobotApp 启动脚本
+# 从 /etc/robotapp/robot.conf 读取硬件参数并启动 ROS 2 Launch
+
+CONF=/etc/robotapp/robot.conf
+INSTALL_DIR=/opt/robotapp
+
+# 默认值
+ROBOT_IP=192.168.192.10
+ETHERCAT_CHANNEL=0
+MODEL=gcr5_910
+CAMERA1_SERIAL=
+CAMERA2_SERIAL=
+
+# 读取配置文件（忽略注释行和空行）
+if [ -f "$CONF" ]; then
+    while IFS='=' read -r key value; do
+        # 跳过注释和空行
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "$key" ]] && continue
+        key="$(echo "$key" | xargs)"
+        value="$(echo "$value" | xargs)"
+        case "$key" in
+            ROBOT_IP)          ROBOT_IP="$value" ;;
+            ETHERCAT_CHANNEL)  ETHERCAT_CHANNEL="$value" ;;
+            MODEL)             MODEL="$value" ;;
+            CAMERA1_SERIAL)    CAMERA1_SERIAL="$value" ;;
+            CAMERA2_SERIAL)    CAMERA2_SERIAL="$value" ;;
+        esac
+    done < "$CONF"
+fi
+
+# Source ROS 2
+source /opt/ros/jazzy/setup.bash
+source "${INSTALL_DIR}/ros2/setup.bash"
+
+# 设置私有库路径（setcap 禁用了 RPATH，需手动指定）
+export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:${INSTALL_DIR}/lib/extensions/depthengine:${LD_LIBRARY_PATH}"
+
+# 组装 launch 参数
+LAUNCH_ARGS="robot_ip:=${ROBOT_IP} ethercat_channel:=${ETHERCAT_CHANNEL} model:=${MODEL}"
+[ -n "$CAMERA1_SERIAL" ] && LAUNCH_ARGS="${LAUNCH_ARGS} camera1_serial:=${CAMERA1_SERIAL}"
+[ -n "$CAMERA2_SERIAL" ] && LAUNCH_ARGS="${LAUNCH_ARGS} camera2_serial:=${CAMERA2_SERIAL}"
+
+exec ros2 launch ui_app unified.launch.py ${LAUNCH_ARGS}

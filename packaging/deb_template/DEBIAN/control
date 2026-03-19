@@ -1,0 +1,33 @@
+Package: robotapp
+Version: 0.1.0
+Section: misc
+Priority: optional
+Architecture: amd64
+Depends: libqt5core5a (>= 5.12),
+         libqt5gui5 (>= 5.12),
+         libqt5widgets5 (>= 5.12),
+         libqt5opengl5 (>= 5.12),
+         qt3d5-dev | libqt53dcore5,
+         libopencv-core4.5d | libopencv-core406 | libopencv-core4.2,
+         libusb-1.0-0,
+         libudev1,
+         ros-jazzy-rclcpp,
+         ros-jazzy-std-msgs,
+         ros-jazzy-sensor-msgs,
+         ros-jazzy-cv-bridge,
+         ros-jazzy-std-srvs,
+         ros-jazzy-image-transport,
+         ros-jazzy-tf2-ros,
+         ros-jazzy-geometry-msgs,
+         ros-jazzy-urdf,
+         ros-jazzy-ament-index-cpp,
+         libcap2-bin
+Recommends: udev
+Installed-Size: PLACEHOLDER
+Maintainer: RobotApp Team <robotapp@example.com>
+Description: Intelligent Robot Controller Upper-Computer
+ Qt5/ROS 2 Jazzy GUI for controlling a DUCO collaborative robot arm
+ with DH116 dexterous hand and Orbbec Gemini 330 depth camera.
+ .
+ Supports 3D robot visualization, motion control, IO control,
+ dexterous hand control, task management, and camera streaming.

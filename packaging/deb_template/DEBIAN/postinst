@@ -1,0 +1,39 @@
+#!/bin/bash
+set -e
+
+INSTALL_DIR="/opt/robotapp"
+
+# 1. 写入库路径配置，使 ldconfig 能找到捆绑的私有库
+cat > /etc/ld.so.conf.d/robotapp.conf << 'EOF'
+/opt/robotapp/lib
+/opt/robotapp/lib/extensions/depthengine
+EOF
+ldconfig
+
+# 2. 为 lhandpro_service 授予 EtherCAT 所需的 RAW socket 权限
+#    注意：setcap 会禁用 RPATH，因此必须通过 ldconfig 而非 RPATH 解析库
+if command -v setcap >/dev/null 2>&1; then
+    setcap cap_net_raw=ep "${INSTALL_DIR}/ros2/lib/lhandpro_service/lhandpro_service" || true
+else
+    echo "WARNING: setcap not found. lhandpro_service may fail to open EtherCAT socket." >&2
+    echo "         Install libcap2-bin and run: setcap cap_net_raw=ep ${INSTALL_DIR}/ros2/lib/lhandpro_service/lhandpro_service" >&2
+fi
+
+# 3. 安装 Orbbec USB 设备的 udev 规则
+if [ -f "${INSTALL_DIR}/share/99-obsensor-libusb.rules" ]; then
+    cp "${INSTALL_DIR}/share/99-obsensor-libusb.rules" /etc/udev/rules.d/
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules 2>/dev/null || true
+        udevadm trigger 2>/dev/null || true
+    fi
+fi
+
+# 4. 更新桌面菜单数据库
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications 2>/dev/null || true
+fi
+
+echo "robotapp installed. Please log out and log back in for udev rules to take effect."
+echo "Default config: /etc/robotapp/robot.conf"
+
+exit 0

@@ -1,6 +1,5 @@
 #include "ui_app/task_widget.hpp"
 #include "ui_app/task_dialogs.hpp"
-#include "ui_app/i18n_manager.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -44,9 +43,9 @@ TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, const QString& username, U
     auto * btn_edit = new QPushButton("Edit Task");
     auto * btn_del = new QPushButton("Delete Task");
     auto * btn_run = new QPushButton("Run Task");
-    auto * btn_history = new QPushButton(tr_ui("历史记录", "History"));
-    auto * btn_photos = new QPushButton(tr_ui("照片管理", "Photos"));
-    auto * btn_export = new QPushButton(tr_ui("导出 CSV", "Export CSV"));
+    auto * btn_history = new QPushButton("历史记录");
+    auto * btn_photos = new QPushButton("照片管理");
+    auto * btn_export = new QPushButton("导出 CSV");
 
     h_btn->addWidget(btn_add);
     h_btn->addWidget(btn_edit);
@@ -254,17 +253,13 @@ void TaskWidget::onShowHistory() {
     auto records = record_manager_->loadAllRecords();
 
     QDialog dlg(this);
-    dlg.setWindowTitle(tr_ui("任务执行历史", "Task Execution History"));
+    dlg.setWindowTitle("任务执行历史");
     dlg.resize(700, 400);
     auto * layout = new QVBoxLayout(&dlg);
 
     auto * table = new QTableWidget();
     table->setColumnCount(5);
-    table->setHorizontalHeaderLabels({tr_ui("任务名称", "Task Name"),
-                                      tr_ui("开始时间", "Start Time"),
-                                      tr_ui("结束时间", "End Time"),
-                                      tr_ui("结果", "Result"),
-                                      tr_ui("错误信息", "Error")});
+    table->setHorizontalHeaderLabels({"任务名称", "开始时间", "结束时间", "结果", "错误信息"});
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -275,7 +270,7 @@ void TaskWidget::onShowHistory() {
         table->setItem(i, 0, new QTableWidgetItem(r.task_name));
         table->setItem(i, 1, new QTableWidgetItem(r.start_time.toLocalTime().toString("yyyy-MM-dd HH:mm:ss")));
         table->setItem(i, 2, new QTableWidgetItem(r.end_time.toLocalTime().toString("yyyy-MM-dd HH:mm:ss")));
-        auto * result_item = new QTableWidgetItem(r.success ? tr_ui("成功", "Success") : tr_ui("失败", "Failed"));
+        auto * result_item = new QTableWidgetItem(r.success ? "成功" : "失败");
         result_item->setForeground(r.success ? Qt::darkGreen : Qt::red);
         table->setItem(i, 3, result_item);
         table->setItem(i, 4, new QTableWidgetItem(r.error_msg));
@@ -294,8 +289,7 @@ void TaskWidget::onShowPhotos() {
     QString base_dir = QDir::homePath() + "/.ros/task_photos";
     QDir root(base_dir);
     if (!root.exists()) {
-        QMessageBox::information(this, tr_ui("照片管理", "Photos"),
-                                 tr_ui("未找到照片目录: ", "Photo directory not found: ") + base_dir);
+        QMessageBox::information(this, "照片管理", "未找到照片目录: " + base_dir);
         return;
     }
 
@@ -333,15 +327,13 @@ void TaskWidget::onShowPhotos() {
     }
 
     QDialog dlg(this);
-    dlg.setWindowTitle(tr_ui("照片管理", "Photos"));
+    dlg.setWindowTitle("照片管理");
     dlg.resize(900, 500);
     auto * layout = new QHBoxLayout(&dlg);
 
     auto * table = new QTableWidget();
     table->setColumnCount(5);
-    table->setHorizontalHeaderLabels({tr_ui("任务", "Task"), tr_ui("时间", "Time"),
-                                      tr_ui("轮次", "Round"), tr_ui("用户", "User"),
-                                      tr_ui("文件", "File")});
+    table->setHorizontalHeaderLabels({"任务", "时间", "轮次", "用户", "文件"});
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -361,7 +353,7 @@ void TaskWidget::onShowPhotos() {
     preview->setAlignment(Qt::AlignCenter);
     right->addWidget(preview, 1);
 
-    auto * btn_delete = new QPushButton(tr_ui("删除照片", "Delete Photo"));
+    auto * btn_delete = new QPushButton("删除照片");
     bool can_delete = current_role_ == UserRole::Admin || current_role_ == UserRole::Operator;
     btn_delete->setEnabled(can_delete);
     right->addWidget(btn_delete);
@@ -390,17 +382,14 @@ void TaskWidget::onShowPhotos() {
         if (row < 0 || row >= items.size()) return;
         if (current_role_ == UserRole::Maintainer) return;
         QString path = items[row].path;
-        if (QMessageBox::question(this, tr_ui("删除照片", "Delete Photo"),
-                                  tr_ui("确认删除所选照片？", "Confirm delete selected photo?"),
-                                  QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+        if (QMessageBox::question(this, "删除照片", "确认删除所选照片？", QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
             return;
         }
         if (QFile::remove(path)) {
             items.removeAt(row);
             table->removeRow(row);
         } else {
-            QMessageBox::warning(this, tr_ui("删除失败", "Delete Failed"),
-                                 tr_ui("无法删除文件: ", "Cannot delete file: ") + path);
+            QMessageBox::warning(this, "删除失败", "无法删除文件: " + path);
         }
     });
 
@@ -414,20 +403,18 @@ void TaskWidget::onShowPhotos() {
 void TaskWidget::onExportCSV() {
     int row = task_list_->currentRow();
     if (row < 0 || row >= static_cast<int>(tasks_.size())) {
-        QMessageBox::warning(this, tr_ui("导出 CSV", "Export CSV"),
-                             tr_ui("请先选择一个任务", "Please select a task first"));
+        QMessageBox::warning(this, "导出 CSV", "请先选择一个任务");
         return;
     }
 
-    QString path = QFileDialog::getSaveFileName(this, tr_ui("导出任务 CSV", "Export Task CSV"), QString(), "CSV Files (*.csv)");
+    QString path = QFileDialog::getSaveFileName(this, "导出任务 CSV", QString(), "CSV Files (*.csv)");
     if (path.isEmpty()) return;
 
     const auto& task = tasks_[row];
 
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, tr_ui("导出失败", "Export Failed"),
-                             tr_ui("无法打开文件: ", "Cannot open file: ") + path);
+        QMessageBox::warning(this, "导出失败", "无法打开文件: " + path);
         return;
     }
 
@@ -464,6 +451,5 @@ void TaskWidget::onExportCSV() {
     }
 
     file.close();
-    QMessageBox::information(this, tr_ui("导出成功", "Export Successful"),
-                             tr_ui("CSV 文件已保存到:\n", "CSV saved to:\n") + path);
+    QMessageBox::information(this, "导出成功", "CSV 文件已保存到:\n" + path);
 }
