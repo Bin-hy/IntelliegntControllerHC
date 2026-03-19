@@ -53,7 +53,7 @@ std::vector<uint8_t> calculateAndAppendCRC(std::vector<uint8_t> data) {
 
 std::vector<int8_t> vu2vi(std::vector<uint8_t> data) {
     std::vector<int8_t>tmp;
-    for(int i=0;i<data.size();i++)
+    for(size_t i=0;i<data.size();i++)
     {
         tmp.push_back(data[i]);
     }
@@ -102,7 +102,7 @@ RobotControl::RobotControl(const rclcpp::NodeOptions &options): Node("RobotContr
 
 RobotControl::~RobotControl()
 {
-    for(int i=0;i<duco_robots.size();i++)
+    for(size_t i=0;i<duco_robots.size();i++)
     {
         duco_robots[i]->close();
         duco_robots_gripper[i]->close();
@@ -112,6 +112,8 @@ RobotControl::~RobotControl()
 
 void RobotControl::handleRobotCommand(const duco_msg::srv::RobotControl_Request::SharedPtr request, duco_msg::srv::RobotControl_Response::SharedPtr response)
 {
+    (void)request;
+    (void)response;
 //    std_msgs::msg::String msg;
 //    int move_ret=0;
 //    if(request->command=="stop")

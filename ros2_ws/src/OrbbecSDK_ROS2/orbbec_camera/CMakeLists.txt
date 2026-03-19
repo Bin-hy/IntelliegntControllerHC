@@ -43,6 +43,7 @@ set(dependencies
     statistics_msgs
     yaml-cpp
     camera_calibration_parsers
+    common_msgs
 )
 
 foreach(dep IN LISTS dependencies)
@@ -80,6 +81,7 @@ endif()
 
 set(ORBBEC_LIBS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/SDK/lib/${HOST_PLATFORM})
 set(ORBBEC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/SDK/include/)
+set(ORBBEC_SDK_LIBRARIES ${ORBBEC_LIBS_DIR}/libOrbbecSDK.so.2)
 
 set(CMAKE_BUILD_RPATH "${CMAKE_BUILD_RPATH}:${ORBBEC_LIBS_DIR}")
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_RPATH}:${ORBBEC_LIBS_DIR}")
@@ -104,7 +106,6 @@ set(COMMON_LIBRARIES
     ${ORBBEC_SDK_LIBRARIES}
     ${OpenCV_LIBS}
     Eigen3::Eigen
-    -lOrbbecSDK
     -L${ORBBEC_LIBS_DIR}
     Threads::Threads
     -lrt

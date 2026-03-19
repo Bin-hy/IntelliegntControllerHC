@@ -8,11 +8,13 @@
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "common_msgs/msg/device_status.hpp"
 #include "lhandpro_interfaces/srv/get_control_mode.hpp"
 #include "lhandpro_interfaces/srv/get_max_current.hpp"
 #include "lhandpro_interfaces/srv/get_now_angle.hpp"
@@ -72,6 +74,13 @@ class HandControlService : public rclcpp::Node {
   bool check_joint_validity(int joint_id, const std::string& service_name);
   void start_monitor();
   void stop_monitor();
+
+  rclcpp::Publisher<common_msgs::msg::DeviceStatus>::SharedPtr pub_device_status_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr now_angles_pub_;
+  rclcpp::TimerBase::SharedPtr now_angles_timer_;
+  std::vector<double> last_angles_;
+
+  void publish_now_angles();
 
  private:
   void set_enable_callback(

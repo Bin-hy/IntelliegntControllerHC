@@ -1,4 +1,4 @@
-﻿// EthercatMaster.cpp
+// EthercatMaster.cpp
 #include "EthercatMaster.h"
 
 #include <cstring>
@@ -161,7 +161,7 @@ std::vector<std::string> EthercatMaster::scanNetworkInterfaces() {
 }
 
 bool EthercatMaster::init(int index) {
-  if (index < 0 || index >= interfaces_.size()) {
+  if (index < 0 || static_cast<size_t>(index) >= interfaces_.size()) {
     ECOUT << "Index not available\n";
     return false;
   }
@@ -254,6 +254,7 @@ bool EthercatMaster::start() {
     if (slave->state == EC_STATE_OPERATIONAL) {
       ECOUT << " all slaves are now operational\n";
       started_ = true;
+      cached_state_.store(EthercatState::Operational);
       return true;
     }
   }
@@ -312,12 +313,12 @@ void EthercatMaster::run() {
         ECOUT << " wrong (expected " << expected_wkc << ")\n";
       } else {
         ECOUT << "  O:";
-        for (int n = 0; n < grp->Obytes; ++n) {
+        for (uint32_t n = 0; n < grp->Obytes; ++n) {
           ECOUT << " " << std::hex << std::setw(2) << std::setfill('0')
                 << (int)grp->outputs[n] << std::dec;
         }
         ECOUT << "  I:";
-        for (int n = 0; n < grp->Ibytes; ++n) {
+        for (uint32_t n = 0; n < grp->Ibytes; ++n) {
           ECOUT << " " << std::hex << std::setw(2) << std::setfill('0')
                 << (int)grp->inputs[n] << std::dec;
         }
@@ -334,6 +335,62 @@ void EthercatMaster::run() {
       }
 
       iteration++;
+      
+      // 每 500ms (100 * 5ms) 更新一次状态
+      if (iteration % 100 == 0) {
+        ecx_readstate(&context_);
+
+        EthercatState new_state = EthercatState::Initializing;
+        bool all_operational = true;
+        bool any_error = false;
+        bool any_safe_op = false;
+        bool early_exit = false;
+
+        for (int i = 1; i <= context_.slavecount; ++i) {
+          const ec_slavet* slave = context_.slavelist + i;
+          if (slave->group != group_)
+            continue;
+
+          if (slave->state == EC_STATE_NONE) {
+            new_state = EthercatState::Disconnected;
+            early_exit = true;
+            break;
+          }
+
+          if (slave->state == EC_STATE_INIT || slave->state == EC_STATE_PRE_OP) {
+            new_state = EthercatState::Initializing;
+            early_exit = true;
+            break;
+          }
+
+          if (slave->state == EC_STATE_SAFE_OP) {
+            any_safe_op = true;
+          }
+
+          if ((slave->state & 0x0F) != EC_STATE_OPERATIONAL) {
+            all_operational = false;
+          }
+
+          if (slave->state & EC_STATE_ERROR) {
+            any_error = true;
+          }
+        }
+
+        if (!early_exit) {
+          if (any_error) {
+            new_state = EthercatState::Error;
+          } else if (all_operational) {
+            new_state = EthercatState::Operational;
+          } else if (any_safe_op) {
+            new_state = EthercatState::SafeOperational;
+          } else {
+            new_state = EthercatState::Initializing;
+          }
+        }
+        
+        cached_state_.store(new_state);
+      }
+
       osal_usleep(5000);
     }
 
@@ -343,67 +400,7 @@ void EthercatMaster::run() {
 }
 
 EthercatMaster::EthercatState EthercatMaster::getState() const {
-  // 如果没运行，直接返回断开
-  if (!running_) {
-    return EthercatState::Disconnected;
-  }
-
-  // 如果没初始化
-  if (!initialized_) {
-    return EthercatState::Disconnected;
-  }
-
-  EthercatMaster* mutable_this = const_cast<EthercatMaster*>(this);
-  ecx_readstate(&mutable_this->context_);
-
-  // 检查从站状态
-  bool all_operational = true;
-  bool any_error = false;
-  bool any_safe_op = false;
-
-  for (int i = 1; i <= context_.slavecount; ++i) {
-    const ec_slavet* slave = context_.slavelist + i;
-    if (slave->group != group_)
-      continue;
-
-    if (slave->state == EC_STATE_NONE) {
-      return EthercatState::Disconnected;  // 从站丢失
-    }
-
-    if (slave->state == EC_STATE_INIT) {
-      return EthercatState::Initializing;
-    }
-
-    if (slave->state == EC_STATE_PRE_OP) {
-      return EthercatState::Initializing;
-    }
-
-    if (slave->state == EC_STATE_SAFE_OP) {
-      any_safe_op = true;
-    }
-
-    if ((slave->state & 0x0F) != EC_STATE_OPERATIONAL) {
-      all_operational = false;
-    }
-
-    if (slave->state & EC_STATE_ERROR) {
-      any_error = true;
-    }
-  }
-
-  if (any_error) {
-    return EthercatState::Error;
-  }
-
-  if (all_operational) {
-    return EthercatState::Operational;
-  }
-
-  if (any_safe_op) {
-    return EthercatState::SafeOperational;
-  }
-
-  return EthercatState::Initializing;
+  return cached_state_.load();
 }
 
 SlaveInfo EthercatMaster::getSlaveInfo() const {
@@ -453,6 +450,7 @@ void EthercatMaster::stop() {
 
   started_ = false;
   initialized_ = false;
+  cached_state_.store(EthercatState::Disconnected);
 }
 
 void EthercatMaster::setOutput(int index, uint8_t value) {
@@ -490,7 +488,7 @@ uint8_t EthercatMaster::getInput(int index) {
 bool EthercatMaster::setOutputs(const uint8_t* data, unsigned int len) {
   if (!started_ || !data || len <= 0)
     return false;
-  if (len > output_bytes_) {
+  if (len > static_cast<unsigned int>(output_bytes_)) {
     ECOUT << "Error: setOutputs length " << len
           << " exceeds configured output bytes " << output_bytes_ << "\n";
     return false;
@@ -503,7 +501,7 @@ bool EthercatMaster::setOutputs(const uint8_t* data, unsigned int len) {
 bool EthercatMaster::getInputs(uint8_t* buffer, unsigned int len) {
   if (!started_ || !buffer || len <= 0)
     return false;
-  if (len > input_bytes_) {
+  if (len > static_cast<unsigned int>(input_bytes_)) {
     ECOUT << "Error: getInputs buffer length " << len
           << " exceeds configured input bytes " << input_bytes_ << "\n";
     return false;
@@ -516,7 +514,7 @@ bool EthercatMaster::getInputs(uint8_t* buffer, unsigned int len) {
 bool EthercatMaster::getOutputs(uint8_t* buffer, unsigned int len) {
   if (!started_ || !buffer || len <= 0)
     return false;
-  if (len > output_bytes_) {
+  if (len > static_cast<unsigned int>(output_bytes_)) {
     ECOUT << "Error: getOutputs buffer length " << len
           << " exceeds configured input bytes " << output_bytes_ << "\n";
     return false;
@@ -556,7 +554,7 @@ bool EthercatMaster::sdoRead(uint16_t index, uint8_t subindex,
           << "\n";
     return false;
   }
-  if (size < sizeof(uint32_t)) {  // 检查实际读取的数据长度
+  if (static_cast<size_t>(size) < sizeof(uint32_t)) {  // 检查实际读取的数据长度
     ECOUT << "SDO data too short (Expected 4, got " << size << ")\n";
     return false;
   }

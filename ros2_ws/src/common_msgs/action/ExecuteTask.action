@@ -1,0 +1,7 @@
+TaskConfig task_config
+---
+bool success
+string message
+---
+int32 current_step_index
+string current_status

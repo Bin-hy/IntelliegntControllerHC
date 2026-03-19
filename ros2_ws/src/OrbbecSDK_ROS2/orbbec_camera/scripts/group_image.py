@@ -2,8 +2,30 @@ import os
 import shutil
 import re
 from collections import defaultdict
+from pathlib import Path
 
-image_directory = "/home/orbbec/image/"
+# Dynamically determine the project root directory
+# Script location: .../ros2_ws/src/OrbbecSDK_ROS2/orbbec_camera/scripts/group_image.py
+# We want to go up to the project root (parent of ros2_ws)
+# parents[0] = scripts
+# parents[1] = orbbec_camera
+# parents[2] = OrbbecSDK_ROS2
+# parents[3] = src
+# parents[4] = ros2_ws
+# parents[5] = Project Root (e.g., IntelliegntControllerHC)
+
+try:
+    current_file_path = Path(__file__).resolve()
+    # Go up 6 levels to reach the project root directory
+    project_root = current_file_path.parents[5]
+    image_directory = str(project_root / "orbbec_images")
+except Exception as e:
+    # Fallback to current directory if path resolution fails
+    print(f"Warning: Could not resolve project root: {e}. Using current directory.")
+    image_directory = os.path.abspath("orbbec_images")
+
+print(f"Orbbec Image Directory: {image_directory}")
+
 time_diff_threshold = 100
 sync_time_diff_threshold = 33
 current_path = os.path.dirname(os.path.abspath(__file__))
@@ -32,8 +54,13 @@ def parse_image_filename(filename):
 
 
 def analyze_images():
+    if not os.path.exists(image_directory):
+        print(f"Image directory does not exist: {image_directory}")
+        return {}
+        
     serial_dirs = [
         os.path.join(image_directory, d) for d in os.listdir(image_directory)
+        if os.path.isdir(os.path.join(image_directory, d))
     ]
     images = defaultdict(list)
 
@@ -59,7 +86,7 @@ def copy_images_to_grouped_directory(image_group, index, grouped_image_directory
         suffix = (
             "_ref"
             if image["serial_no"] == ref_image["serial_no"]
-               and image["stream_name"] == "color"
+            and image["stream_name"] == "color"
             else ""
         )
         status = "_anomaly" if abs(time_diff) > sync_time_diff_threshold else ""
@@ -73,9 +100,16 @@ def copy_images_to_grouped_directory(image_group, index, grouped_image_directory
 
 
 def group_images_by_time(all_images):
+    if not all_images:
+        return
+
     grouped_image_directory = os.path.join(current_path, "grouped_images")
     os.makedirs(grouped_image_directory, exist_ok=True)
     reference_serial_no = master_camera_serial_no or list(all_images.keys())[0]
+    
+    if reference_serial_no not in all_images:
+        return
+
     reference_images = [
         img for img in all_images[reference_serial_no] if img["stream_name"] == "color"
     ]
@@ -98,18 +132,14 @@ def group_images_by_time(all_images):
                 if time_diff < min_diffs[stream_name]:
                     min_diffs[stream_name] = time_diff
                     min_images[stream_name] = image
-
-            for stream_name, min_image in min_images.items():
-                if min_image:
-                    image_group.append(min_image)
+            
+            if min_images["color"]:
+                image_group.append(min_images["color"])
+            if min_images["depth"]:
+                image_group.append(min_images["depth"])
 
         copy_images_to_grouped_directory(image_group, index, grouped_image_directory)
 
-
-def main():
+if __name__ == "__main__":
     images = analyze_images()
     group_images_by_time(images)
-
-
-if __name__ == "__main__":
-    main()

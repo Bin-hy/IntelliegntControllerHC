@@ -1,91 +1,59 @@
+import os
 from launch import LaunchDescription
 from launch_ros.actions import Node
-import os
+from launch.actions import ExecuteProcess, RegisterEventHandler, LogInfo
+from launch.event_handlers import OnProcessExit
+from launch_ros.substitutions import FindPackageShare
+from launch.substitutions import PathJoinSubstitution
 
 def generate_launch_description():
-    # Define URDF paths
-    left_urdf = '/home/user/IntelliegntControllerHC/ros2_ws/src/DH116_L_URDF/DH116-L000-A1/urdf/DH116-L000-A1.urdf'
-    right_urdf = '/home/user/IntelliegntControllerHC/ros2_ws/src/DH116_R_URDF/DH116-R000-A1/urdf/DH116-R000-A1.urdf'
+    lhand_pkg = FindPackageShare('lhandpro_description')
+    
+    # Use PathJoinSubstitution to dynamically find the URDF files
+    left_urdf = PathJoinSubstitution([lhand_pkg, 'urdf', 'DH126S-L000-A1.urdf'])
+    right_urdf = PathJoinSubstitution([lhand_pkg, 'urdf', 'DH126S-R000-A1.urdf'])
 
-    # Define Joint Names
-    # Assuming 11 active joints per hand as identified
-    left_joint_names = [
-        'L_finger11', 'L_finger12', 'L_finger13',
-        'L_finger21', 'L_finger22',
-        'L_finger31', 'L_finger32',
-        'L_finger41', 'L_finger42',
-        'L_finger51', 'L_finger52'
+    # Joint names for left and right hands
+    joint_names_l = [
+        "L_H1_joint", "L_H2_joint", "L_H3_joint", "L_H4_joint", "L_H5_joint", "L_H6_joint"
+    ]
+    
+    joint_names_r = [
+        "R_H1_joint", "R_H2_joint", "R_H3_joint", "R_H4_joint", "R_H5_joint", "R_H6_joint"
     ]
 
-    right_joint_names = [
-        'R_finger11', 'R_finger12', 'R_finger13',
-        'R_finger21', 'R_finger22',
-        'R_finger31', 'R_finger32',
-        'R_finger41', 'R_finger42',
-        'R_finger51', 'R_finger52'
-    ]
+    # Node for Left Hand
+    left_hand_node = Node(
+        package='lhandpro_service',
+        executable='hand_control_service',
+        name='left_hand_node',
+        output='screen',
+        parameters=[
+            {'port_name': '/dev/ttyUSB0'},
+            {'baud_rate': 115200},
+            {'node_name': 'left_hand_node'},
+            {'joint_names': joint_names_l},
+            {'urdf_path': left_urdf}
+        ]
+    )
+
+    # Node for Right Hand
+    right_hand_node = Node(
+        package='lhandpro_service',
+        executable='hand_control_service',
+        name='right_hand_node',
+        output='screen',
+        parameters=[
+            {'port_name': '/dev/ttyUSB1'},
+            {'baud_rate': 115200},
+            {'node_name': 'right_hand_node'},
+            {'joint_names': joint_names_r},
+            {'urdf_path': right_urdf}
+        ]
+    )
 
     return LaunchDescription([
-        # Left Hand Service
-        Node(
-            package='lhandpro_service',
-            executable='lhandpro_service',
-            name='lhandpro_service',
-            namespace='left_hand',
-            output='screen',
-            parameters=[{
-                'ethercat_channel': 0,
-                'joint_names': left_joint_names
-            }]
-        ),
-        # Right Hand Service
-        Node(
-            package='lhandpro_service',
-            executable='lhandpro_service',
-            name='lhandpro_service',
-            namespace='right_hand',
-            output='screen',
-            parameters=[{
-                'ethercat_channel': 1,
-                'joint_names': right_joint_names
-            }]
-        ),
-        
-        # Robot State Publisher for Left Hand
-        Node(
-            package='robot_state_publisher',
-            executable='robot_state_publisher',
-            name='left_hand_state_publisher',
-            namespace='left_hand',
-            output='screen',
-            arguments=[left_urdf],
-            remappings=[('joint_states', '/left_hand/joint_states')]
-        ),
-        
-        # Robot State Publisher for Right Hand
-        Node(
-            package='robot_state_publisher',
-            executable='robot_state_publisher',
-            name='right_hand_state_publisher',
-            namespace='right_hand',
-            output='screen',
-            arguments=[right_urdf],
-            remappings=[('joint_states', '/right_hand/joint_states')]
-        ),
-
-        # Static Transforms for Visualization (Bound to Robot Arm)
-        # Bind Left Hand to link_6
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='left_hand_static_tf',
-            arguments=['0', '0', '0', '0', '0', '0', 'link_6', 'L_base_link']
-        ),
-        # Bind Right Hand to link_6
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='right_hand_static_tf',
-            arguments=['0', '0', '0', '0', '0', '0', 'link_6', 'R_base_link']
-        )
+        LogInfo(msg="Launching Dual Hand Control Services..."),
+        left_hand_node,
+        right_hand_node
     ])

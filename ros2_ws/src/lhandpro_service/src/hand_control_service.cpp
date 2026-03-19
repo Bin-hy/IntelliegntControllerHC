@@ -11,10 +11,22 @@ HandControlService::HandControlService() : Node("lhandpro_service") {
   ec_master_ = std::make_shared<EthercatMaster>();
 
   is_connected_ = false;
-  current_channel_ = 1;  // 手动修改默认通道
+  
+  // 声明并获取参数, 默认值为1
+  this->declare_parameter("ethercat_channel", 1);
+  current_channel_ = this->get_parameter("ethercat_channel").as_int();
+  
+  // Publisher for DeviceStatus
+  pub_device_status_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
+  now_angles_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/lhandpro_service/now_angles", 10);
+
+  RCLCPP_INFO(this->get_logger(), "使用EtherCAT通道: %d", current_channel_);
 
   init_ethercat(current_channel_);
   init_service();
+
+  now_angles_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(50), [this]() { this->publish_now_angles(); });
 
   // 每5秒检查一次连接状态
   reconnect_timer_ = this->create_wall_timer(
@@ -108,18 +120,52 @@ void HandControlService::cleanup_resources() {
 }
 
 void HandControlService::check_and_reconnect() {
+  common_msgs::msg::DeviceStatus status_msg;
+  status_msg.device_type = "lhand";
+  status_msg.device_usage = "left_hand";
+  status_msg.device_model = "DH116-L000-A1";
+  status_msg.device_name = "DH116 左手";
+  status_msg.device_sn = "lhand_1";
+
   if (is_connected_) {
     // 检查是否仍然有效
     if (!is_alive()) {
       RCLCPP_WARN(this->get_logger(), "检测到连接异常，尝试重新连接...");
       is_connected_ = false;
+      status_msg.status = "error";
+    } else {
+      status_msg.status = "ready";
     }
+  } else {
+    status_msg.status = "disconnected";
   }
+  
+  pub_device_status_->publish(status_msg);
 
   if (!is_connected_) {
     RCLCPP_INFO(this->get_logger(), "正在尝试重新连接设备...");
     init_ethercat(current_channel_);
   }
+}
+
+void HandControlService::publish_now_angles() {
+  if (!lhp_lib_) return;
+  if (!is_alive()) return;
+  if (last_angles_.size() != 6) {
+    last_angles_.assign(6, 0.0);
+  }
+  int count = active_dof_;
+  if (count > 6) count = 6;
+  for (int i = 0; i < count; ++i) {
+    float angle = 0.0f;
+    int retn = lhp_lib_->get_now_angle(i + 1, &angle);
+    if (retn == 0) {
+      last_angles_[i] = angle;
+    }
+  }
+  std_msgs::msg::Float64MultiArray msg;
+  msg.data = last_angles_;
+  now_angles_pub_->publish(msg);
 }
 
 bool HandControlService::is_alive() {

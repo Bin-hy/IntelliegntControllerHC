@@ -15,7 +15,7 @@ def generate_launch_description():
     # Arguments
     robot_ip_arg = DeclareLaunchArgument(
         'robot_ip', 
-        default_value='192.168.1.10',
+        default_value='192.168.192.10',
         description='IP address of the robot controller'
     )
     
@@ -38,6 +38,14 @@ def generate_launch_description():
         package='glove_node',
         executable='glove_node',
         name='glove_node',
+        output='screen'
+    )
+    
+    # 3.5 LHand Service (SDK Wrapper)
+    lhand_node = Node(
+        package='lhandpro_service',
+        executable='lhandpro_service',
+        name='lhandpro_service',
         output='screen'
     )
     
@@ -68,6 +76,7 @@ def generate_launch_description():
         robot_launch,
         vision_launch,
         glove_node,
+        lhand_node,
         system_controller_node,
         ui_launch
     ])

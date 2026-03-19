@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=RobotApp
+GenericName=Intelligent Robot Controller
+Comment=Upper-computer for DUCO robot arm with DH116 hand and Orbbec camera
+Exec=/usr/bin/robotapp
+Icon=/opt/robotapp/share/robotapp.png
+Terminal=false
+Categories=Science;Engineering;
+Keywords=robot;arm;control;ROS;
+StartupNotify=true

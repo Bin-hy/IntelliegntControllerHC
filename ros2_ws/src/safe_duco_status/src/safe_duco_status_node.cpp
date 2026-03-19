@@ -1,6 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <duco_ros_driver/DucoCobot.h>
 #include <duco_msg/msg/duco_robot_state.hpp>
+#include <common_msgs/msg/device_status.hpp>
 #include <duco_msg/srv/robot_control.hpp>
 #include <duco_msg/srv/robot_move.hpp>
 #include <duco_msg/srv/robot_io_control.hpp>
@@ -39,6 +40,7 @@ public:
         // Publishers
         robot_state_pub_ = this->create_publisher<duco_msg::msg::DucoRobotState>("/duco_robot/robot_state", 30);
         joint_states_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 300);
+        pub_device_status_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
         
         // Callback Groups for Multi-threading
         service_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -48,19 +50,19 @@ public:
         srv_control_ = this->create_service<duco_msg::srv::RobotControl>(
             "/duco_robot/robot_control",
             std::bind(&SafeDucoStatusNode::handle_robot_control, this, std::placeholders::_1, std::placeholders::_2),
-            rmw_qos_profile_services_default,
+            rclcpp::ServicesQoS(),
             service_cb_group_);
             
         srv_move_ = this->create_service<duco_msg::srv::RobotMove>(
             "/duco_robot/robot_move",
             std::bind(&SafeDucoStatusNode::handle_robot_move, this, std::placeholders::_1, std::placeholders::_2),
-            rmw_qos_profile_services_default,
+            rclcpp::ServicesQoS(),
             service_cb_group_);
             
         srv_io_ = this->create_service<duco_msg::srv::RobotIoControl>(
             "/duco_robot/robot_io_control",
             std::bind(&SafeDucoStatusNode::handle_robot_io_control, this, std::placeholders::_1, std::placeholders::_2),
-            rmw_qos_profile_services_default,
+            rclcpp::ServicesQoS(),
             service_cb_group_);
 
         // Timer for polling (Reduced frequency to 10Hz to prevent starvation)
@@ -95,7 +97,17 @@ private:
 
     void timer_callback()
     {
+        common_msgs::msg::DeviceStatus dev_status;
+        dev_status.device_type = "duco";
+        dev_status.device_usage = "arm";
+        dev_status.device_model = "Gcr5"; // Placeholder, could be from param
+        dev_status.device_name = "Gcr5";
+        dev_status.device_sn = "duco_default_sn"; // Placeholder
+        
         if (!connected_) {
+            dev_status.status = "disconnected";
+            pub_device_status_->publish(dev_status);
+
             // Simple retry logic
             static int retry_count = 0;
             if (++retry_count > 100) { // Retry every 2 seconds roughly
@@ -131,6 +143,9 @@ private:
         if (status.robotState == 0) { // Disconnected or Error
              // Optionally handle reconnection logic
         }
+
+        dev_status.status = "ready";
+        pub_device_status_->publish(dev_status);
 
         publish_robot_state(status);
         publish_joint_states(status);
@@ -292,6 +307,7 @@ private:
     std::shared_ptr<DucoRPC::DucoCobot> duco_robot_;
     rclcpp::Publisher<duco_msg::msg::DucoRobotState>::SharedPtr robot_state_pub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_pub_;
+    rclcpp::Publisher<common_msgs::msg::DeviceStatus>::SharedPtr pub_device_status_;
     
     rclcpp::Service<duco_msg::srv::RobotControl>::SharedPtr srv_control_;
     rclcpp::Service<duco_msg::srv::RobotMove>::SharedPtr srv_move_;

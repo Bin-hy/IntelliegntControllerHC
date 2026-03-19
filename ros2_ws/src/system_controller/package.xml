@@ -11,7 +11,12 @@
 
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
   <depend>duco_msg</depend>
+  <depend>common_msgs</depend>
+  <depend>rclcpp_action</depend>
+  <depend>lhandpro_interfaces</depend>
+  <depend>vision_server</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

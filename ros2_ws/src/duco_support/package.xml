@@ -16,6 +16,9 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <exec_depend>dh116_l000_a1</exec_depend>
+  <exec_depend>dh116_r000_a1</exec_depend>
+
   <export>
       <build_type>ament_cmake</build_type>
   </export>

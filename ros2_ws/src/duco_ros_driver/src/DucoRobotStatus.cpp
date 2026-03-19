@@ -43,9 +43,9 @@ DucoRobotStatus::DucoRobotStatus(const rclcpp::NodeOptions & options ) : Node("D
     _last_joints_actual_vel.resize(arm_num);
     _last_joints_actual_acc.resize(arm_num);
     _last_joints_actual_torq.resize(arm_num);
-    for (int i=0;i<arm_num;++i)
+    for (uint i=0;i<arm_num;++i)
     {
-        for (int j=0;j<_dof;++j)
+        for (uint j=0;j<_dof;++j)
         {
             joint_names_[i].push_back("arm_"+std::to_string(i+1)+"_joint_"+std::to_string(j+1));
             _last_joints_actual_pos[i].push_back(0);
@@ -66,7 +66,7 @@ DucoRobotStatus::DucoRobotStatus(const rclcpp::NodeOptions & options ) : Node("D
 
 DucoRobotStatus::~DucoRobotStatus()
 {
-    for(int i=0;i<arm_num;i++)
+    for(uint i=0;i<arm_num;i++)
     {
         duco_robots[i]->close();
     }
@@ -86,7 +86,7 @@ void DucoRobotStatus::getRobotStatus()
     //获取机器人控制器状态数据并转发给ROS
     if( controller_connected_flag_ )
     {
-        for(int axis=0;axis<arm_num;axis++)
+        for(uint axis=0;axis<arm_num;axis++)
         {
             duco_robots[axis]->get_actual_joints_position(robot_joint_actual_pos[axis]);
             if (robot_joint_actual_pos[axis].size() < _dof)
@@ -113,7 +113,7 @@ void DucoRobotStatus::getRobotStatus()
                 return;
             }
 
-            for(int i = 0;i<arm_num;i++)
+            for(uint i = 0;i<arm_num;i++)
             {
                 _last_joints_actual_pos[i].clear();
                 _last_joints_actual_vel[i].clear();
@@ -176,7 +176,7 @@ void DucoRobotStatus::getRobotStatus()
             //                    robot_status_.in_error.val        = (int)0;   //used for protective stop.
             //                    robot_status_.error_code          = (int32_t)status.robotError;
 
-            uint count = robot_joint_actual_pos[axis].size();
+            // uint count = robot_joint_actual_pos[axis].size();
 
             //RCLCPP_INFO(this->get_logger(), "duco_robot_->getRobotStatus count %d",count);
 
@@ -226,9 +226,9 @@ void DucoRobotStatus::getRobotStatus()
         joint_state.position.resize(total_dof);
         joint_state.velocity.resize(total_dof);
         joint_state.effort.resize(total_dof);
-        for(int i=0;i<arm_num;i++)
+        for(uint i=0;i<arm_num;i++)
         {
-            for (int j=0;j<_dof;++j)
+            for (uint j=0;j<_dof;++j)
             {
                 joint_state.name[i*_dof+j] = joint_names_[i][j];
                 if(controller_connected_flag_)
@@ -281,7 +281,7 @@ void DucoRobotStatus::getRobotStatus()
 
 bool DucoRobotStatus::connectToRobotController()
 {
-    for(int i=0;i<arm_num;i++)
+    for(uint i=0;i<arm_num;i++)
     {
         if(duco_robots[i]->open() != 0)
         {

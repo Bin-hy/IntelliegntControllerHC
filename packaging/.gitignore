@@ -1,0 +1,4 @@
+# 打包临时目录和产物
+staging/
+dist/
+*.deb
