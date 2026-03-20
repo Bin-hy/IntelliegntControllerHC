@@ -7,7 +7,7 @@ def generate_launch_description():
     # Launch arguments
     robot_ip_arg = DeclareLaunchArgument(
         'robot_ip',
-        default_value='192.168.192.10',
+        default_value='192.168.1.10',
         description='IP address of the DUCO robot controller'
     )
     

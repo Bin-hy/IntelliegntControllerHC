@@ -22,7 +22,7 @@ public:
     SafeDucoStatusNode() : Node("safe_duco_status")
     {
         // Parameters
-        this->declare_parameter("robot_ip", "192.168.192.10");
+        this->declare_parameter("robot_ip", "192.168.1.10");
         this->declare_parameter("robot_port", 7003);
         this->declare_parameter("arm_dof", 6);
 

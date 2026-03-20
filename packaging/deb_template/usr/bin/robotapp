@@ -6,7 +6,7 @@ CONF=/etc/robotapp/robot.conf
 INSTALL_DIR=/opt/robotapp
 
 # 默认值
-ROBOT_IP=192.168.192.10
+ROBOT_IP=192.168.1.10
 ETHERCAT_CHANNEL=0
 MODEL=gcr5_910
 CAMERA1_SERIAL=

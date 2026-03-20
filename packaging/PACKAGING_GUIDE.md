@@ -161,7 +161,7 @@ sudo nano /etc/robotapp/robot.conf
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `ROBOT_IP` | `192.168.192.10` | DUCO 机械臂 IP |
+| `ROBOT_IP` | `192.168.1.10` | DUCO 机械臂 IP |
 | `ETHERCAT_CHANNEL` | `0` | EtherCAT 网卡索引（第 n 块网卡） |
 | `MODEL` | `gcr5_910` | 机械臂型号 |
 | `CAMERA1_SERIAL` | 空 | Orbbec 相机序列号（空=自动选择） |

@@ -29,10 +29,10 @@ source install/setup.bash
 cd ~/IntelliegntControllerHC/ros2_ws
 source install/setup.bash
 # Specify robot IP and EtherCAT interface index
-ros2 launch ui_app unified.launch.py robot_ip:=192.168.192.10 ethercat_channel:=0
+ros2 launch ui_app unified.launch.py robot_ip:=192.168.1.10 ethercat_channel:=0
 ```
 
-Launch arguments: `robot_ip` (default: 192.168.192.10), `ethercat_channel` (default: 0), `model` (default: gcr5_910).
+Launch arguments: `robot_ip` (default: 192.168.1.10), `ethercat_channel` (default: 0), `model` (default: gcr5_910).
 
 ## First-Time Setup
 

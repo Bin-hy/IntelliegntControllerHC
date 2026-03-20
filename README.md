@@ -20,5 +20,5 @@ sudo ./install_ui_app.bash
 cd ~/IntelliegntControllerHC/ros2_ws
 source install/setup.bash
 # 指定机器臂的ip和机器手的网卡id
-ros2 launch ui_app unified.launch.py robot_ip:=192.168.192.10 ethercat_channel:=0 
+ros2 launch ui_app unified.launch.py robot_ip:=192.168.1.10 ethercat_channel:=0 
 ```
