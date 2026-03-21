@@ -35,35 +35,26 @@ ament_export_libraries(${LHANDPRO_LIB})
 ament_export_include_directories(${THIRDPARTY_DIR}/include)
 
 
-add_subdirectory(src/SOEM)
-
-# Ensure RPATH includes linked library paths (critical for setcap/EtherCAT)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-# Explicitly add ROS 2 lib directory to RPATH to ensure capabilities (setcap) don't break library loading
-if(DEFINED ENV{ROS_DISTRO})
-  set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib:/opt/ros/$ENV{ROS_DISTRO}/lib")
-else()
-  set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib:/opt/ros/humble/lib")
-endif()
-
-# Force RPATH instead of RUNPATH to handle transitive dependencies (like libstatistics_collector)
-# when LD_LIBRARY_PATH is ignored due to capabilities (setcap)
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--disable-new-dtags")
+# DucoCobot API (for passthrough communication)
+set(DUCO_DRIVER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../duco_ros_driver)
 
 # 添加执行文件
-add_executable(lhandpro_service 
+add_executable(lhandpro_service
   src/lhandpro_service.cpp
   src/hand_control_service.hpp
   src/hand_control_service.cpp
-  src/EthercatMaster.cpp
+  src/DucoTransport.cpp
 )
 
 ament_target_dependencies(lhandpro_service rclcpp lhandpro_interfaces sensor_msgs common_msgs std_msgs)
 
-# 导出头文件路径
-target_link_libraries(lhandpro_service ${LHANDPRO_LIB} soem)
+target_link_libraries(lhandpro_service
+    ${LHANDPRO_LIB}
+    ${DUCO_DRIVER_DIR}/lib/libDucoCobotAPI.a
+)
 target_include_directories(lhandpro_service PUBLIC
     $<BUILD_INTERFACE:${THIRDPARTY_DIR}/include>
+    $<BUILD_INTERFACE:${DUCO_DRIVER_DIR}/include>
 )
 
 # 安装可执行文件

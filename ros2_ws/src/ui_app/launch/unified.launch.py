@@ -20,10 +20,10 @@ def generate_launch_description():
         description='Duco robot model name'
     )
 
-    ethercat_channel_arg = DeclareLaunchArgument(
-        'ethercat_channel',
-        default_value='0',
-        description='EtherCAT network interface channel index'
+    protocol_arg = DeclareLaunchArgument(
+        'protocol',
+        default_value='tool_rs485',
+        description='LHand communication protocol: tool_rs485, rs485, or can'
     )
 
     camera1_serial_arg = DeclareLaunchArgument(
@@ -88,7 +88,10 @@ def generate_launch_description():
     lhand_pkg = FindPackageShare('lhandpro_service')
     lhand_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([lhand_pkg, '/launch/lhandpro.launch.py']),
-        launch_arguments={'ethercat_channel': LaunchConfiguration('ethercat_channel')}.items()
+        launch_arguments={
+            'robot_ip': LaunchConfiguration('robot_ip'),
+            'protocol': LaunchConfiguration('protocol'),
+        }.items()
     )
 
     # LHand Description & State Publisher
@@ -114,6 +117,26 @@ def generate_launch_description():
         executable='system_controller_node',
         name='system_controller',
         output='screen'
+    )
+
+    # 4b. Collision Detector (Vision-based, runs alongside system_controller)
+    collision_detector_node = Node(
+        package='collision_detector',
+        executable='collision_detector_node',
+        name='collision_detector',
+        output='screen',
+        parameters=[{
+            'point_cloud_topic': '/camera/depth/points',
+            'link_names': ['base_link', 'link_1', 'link_2', 'link_3', 'link_4', 'link_5', 'link_6'],
+            'link_radii': [0.15, 0.12, 0.12, 0.10, 0.10, 0.10, 0.08],
+            'self_filter_margin': 0.04,
+            'emergency_threshold': 0.03,
+            'warning_threshold': 0.10,
+            'caution_threshold': 0.20,
+            'detection_hz': 10.0,
+            'downsample_stride': 6,
+            'auto_pause': True,
+        }]
     )
 
     # 5. UI App
@@ -155,7 +178,7 @@ def generate_launch_description():
     return LaunchDescription([
         robot_ip_arg,
         model_arg,
-        ethercat_channel_arg,
+        protocol_arg,
         camera1_serial_arg,
         camera2_serial_arg,
         vision_launch,
@@ -164,5 +187,6 @@ def generate_launch_description():
         lhand_launch,
         lhand_state_publisher,
         sys_ctrl_node,
+        collision_detector_node,
         ui_delayed
     ])

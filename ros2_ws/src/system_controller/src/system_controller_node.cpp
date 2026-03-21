@@ -12,6 +12,9 @@
 #include <lhandpro_interfaces/srv/set_position.hpp>
 #include <lhandpro_interfaces/srv/move_motors.hpp>
 #include <vision_server/srv/save_image.hpp>
+#include <vision_server/srv/save_point_cloud.hpp>
+#include <common_msgs/msg/collision_status.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <std_srvs/srv/set_bool.hpp>
 #include <mutex>
@@ -42,6 +45,13 @@ public:
         sub_device_status_ = this->create_subscription<common_msgs::msg::DeviceStatus>(
             "/system/device_status", 10,
             std::bind(&SystemController::device_status_callback, this, std::placeholders::_1));
+
+        sub_collision_ = this->create_subscription<common_msgs::msg::CollisionStatus>(
+            "/collision_detector/status", 10,
+            std::bind(&SystemController::collision_status_callback, this, std::placeholders::_1));
+
+        pub_collision_topic_ = this->create_publisher<std_msgs::msg::String>(
+            "/collision_detector/set_topic", 10);
 
         // Clients to Duco Driver
         client_move_ = this->create_client<duco_msg::srv::RobotMove>("/duco_robot/robot_move");
@@ -111,6 +121,10 @@ private:
     // Subscribers
     rclcpp::Subscription<duco_msg::msg::DucoRobotState>::SharedPtr sub_state_;
     rclcpp::Subscription<common_msgs::msg::DeviceStatus>::SharedPtr sub_device_status_;
+    rclcpp::Subscription<common_msgs::msg::CollisionStatus>::SharedPtr sub_collision_;
+
+    // Publishers
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_collision_topic_;
 
     // Clients
     rclcpp::Client<duco_msg::srv::RobotMove>::SharedPtr client_move_;
@@ -189,6 +203,15 @@ private:
         RCLCPP_DEBUG(this->get_logger(), "Device updated: %s (%s)", key.c_str(), msg->status.c_str());
     }
 
+    void collision_status_callback(const common_msgs::msg::CollisionStatus::SharedPtr msg) {
+        if (msg->status == "emergency" && is_busy_ && !is_paused_) {
+            RCLCPP_ERROR(this->get_logger(),
+                "Collision emergency from vision: %s", msg->message.c_str());
+            is_paused_ = true;
+            pause_reason_ = "碰撞检测紧急停止: " + msg->message;
+        }
+    }
+
     bool is_status_ready(const std::string& status) {
         return status == "ready" || status == "running";
     }
@@ -230,6 +253,41 @@ private:
         if (!check.device_sn.empty() && status.device_sn != check.device_sn) return false;
         if (!check.device_type.empty() && status.device_type != check.device_type) return false;
         return true;
+    }
+
+    // Resolve camera SN/prefix → point cloud topic string.
+    // Returns empty string if camera cannot be found.
+    std::string resolve_pc_topic(const std::string& camera_sn) {
+        if (camera_sn.empty()) return {};
+
+        // If already a full topic path
+        if (camera_sn.front() == '/') {
+            // Treat as a namespace prefix → append /depth/points
+            return camera_sn + "/depth/points";
+        }
+
+        // Look up in connected_devices_ by SN
+        {
+            std::lock_guard<std::mutex> lock(devices_mutex_);
+            auto it = connected_devices_.find(camera_sn);
+            if (it != connected_devices_.end() && !it->second.topic_prefix.empty()) {
+                return it->second.topic_prefix + "/depth/points";
+            }
+        }
+
+        // Fallback: scan topics for a match containing the SN
+        auto all_topics = this->get_topic_names_and_types();
+        const std::string suffix = "/depth/points";
+        for (const auto& [name, types] : all_topics) {
+            if (name.find(camera_sn) != std::string::npos &&
+                name.size() >= suffix.size() &&
+                name.rfind(suffix) == name.size() - suffix.size()) {
+                return name;
+            }
+        }
+
+        // Last resort: use SN as namespace
+        return "/" + camera_sn + "/depth/points";
     }
 
     bool check_vision_topics(const common_msgs::msg::TaskDeviceCheck& check) {
@@ -361,6 +419,23 @@ private:
         
         RCLCPP_INFO(this->get_logger(), "All devices found.");
 
+        // Notify collision_detector which camera to use for this task
+        if (!goal->task_config.collision_camera_sn.empty()) {
+            std::string pc_topic = resolve_pc_topic(goal->task_config.collision_camera_sn);
+            if (!pc_topic.empty()) {
+                auto msg = std_msgs::msg::String();
+                msg.data = pc_topic;
+                pub_collision_topic_->publish(msg);
+                RCLCPP_INFO(this->get_logger(),
+                    "Collision detector camera: %s → %s",
+                    goal->task_config.collision_camera_sn.c_str(), pc_topic.c_str());
+            } else {
+                RCLCPP_WARN(this->get_logger(),
+                    "Cannot resolve collision camera SN: %s",
+                    goal->task_config.collision_camera_sn.c_str());
+            }
+        }
+
         int rounds = goal->task_config.exec_rounds > 0 ? goal->task_config.exec_rounds : 1;
         std::string run_time = current_run_time_tag();
         int step_index = 0;
@@ -404,6 +479,8 @@ private:
                     step_success = execute_hand_step(step, goal_handle);
                 } else if (step.type == "camera") {
                     step_success = execute_camera_step(step, goal_handle, goal->task_config.task_name, run_time, round);
+                } else if (step.type == "io") {
+                    step_success = execute_io_step(step, goal_handle);
                 } else {
                     RCLCPP_WARN(this->get_logger(), "Unknown step type: %s", step.type.c_str());
                 }
@@ -649,6 +726,56 @@ private:
             return true;
         };
 
+        // Lambda for saving point cloud
+        auto call_save_pc = [&](std::string topic, std::string tag) {
+            auto pc_client_primary = this->create_client<vision_server::srv::SavePointCloud>("/image_saver/save_point_cloud");
+            auto pc_client_fallback = this->create_client<vision_server::srv::SavePointCloud>("save_point_cloud");
+            rclcpp::Client<vision_server::srv::SavePointCloud>::SharedPtr pc_client;
+            if (pc_client_primary->wait_for_service(2s)) {
+                pc_client = pc_client_primary;
+            } else if (pc_client_fallback->wait_for_service(2s)) {
+                pc_client = pc_client_fallback;
+            } else {
+                RCLCPP_ERROR(this->get_logger(), "SavePointCloud service not available");
+                return false;
+            }
+
+            auto request = std::make_shared<vision_server::srv::SavePointCloud::Request>();
+            request->topic_name = topic;
+            request->file_tag = base_tag + "/" + tag;
+
+            auto future = pc_client->async_send_request(request);
+            auto start_time = std::chrono::steady_clock::now();
+            while (rclcpp::ok()) {
+                auto status = future.wait_for(100ms);
+                if (status == std::future_status::ready) break;
+                if (goal_handle->is_canceling()) {
+                    RCLCPP_WARN(this->get_logger(), "Task canceled during point cloud capture");
+                    return false;
+                }
+                if (std::chrono::steady_clock::now() - start_time > 10s) {
+                    RCLCPP_ERROR(this->get_logger(), "Point cloud service timeout for %s", tag.c_str());
+                    return false;
+                }
+            }
+
+            try {
+                auto response = future.get();
+                if (!response->success) {
+                    RCLCPP_WARN(this->get_logger(), "Point cloud save failed for %s: %s", tag.c_str(), response->message.c_str());
+                    return false;
+                }
+                RCLCPP_INFO(this->get_logger(), "Point cloud saved: %s | Centroid: (%.4f, %.4f, %.4f) | Points: %d",
+                    response->file_path.c_str(),
+                    response->centroid_x, response->centroid_y, response->centroid_z,
+                    response->num_points);
+            } catch (const std::exception& e) {
+                RCLCPP_ERROR(this->get_logger(), "Point cloud service exception: %s", e.what());
+                return false;
+            }
+            return true;
+        };
+
         bool success = true;
         std::string step_tag = sanitize_component(step.name);
         if (step.camera_type.empty()) {
@@ -665,11 +792,57 @@ private:
                 } else if (type == "ir_right") {
                      std::string right_ir = cam_ns + "/right_ir/image_raw";
                      if (!call_save(right_ir, step_tag + "_IRRight")) success = false;
+                } else if (type == "point_cloud") {
+                     std::string pc_topic = cam_ns + "/depth/points";
+                     if (!call_save_pc(pc_topic, step_tag + "_PointCloud")) success = false;
                 }
             }
         }
-        
+
         return success;
+    }
+
+    bool execute_io_step(const common_msgs::msg::TaskStep& step, std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
+        if (!client_io_->wait_for_service(2s)) {
+            RCLCPP_ERROR(this->get_logger(), "IO service not available");
+            return false;
+        }
+
+        auto request = std::make_shared<duco_msg::srv::RobotIoControl::Request>();
+        request->command = "setIo";
+        request->arm_num = 0;
+        request->type = 0;  // gen IO (控制柜IO)
+        request->port = step.io_port;
+        request->value = step.io_value;
+        request->block = true;
+
+        std::string port_name;
+        if (step.io_port == 1) port_name = "清洗机";
+        else if (step.io_port == 2) port_name = "吹风机";
+        else port_name = "IO_" + std::to_string(step.io_port);
+
+        RCLCPP_INFO(this->get_logger(), "IO Step: %s port=%d (%s) value=%s",
+            step.name.c_str(), step.io_port, port_name.c_str(),
+            step.io_value ? "HIGH" : "LOW");
+
+        auto future = client_io_->async_send_request(request);
+        while (rclcpp::ok()) {
+            auto status = future.wait_for(100ms);
+            if (status == std::future_status::ready) break;
+            if (goal_handle->is_canceling()) {
+                RCLCPP_WARN(this->get_logger(), "Task canceled during IO step");
+                return false;
+            }
+        }
+
+        try {
+            auto response = future.get();
+            RCLCPP_INFO(this->get_logger(), "IO step result: %s", response->response.c_str());
+            return true;
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "IO step exception: %s", e.what());
+            return false;
+        }
     }
 
     void handle_move_request(const std::shared_ptr<duco_msg::srv::RobotMove::Request> request,

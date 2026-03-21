@@ -15,9 +15,10 @@ find_package(common_msgs REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(lhandpro_interfaces REQUIRED)
 find_package(vision_server REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 add_executable(system_controller_node src/system_controller_node.cpp)
-ament_target_dependencies(system_controller_node rclcpp std_msgs std_srvs duco_msg common_msgs rclcpp_action lhandpro_interfaces vision_server)
+ament_target_dependencies(system_controller_node rclcpp std_msgs std_srvs duco_msg common_msgs rclcpp_action lhandpro_interfaces vision_server sensor_msgs)
 
 install(TARGETS
   system_controller_node

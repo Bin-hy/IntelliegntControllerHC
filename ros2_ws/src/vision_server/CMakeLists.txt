@@ -19,6 +19,7 @@ find_package(OpenCV REQUIRED)
 # Generate ROS interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SaveImage.srv"
+  "srv/SavePointCloud.srv"
 )
 
 # Image Saver Node

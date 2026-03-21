@@ -131,7 +131,7 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     layout->addLayout(h_name);
 
     combo_type_ = new QComboBox();
-    combo_type_->addItems({"arm", "lhand", "rhand", "camera"});
+    combo_type_->addItems({"arm", "lhand", "rhand", "camera", "io"});
     layout->addWidget(new QLabel("Step Type:"));
     layout->addWidget(combo_type_);
 
@@ -167,9 +167,21 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     combo_camera_type_->addItems({"color", "depth", "ir_left", "ir_right", "point_cloud"});
     cam_layout->addRow("Camera Type:", combo_camera_type_);
 
+    widget_io_ = new QWidget();
+    auto * io_layout = new QFormLayout(widget_io_);
+    combo_io_device_ = new QComboBox();
+    combo_io_device_->addItem(QString::fromUtf8("清洗机 (IO 1)"), 1);
+    combo_io_device_->addItem(QString::fromUtf8("吹风机 (IO 2)"), 2);
+    io_layout->addRow(QString::fromUtf8("IO 设备:"), combo_io_device_);
+    combo_io_value_ = new QComboBox();
+    combo_io_value_->addItem(QString::fromUtf8("开启 (HIGH)"), true);
+    combo_io_value_->addItem(QString::fromUtf8("关闭 (LOW)"), false);
+    io_layout->addRow(QString::fromUtf8("电平:"), combo_io_value_);
+
     stack->addWidget(widget_arm_);
     stack->addWidget(widget_hand_);
     stack->addWidget(widget_camera_);
+    stack->addWidget(widget_io_);
     layout->addWidget(stack);
 
     auto * buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -190,11 +202,31 @@ void StepAddDialog::onTypeChanged(const QString& type) {
             combo_device_->addItem(QString::fromStdString(cam), QString::fromStdString(cam));
         }
     } else {
-        std::string target_type = (type == "arm") ? "duco" : type.toStdString();
+        // arm 和 io 都属于 duco 机械臂设备
+        std::string target_type;
+        if (type == "arm" || type == "io") {
+            target_type = "duco";
+        } else {
+            target_type = type.toStdString();
+        }
+
+        // 先从任务设备列表中查找
         for (const auto& dev : devices_) {
             if (dev.device_type == target_type) {
                 QString label = QString::fromStdString(dev.device_name.empty() ? dev.device_sn : dev.device_name);
                 combo_device_->addItem(label, QString::fromStdString(dev.device_sn));
+            }
+        }
+
+        // 如果任务设备列表中没有，fallback 到已连接设备扫描
+        if (combo_device_->count() == 0) {
+            auto connected = node_->get_connected_devices();
+            for (const auto& dev : connected) {
+                if (dev.device_type == target_type) {
+                    QString label = QString::fromStdString(dev.device_model.empty() ? dev.device_name : dev.device_model);
+                    if (!dev.device_sn.empty()) label += " (" + QString::fromStdString(dev.device_sn) + ")";
+                    combo_device_->addItem(label, QString::fromStdString(dev.device_sn));
+                }
             }
         }
     }
@@ -203,6 +235,7 @@ void StepAddDialog::onTypeChanged(const QString& type) {
     if (!stack) return;
     if (type == "arm") stack->setCurrentWidget(widget_arm_);
     else if (type == "lhand" || type == "rhand") stack->setCurrentWidget(widget_hand_);
+    else if (type == "io") stack->setCurrentWidget(widget_io_);
     else stack->setCurrentWidget(widget_camera_);
 }
 
@@ -253,6 +286,15 @@ void StepAddDialog::setStep(const common_msgs::msg::TaskStep& step) {
             int ct_idx = combo_camera_type_->findText(QString::fromStdString(step.camera_type[0]));
             if (ct_idx >= 0) combo_camera_type_->setCurrentIndex(ct_idx);
         }
+    } else if (step.type == "io") {
+        // Match io_port to combo_io_device_ by data
+        for (int i = 0; i < combo_io_device_->count(); ++i) {
+            if (combo_io_device_->itemData(i).toInt() == step.io_port) {
+                combo_io_device_->setCurrentIndex(i);
+                break;
+            }
+        }
+        combo_io_value_->setCurrentIndex(step.io_value ? 0 : 1);
     }
 }
 
@@ -272,6 +314,9 @@ common_msgs::msg::TaskStep StepAddDialog::getStep() const {
     } else if (step.type == "camera") {
         step.camera_type.clear();
         step.camera_type.push_back(combo_camera_type_->currentText().toStdString());
+    } else if (step.type == "io") {
+        step.io_port = static_cast<int8_t>(combo_io_device_->currentData().toInt());
+        step.io_value = combo_io_value_->currentData().toBool();
     }
     return step;
 }
@@ -294,6 +339,20 @@ TaskConfigDialog::TaskConfigDialog(std::shared_ptr<RosNode> node, QWidget *paren
     spin_rounds_->setValue(1);
     h_rounds->addWidget(spin_rounds_);
     layout->addLayout(h_rounds);
+
+    auto * h_collision_cam = new QHBoxLayout();
+    h_collision_cam->addWidget(new QLabel("碰撞检测相机:"));
+    combo_collision_camera_ = new QComboBox();
+    combo_collision_camera_->setMinimumWidth(180);
+    h_collision_cam->addWidget(combo_collision_camera_, 1);
+    auto * btn_scan_collision = new QPushButton("扫描");
+    h_collision_cam->addWidget(btn_scan_collision);
+    layout->addLayout(h_collision_cam);
+
+    connect(btn_scan_collision, &QPushButton::clicked,
+            this, &TaskConfigDialog::refreshCollisionCameraList);
+
+    refreshCollisionCameraList();
 
     layout->addWidget(new QLabel("Devices:"));
     table_devices_ = new QTableWidget();
@@ -343,15 +402,79 @@ void TaskConfigDialog::setTask(const common_msgs::msg::TaskConfig& task) {
     steps_ = task.task_seqs;
     updateDeviceTable();
     updateStepList();
+
+    // Restore collision camera selection
+    if (!task.collision_camera_sn.empty()) {
+        QString sn = QString::fromStdString(task.collision_camera_sn);
+        int idx = combo_collision_camera_->findData(sn);
+        if (idx < 0) {
+            // Camera not currently visible — add it so the saved value is preserved
+            combo_collision_camera_->addItem(sn + " (已保存)", sn);
+            idx = combo_collision_camera_->count() - 1;
+        }
+        combo_collision_camera_->setCurrentIndex(idx);
+    }
 }
 
 common_msgs::msg::TaskConfig TaskConfigDialog::getTask() const {
     common_msgs::msg::TaskConfig task;
     task.task_name = edit_name_->text().toStdString();
     task.exec_rounds = spin_rounds_->value();
+    // collision_camera_sn: empty string stored as item data for the "不启用" entry
+    QString sn = combo_collision_camera_->currentData().toString();
+    task.collision_camera_sn = sn.toStdString();
     task.device_checks = devices_;
     task.task_seqs = steps_;
     return task;
+}
+
+void TaskConfigDialog::refreshCollisionCameraList() {
+    // Remember current selection
+    QString current_sn = combo_collision_camera_->currentData().toString();
+
+    combo_collision_camera_->clear();
+    // First item: disable (empty SN = use default / no override)
+    combo_collision_camera_->addItem("不启用 (使用默认)", QString(""));
+
+    // Scan connected camera devices
+    auto devices = node_->get_connected_devices();
+    for (const auto& dev : devices) {
+        bool is_camera = (dev.device_type == "orbbec" ||
+                          dev.device_type == "vision_system" ||
+                          dev.device_type == "camera_server");
+        if (!is_camera) continue;
+        QString sn = QString::fromStdString(dev.device_sn);
+        QString label = QString::fromStdString(
+            dev.device_model.empty() ? dev.device_name : dev.device_model);
+        if (!sn.isEmpty()) label += " (" + sn + ")";
+        combo_collision_camera_->addItem(label, sn.isEmpty() ? label : sn);
+    }
+
+    // Also scan point cloud topics directly
+    auto pc_topics = node_->scan_point_clouds();
+    for (const auto& topic : pc_topics) {
+        // Extract namespace as the SN-like identifier
+        QString qtopic = QString::fromStdString(topic);
+        // Check if already represented via device list (topic prefix match)
+        bool already_added = false;
+        for (int i = 1; i < combo_collision_camera_->count(); ++i) {
+            QString data = combo_collision_camera_->itemData(i).toString();
+            if (!data.isEmpty() && qtopic.startsWith(data)) {
+                already_added = true;
+                break;
+            }
+        }
+        if (!already_added) {
+            // Use the full topic path as identifier (collision_detector accepts it directly)
+            combo_collision_camera_->addItem(qtopic, qtopic);
+        }
+    }
+
+    // Restore previous selection
+    if (!current_sn.isEmpty()) {
+        int idx = combo_collision_camera_->findData(current_sn);
+        if (idx >= 0) combo_collision_camera_->setCurrentIndex(idx);
+    }
 }
 
 void TaskConfigDialog::updateDeviceTable() {

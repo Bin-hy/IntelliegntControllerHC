@@ -1,4 +1,4 @@
-﻿#include "ui_app/login_window.hpp"
+#include "ui_app/login_window.hpp"
 #include "ui_app/i18n_manager.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -36,6 +36,10 @@ LoginWindow::LoginWindow(std::shared_ptr<AuthManager> auth_manager,
     btn_toggle_password_->setText("👁");
     row_pass->addWidget(btn_toggle_password_);
     layout->addLayout(row_pass);
+
+    QLabel* label_tips = new QLabel(tr_ui("提示: 初次登录默认密码为 admin@123", "Tip: Default password is admin@123"));
+    label_tips->setStyleSheet("color: gray; font-size: 11px;");
+    layout->addWidget(label_tips);
 
     btn_login_ = new QPushButton(tr_ui("登录", "Login"));
     layout->addWidget(btn_login_);

@@ -1,0 +1,10 @@
+string topic_name
+string file_tag
+---
+bool success
+string message
+float64 centroid_x
+float64 centroid_y
+float64 centroid_z
+int32 num_points
+string file_path

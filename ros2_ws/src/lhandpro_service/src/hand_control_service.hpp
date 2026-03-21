@@ -56,14 +56,14 @@
       SrvName, std::bind(&HandControlService::Callback, this, \
                          std::placeholders::_1, std::placeholders::_2))
 
-class EthercatMaster;
+class DucoTransport;
 
 class HandControlService : public rclcpp::Node {
  public:
   HandControlService();
   ~HandControlService();
 
-  void init_ethercat(int channel = 0);
+  void init_transport(const std::string& robot_ip);
   void cleanup_resources();
   void init_service();
 
@@ -165,14 +165,22 @@ class HandControlService : public rclcpp::Node {
 
  private:
   std::shared_ptr<lhplib::LHandProLib> lhp_lib_;
-  std::shared_ptr<EthercatMaster> ec_master_;
+  std::shared_ptr<DucoTransport> transport_;
   std::function<bool(const unsigned char*, unsigned int)> send_function_;
   int active_dof_{0};
   rclcpp::TimerBase::SharedPtr reconnect_timer_;
   std::atomic<bool> is_connected_;
-  int current_channel_{0};
+  std::string robot_ip_;
+  std::string protocol_str_;
   std::atomic<bool> stop_flag_{false};
   std::thread monitor_thread_;
+
+  // TPDO 缓冲区: 回调中 sendAndRecv 后写入，监控线程读取并解码
+  std::mutex tpdo_mutex_;
+  std::vector<unsigned char> tpdo_buffer_;
+  std::atomic<bool> tpdo_ready_{false};
+  std::atomic<int> send_count_{0};
+  std::atomic<int> recv_count_{0};
 
   rclcpp::Service<lhandpro_interfaces::srv::SetEnable>::SharedPtr
       set_enable_srv_;

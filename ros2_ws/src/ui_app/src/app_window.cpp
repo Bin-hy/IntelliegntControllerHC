@@ -395,8 +395,12 @@ void AppWindow::updateUI() {
       
       if (text_robot_state_) {
           std::lock_guard<std::mutex> lock(node_->data_mutex_);
-          if (!node_->last_robot_state_str_.empty()) {
-              text_robot_state_->setText(QString::fromStdString(node_->last_robot_state_str_));
+          std::string display = node_->last_robot_state_str_;
+          if (!node_->last_collision_str_.empty()) {
+              display += "\n" + node_->last_collision_str_;
+          }
+          if (!display.empty()) {
+              text_robot_state_->setText(QString::fromStdString(display));
           }
       }
 

@@ -39,6 +39,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include "common_msgs/action/execute_task.hpp"
 #include "common_msgs/msg/device_status.hpp"
+#include "common_msgs/msg/collision_status.hpp"
 #include "common_msgs/srv/set_current_user.hpp"
 
 class RosNode : public rclcpp::Node {
@@ -110,6 +111,7 @@ public:
   std::atomic<int> count_;
   duco_msg::msg::DucoRobotState::SharedPtr last_robot_state_;
   std::string last_robot_state_str_;
+  std::string last_collision_str_;   // protected by data_mutex_
   
   std::vector<double> current_joints_; 
   std::vector<double> current_cart_pos_;
@@ -132,6 +134,7 @@ private:
   void ir_right_callback(const sensor_msgs::msg::Image::SharedPtr msg);
   void point_cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void device_status_callback(const common_msgs::msg::DeviceStatus::SharedPtr msg);
+  void collision_status_callback(const common_msgs::msg::CollisionStatus::SharedPtr msg);
 
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
   rclcpp::Subscription<duco_msg::msg::DucoRobotState>::SharedPtr sub_robot_state_;
@@ -144,6 +147,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_ir_left_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_ir_right_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_point_cloud_;
+  rclcpp::Subscription<common_msgs::msg::CollisionStatus>::SharedPtr sub_collision_;
   
   rclcpp::Client<duco_msg::srv::RobotControl>::SharedPtr client_control_;
   rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedPtr client_io_;

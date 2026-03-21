@@ -65,15 +65,21 @@ private:
     QWidget* widget_arm_;
     QWidget* widget_hand_;
     QWidget* widget_camera_;
+    QWidget* widget_io_;
 
     // Arm UI
     QDoubleSpinBox* spin_arm_pos_[6];
-    
+
     // Hand UI
     QSpinBox* spin_hand_pos_[6];
 
     // Camera UI
     QComboBox* combo_camera_type_; // Color, Depth, IR
+
+    // IO UI
+    QComboBox* combo_io_device_;  // 清洗机(1), 吹风机(2)
+    QComboBox* combo_io_value_;   // HIGH / LOW
+
     QLineEdit* edit_name_;
 };
 
@@ -96,14 +102,16 @@ private:
     std::shared_ptr<RosNode> node_;
     QLineEdit* edit_name_;
     QSpinBox* spin_rounds_;
+    QComboBox* combo_collision_camera_;
     QTableWidget* table_devices_;
     QListWidget* list_steps_;
-    
+
     std::vector<common_msgs::msg::TaskDeviceCheck> devices_;
     std::vector<common_msgs::msg::TaskStep> steps_;
 
     void updateDeviceTable();
     void updateStepList();
+    void refreshCollisionCameraList();
 };
 
 // 4. Task Run Dialog

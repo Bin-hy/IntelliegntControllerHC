@@ -5,14 +5,21 @@ from launch.substitutions import LaunchConfiguration
 import os
 
 def generate_launch_description():
-    ethercat_channel_arg = DeclareLaunchArgument(
-        'ethercat_channel',
-        default_value='1',
-        description='EtherCAT network interface channel index'
+    robot_ip_arg = DeclareLaunchArgument(
+        'robot_ip',
+        default_value='192.168.1.10',
+        description='DUCO controller IP address'
+    )
+
+    protocol_arg = DeclareLaunchArgument(
+        'protocol',
+        default_value='tool_rs485',
+        description='Communication protocol: tool_rs485, rs485, or can'
     )
 
     return LaunchDescription([
-        ethercat_channel_arg,
+        robot_ip_arg,
+        protocol_arg,
         Node(
             package='lhandpro_service',         # 包名
             executable='lhandpro_service',  # 可执行文件名
@@ -21,7 +28,8 @@ def generate_launch_description():
             output='screen',                 # 输出日志到终端
             emulate_tty=True,                 # 更好地显示日志
             parameters=[{
-                'ethercat_channel': LaunchConfiguration('ethercat_channel')
-            }]            
+                'robot_ip': LaunchConfiguration('robot_ip'),
+                'protocol': LaunchConfiguration('protocol')
+            }]
         )
     ])

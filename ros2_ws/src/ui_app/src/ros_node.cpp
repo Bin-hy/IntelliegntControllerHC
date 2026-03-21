@@ -49,6 +49,11 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     sub_device_status_ = create_subscription<common_msgs::msg::DeviceStatus>(
       "/system/device_status", 10, std::bind(&RosNode::device_status_callback, this, std::placeholders::_1));
 
+    // Subscriber: Collision Detector Status
+    sub_collision_ = create_subscription<common_msgs::msg::CollisionStatus>(
+      "/collision_detector/status", 10,
+      std::bind(&RosNode::collision_status_callback, this, std::placeholders::_1));
+
     // Service Clients
     client_control_ = create_client<duco_msg::srv::RobotControl>("/ui/request_control");
     client_io_ = create_client<duco_msg::srv::RobotIoControl>("/ui/request_io");
@@ -198,6 +203,22 @@ void RosNode::robot_state_callback(const duco_msg::msg::DucoRobotState::SharedPt
     status.device_sn = "duco_arm_1";
     
     connected_devices_["duco"] = status;
+}
+
+void RosNode::collision_status_callback(const common_msgs::msg::CollisionStatus::SharedPtr msg) {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    // Build display string for the UI robot-state panel
+    std::string level_icon;
+    if      (msg->status == "emergency") level_icon = "[!!!]";
+    else if (msg->status == "warning")   level_icon = "[!]";
+    else if (msg->status == "caution")   level_icon = "[~]";
+    else if (msg->status == "safe")      level_icon = "[OK]";
+    else                                 level_icon = "[--]";
+
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "碰撞检测 %s  dist=%.2fm  %s",
+        level_icon.c_str(), msg->min_distance, msg->nearest_link.c_str());
+    last_collision_str_ = buf;
 }
 
 void RosNode::device_status_callback(const common_msgs::msg::DeviceStatus::SharedPtr msg) {

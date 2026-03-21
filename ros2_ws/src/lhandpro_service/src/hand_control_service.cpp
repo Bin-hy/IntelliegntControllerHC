@@ -3,26 +3,29 @@
 #include <functional>
 #include <vector>
 
-#include "EthercatMaster.h"
+#include "DucoTransport.h"
 
 HandControlService::HandControlService() : Node("lhandpro_service") {
   RCLCPP_INFO(this->get_logger(), "LHandPro控制服务已创建");
   lhp_lib_ = std::make_shared<lhplib::LHandProLib>();
-  ec_master_ = std::make_shared<EthercatMaster>();
+  transport_ = std::make_shared<DucoTransport>();
 
   is_connected_ = false;
-  
-  // 声明并获取参数, 默认值为1
-  this->declare_parameter("ethercat_channel", 1);
-  current_channel_ = this->get_parameter("ethercat_channel").as_int();
-  
+
+  // 声明并获取参数
+  this->declare_parameter("robot_ip", "192.168.1.10");
+  this->declare_parameter("protocol", "tool_rs485");
+  robot_ip_ = this->get_parameter("robot_ip").as_string();
+  protocol_str_ = this->get_parameter("protocol").as_string();
+
   // Publisher for DeviceStatus
   pub_device_status_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
   now_angles_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/lhandpro_service/now_angles", 10);
 
-  RCLCPP_INFO(this->get_logger(), "使用EtherCAT通道: %d", current_channel_);
+  RCLCPP_INFO(this->get_logger(), "使用DUCO透传, IP: %s, 协议: %s",
+              robot_ip_.c_str(), protocol_str_.c_str());
 
-  init_ethercat(current_channel_);
+  init_transport(robot_ip_);
   init_service();
 
   now_angles_timer_ = this->create_wall_timer(
@@ -34,69 +37,54 @@ HandControlService::HandControlService() : Node("lhandpro_service") {
 }
 
 HandControlService::~HandControlService() {
-  if (ec_master_) {
-    ec_master_->stop();
-  }
+  // 先停监控线程，再关库，最后关传输层（避免线程访问已关闭的 socket）
+  stop_monitor();
   if (lhp_lib_) {
     lhp_lib_->close();
   }
+  if (transport_) {
+    transport_->stop();
+  }
 }
 
-void HandControlService::init_ethercat(int channel) {
+void HandControlService::init_transport(const std::string& robot_ip) {
   cleanup_resources();
 
-  int target = channel;
-  auto channels = ec_master_->scanNetworkInterfaces();
-  if (channels.size() == 0) {
-    RCLCPP_ERROR(this->get_logger(), "没有端口");
+  // 解析协议参数
+  DucoTransport::Protocol proto = DucoTransport::Protocol::ToolRS485;
+  if (protocol_str_ == "rs485") proto = DucoTransport::Protocol::RS485;
+  else if (protocol_str_ == "can") proto = DucoTransport::Protocol::CAN;
+
+  RCLCPP_INFO(get_logger(), "连接 DUCO 控制器: %s, 协议: %s",
+              robot_ip.c_str(), protocol_str_.c_str());
+
+  if (!transport_->init(robot_ip, 7003, proto)) {
+    RCLCPP_ERROR(get_logger(), "DUCO 控制器连接失败");
     return;
   }
-
-  for (size_t i = 0; i < channels.size(); ++i)
-    RCLCPP_INFO(this->get_logger(), "扫描到:%d --- %s", (int)i,
-                channels[i].c_str());
-
-  RCLCPP_INFO(this->get_logger(), "正在连接:%d --- %s", target,
-              channels[target].c_str());
-
-  // 初始化
-  if (ec_master_->init(channel) == false) {
-    RCLCPP_ERROR(this->get_logger(), "连接失败");
-    return;
-  }
-  // 启动到OP
-  if (!ec_master_->start()) {
-    RCLCPP_ERROR(this->get_logger(), "OP失败");
-    return;
-  }
-  // 启动后台通信（非阻塞）
-  ec_master_->run();
 
   /****** LHandProLib的初始化 ******/
-  // EtherCAT的发送函数
-  auto send_func = [this](const unsigned char* data, unsigned int size) {
-    return ec_master_->setOutputs(data, size);
-  };
-  // 使用std::function包装
-  send_function_ = send_func;
+  // 不使用回调机制 — 直接在监控线程中手动 send+recv，避免重入/双重发送问题
+  // 回调在没有真实EtherCAT硬件时不会被触发 (initial(LCN_ECAT)扫描超时)
+  // send_function_ 仍保留以备将来使用，但不向库注册
 
-  // 设置回调
-  lhp_lib_->set_send_rpdo_callback_ex(&send_function_);
+  // 开启日志，辅助调试
+  lhp_lib_->log_on(true, 5000);
 
   // 等待一会儿, 再初始化
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  lhp_lib_->initial(lhplib::LCN_ECAT);
+  int init_ret = lhp_lib_->initial(lhplib::LCN_ECAT);
+  RCLCPP_INFO(get_logger(), "LHandProLib initial(LCN_ECAT) 返回: %d", init_ret);
 
   // 监控线程, 刷新TPDO数据
-  start_monitor();  // 启动监控
+  start_monitor();
 
   int total = 0, active = 0;
   lhp_lib_->get_dof(&total, &active);
-  RCLCPP_INFO(this->get_logger(), "连接成功，总自由度: %d，主动自由度: %d",
+  RCLCPP_INFO(get_logger(), "连接成功，总自由度: %d，主动自由度: %d",
               total, active);
   active_dof_ = active;
   is_connected_ = true;
-  current_channel_ = target;
 }
 
 void HandControlService::cleanup_resources() {
@@ -105,9 +93,9 @@ void HandControlService::cleanup_resources() {
   // 1. 停止监控线程
   stop_monitor();
 
-  // 2. 停止EtherCAT主站
-  if (ec_master_) {
-    ec_master_->stop();
+  // 2. 停止传输层
+  if (transport_) {
+    transport_->stop();
   }
 
   // 3. 关闭LHandPro库
@@ -144,7 +132,7 @@ void HandControlService::check_and_reconnect() {
 
   if (!is_connected_) {
     RCLCPP_INFO(this->get_logger(), "正在尝试重新连接设备...");
-    init_ethercat(current_channel_);
+    init_transport(robot_ip_);
   }
 }
 
@@ -169,8 +157,8 @@ void HandControlService::publish_now_angles() {
 }
 
 bool HandControlService::is_alive() {
-  if (!ec_master_) return false;
-  return ec_master_->getState() == EthercatMaster::EthercatState::Operational;
+  if (!transport_) return false;
+  return transport_->getState() == DucoTransport::State::Operational;
 }
 
 bool HandControlService::check_joint_validity(int joint_id,
@@ -200,14 +188,66 @@ void HandControlService::start_monitor() {
   if (monitor_thread_.joinable()) return;  // 已经在运行
 
   stop_flag_ = false;
+  send_count_ = 0;
+  recv_count_ = 0;
   monitor_thread_ = std::thread([this]() {
+    bool use_can = (protocol_str_ == "can");
+    int cycle = 0;
+    int recv_ok = 0;
+    int send_fail = 0;
+
+    // 直接手动 send+recv，不依赖回调机制
+    // 原因：initial(LCN_ECAT) 在无真实EtherCAT硬件时会超时(~37s)，
+    // 回调不会被 get_pre_send_rpdo_data() 触发 (cb_sent=0 confirmed in log)
     while (!stop_flag_) {
-      // 监控逻辑
-      int input_size = ec_master_->getInputSize();
-      std::vector<uint8_t> in_buffer(input_size);
-      if (ec_master_->getInputs(in_buffer.data(), input_size)) {
-        lhp_lib_->set_tpdo_data_decode(in_buffer.data(), input_size);
+      // 1. 获取 RPDO 数据
+      int rpdo_size = 0;
+      if (use_can) {
+        lhp_lib_->get_pre_send_canfd_data(nullptr, &rpdo_size);
+      } else {
+        lhp_lib_->get_pre_send_rpdo_data(nullptr, &rpdo_size);
       }
+
+      if (rpdo_size > 0) {
+        std::vector<unsigned char> rpdo(rpdo_size);
+        if (use_can) {
+          lhp_lib_->get_pre_send_canfd_data(rpdo.data(), &rpdo_size);
+        } else {
+          lhp_lib_->get_pre_send_rpdo_data(rpdo.data(), &rpdo_size);
+        }
+
+        // 2. 手动发送 RPDO 并接收 TPDO
+        unsigned char recv_buf[256];
+        int recv_len = transport_->sendAndRecv(rpdo.data(), rpdo_size,
+                                               recv_buf, sizeof(recv_buf));
+        send_count_++;
+        if (recv_len > 0) {
+          // 3. 解码 TPDO
+          if (use_can) {
+            lhp_lib_->set_canfd_data_decode(recv_buf, recv_len);
+          } else {
+            lhp_lib_->set_tpdo_data_decode(recv_buf, recv_len);
+          }
+          recv_ok++;
+        } else {
+          send_fail++;
+        }
+      }
+
+      // 诊断日志 (每 2 秒)
+      cycle++;
+      if (cycle % 200 == 0) {
+        RCLCPP_INFO(get_logger(),
+                    "透传状态: rpdo=%d sent=%d recv=%d fail=%d transport=%s",
+                    rpdo_size, send_count_.load(), recv_ok, send_fail,
+                    transport_->getState() == DucoTransport::State::Operational
+                        ? "OK" : "ERROR");
+        send_count_ = 0;
+        recv_count_ = 0;
+        recv_ok = 0;
+        send_fail = 0;
+      }
+
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   });
