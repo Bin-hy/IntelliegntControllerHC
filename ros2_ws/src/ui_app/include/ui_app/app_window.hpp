@@ -25,6 +25,7 @@ class QDateTimeEdit;
 class QToolButton;
 class QMenu;
 class PointCloudWidget;
+class UDEGloveSDK;
 
 class AppWindow : public QWidget {
 public:
@@ -34,6 +35,7 @@ public:
             PermissionManager* permission_manager,
             UserRole current_role,
             QWidget *parent = nullptr);
+  ~AppWindow();
 
   void setCurrentRole(UserRole role);
   void setUserSession(const QString& username, UserRole role, const QString& session_id, bool logged_in);
@@ -44,6 +46,8 @@ private:
   QWidget* createMoveTab();
   QWidget* createIOTab();
   QWidget* createLHandTab();
+  QWidget* createGloveTab();
+  void updateGloveData();
   QWidget* createCameraTab();
   QWidget* createTaskTab();
   QWidget* createAdminTab();
@@ -136,6 +140,18 @@ private:
   QPushButton* btn_lhand_set_vel_;
 
   RobotVizWidget* robot_viz_;
+
+  // Motion capture glove
+  std::unique_ptr<UDEGloveSDK> glove_sdk_;
+  QTimer* glove_timer_ = nullptr;
+  QSpinBox* spin_glove_port_ = nullptr;
+  QPushButton* btn_glove_start_ = nullptr;
+  QPushButton* btn_glove_stop_ = nullptr;
+  QLabel* label_glove_status_ = nullptr;
+  QLabel* label_glove_role_ = nullptr;
+  QTableWidget* table_glove_left_ = nullptr;
+  QTableWidget* table_glove_right_ = nullptr;
+  QLabel* label_glove_ctrl_[12] = {};
 };
 
 #endif // APP_WINDOW_HPP

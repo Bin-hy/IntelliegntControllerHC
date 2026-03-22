@@ -44,6 +44,7 @@ find_package(rclcpp_action REQUIRED)
     src/idle_logout_watcher.cpp
     src/point_cloud_widget.cpp
     src/robot_viz_widget.cpp
+    thirdparty/ude_glove_sdk/UDEServer.cxx
     resources/resources.qrc
     include/ui_app/point_cloud_widget.hpp
     include/ui_app/robot_viz_widget.hpp
@@ -61,6 +62,7 @@ find_package(rclcpp_action REQUIRED)
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
     ${CMAKE_BINARY_DIR}/../vision_server/rosidl_generator_cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/ude_glove_sdk
   )
 
   target_link_libraries(ui_app
@@ -73,6 +75,7 @@ find_package(rclcpp_action REQUIRED)
     Qt5::3DExtras
     Qt5::3DInput
     Qt5::3DLogic
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/ude_glove_sdk/libjsoncpp.a
   )
 
   ament_target_dependencies(ui_app

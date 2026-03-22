@@ -52,7 +52,9 @@ done
 # ---- 1. 编译 Release 版本 ----------------------------------------------------
 echo ""
 echo "[1/6] 编译 ROS 2 工作空间（Release 模式）..."
+set +u
 source /opt/ros/jazzy/setup.bash
+set -u
 cd "${WS_DIR}"
 colcon build \
     --cmake-args -DCMAKE_BUILD_TYPE=Release \
