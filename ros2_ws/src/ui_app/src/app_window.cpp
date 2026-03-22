@@ -1,6 +1,7 @@
 #include "ui_app/app_window.hpp"
 #include "ui_app/point_cloud_widget.hpp"
 #include "ui_app/i18n_manager.hpp"
+#include "UDEServer.h"
 #include <QProcess>
 #include <QApplication>
 #include <QVBoxLayout>
@@ -113,6 +114,13 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node,
       updateUI();
     });
     timer_->start(100);
+}
+
+AppWindow::~AppWindow() {
+    if (glove_timer_) {
+        glove_timer_->stop();
+    }
+    glove_sdk_.reset();
 }
 
 void AppWindow::buildDashboard() {
@@ -259,6 +267,12 @@ void AppWindow::buildDashboard() {
     lhand_scroll->setWidgetResizable(true);
     lhand_scroll->setWidget(createLHandTab());
     tabs_->addTab(lhand_scroll, tr_ui("灵巧手", "Dexterous Hand"));
+
+    // Wrap GloveTab in QScrollArea
+    auto * glove_scroll = new QScrollArea();
+    glove_scroll->setWidgetResizable(true);
+    glove_scroll->setWidget(createGloveTab());
+    tabs_->addTab(glove_scroll, tr_ui("动捕手套", "Motion Glove"));
 
     tabs_->setMinimumHeight(200);
     splitter->addWidget(tabs_);
@@ -1584,4 +1598,224 @@ QWidget* AppWindow::createAdminTab() {
     }
 
     return widget;
+}
+
+// ===================== Motion Capture Glove Tab =====================
+
+QWidget* AppWindow::createGloveTab() {
+    auto * widget = new QWidget();
+    auto * layout = new QVBoxLayout(widget);
+
+    // --- Connection Controls ---
+    auto * group_conn = new QGroupBox(tr_ui("连接设置", "Connection"));
+    auto * layout_conn = new QHBoxLayout();
+
+    layout_conn->addWidget(new QLabel(tr_ui("端口:", "Port:")));
+    spin_glove_port_ = new QSpinBox();
+    spin_glove_port_->setRange(1024, 65535);
+    spin_glove_port_->setValue(6321);
+    layout_conn->addWidget(spin_glove_port_);
+
+    btn_glove_start_ = new QPushButton(tr_ui("开始监听", "Start Listening"));
+    btn_glove_stop_ = new QPushButton(tr_ui("停止监听", "Stop Listening"));
+    btn_glove_stop_->setEnabled(false);
+    layout_conn->addWidget(btn_glove_start_);
+    layout_conn->addWidget(btn_glove_stop_);
+
+    layout_conn->addWidget(new QLabel(tr_ui("状态:", "Status:")));
+    label_glove_status_ = new QLabel(tr_ui("未初始化", "Not Initialized"));
+    label_glove_status_->setStyleSheet("font-weight: bold; color: gray;");
+    layout_conn->addWidget(label_glove_status_);
+
+    layout_conn->addWidget(new QLabel(tr_ui("角色:", "Role:")));
+    label_glove_role_ = new QLabel("--");
+    layout_conn->addWidget(label_glove_role_);
+
+    layout_conn->addStretch();
+    group_conn->setLayout(layout_conn);
+    layout->addWidget(group_conn);
+
+    // --- Finger Joint Tables (Left & Right side by side) ---
+    auto * group_data = new QGroupBox(tr_ui("手指关节数据 (欧拉角)", "Finger Joint Data (Euler Angles)"));
+    auto * layout_data = new QHBoxLayout();
+
+    // Left hand table
+    auto * left_group = new QGroupBox(tr_ui("左手", "Left Hand"));
+    auto * left_layout = new QVBoxLayout();
+    table_glove_left_ = new QTableWidget(15, 3);
+    table_glove_left_->setHorizontalHeaderLabels({
+        tr_ui("俯仰角", "Pitch"),
+        tr_ui("偏航角", "Yaw"),
+        tr_ui("旋转角", "Roll")
+    });
+    QStringList left_labels;
+    const QString finger_names_zh[] = {
+        "拇指1", "拇指2", "拇指3",
+        "食指1", "食指2", "食指3",
+        "中指1", "中指2", "中指3",
+        "无名指1", "无名指2", "无名指3",
+        "小指1", "小指2", "小指3"
+    };
+    const QString finger_names_en[] = {
+        "Thumb1", "Thumb2", "Thumb3",
+        "Index1", "Index2", "Index3",
+        "Middle1", "Middle2", "Middle3",
+        "Ring1", "Ring2", "Ring3",
+        "Pinky1", "Pinky2", "Pinky3"
+    };
+    for (int i = 0; i < 15; ++i) {
+        left_labels << tr_ui(finger_names_zh[i].toUtf8().constData(), finger_names_en[i].toUtf8().constData());
+    }
+    table_glove_left_->setVerticalHeaderLabels(left_labels);
+    table_glove_left_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table_glove_left_->horizontalHeader()->setStretchLastSection(true);
+    table_glove_left_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    for (int r = 0; r < 15; ++r)
+        for (int c = 0; c < 3; ++c) {
+            auto * item = new QTableWidgetItem("0.0");
+            item->setTextAlignment(Qt::AlignCenter);
+            table_glove_left_->setItem(r, c, item);
+        }
+    left_layout->addWidget(table_glove_left_);
+    left_group->setLayout(left_layout);
+    layout_data->addWidget(left_group);
+
+    // Right hand table
+    auto * right_group = new QGroupBox(tr_ui("右手", "Right Hand"));
+    auto * right_layout = new QVBoxLayout();
+    table_glove_right_ = new QTableWidget(15, 3);
+    table_glove_right_->setHorizontalHeaderLabels({
+        tr_ui("俯仰角", "Pitch"),
+        tr_ui("偏航角", "Yaw"),
+        tr_ui("旋转角", "Roll")
+    });
+    QStringList right_labels;
+    for (int i = 0; i < 15; ++i) {
+        right_labels << tr_ui(finger_names_zh[i].toUtf8().constData(), finger_names_en[i].toUtf8().constData());
+    }
+    table_glove_right_->setVerticalHeaderLabels(right_labels);
+    table_glove_right_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table_glove_right_->horizontalHeader()->setStretchLastSection(true);
+    table_glove_right_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    for (int r = 0; r < 15; ++r)
+        for (int c = 0; c < 3; ++c) {
+            auto * item = new QTableWidgetItem("0.0");
+            item->setTextAlignment(Qt::AlignCenter);
+            table_glove_right_->setItem(r, c, item);
+        }
+    right_layout->addWidget(table_glove_right_);
+    right_group->setLayout(right_layout);
+    layout_data->addWidget(right_group);
+
+    group_data->setLayout(layout_data);
+    layout->addWidget(group_data, 1);
+
+    // --- Controller Data ---
+    auto * group_ctrl = new QGroupBox(tr_ui("控制器数据", "Controller Data"));
+    auto * layout_ctrl = new QGridLayout();
+
+    layout_ctrl->addWidget(new QLabel(tr_ui("左手控制器", "Left Controller")), 0, 0, 1, 2, Qt::AlignCenter);
+    layout_ctrl->addWidget(new QLabel(tr_ui("右手控制器", "Right Controller")), 0, 2, 1, 2, Qt::AlignCenter);
+
+    const QString ctrl_labels[] = {"Joy X", "Joy Y", "A Btn", "B Btn", "Joy Btn", "Menu"};
+    for (int i = 0; i < 6; ++i) {
+        layout_ctrl->addWidget(new QLabel(ctrl_labels[i]), i + 1, 0);
+        label_glove_ctrl_[i] = new QLabel("0");
+        label_glove_ctrl_[i]->setAlignment(Qt::AlignCenter);
+        label_glove_ctrl_[i]->setMinimumWidth(60);
+        layout_ctrl->addWidget(label_glove_ctrl_[i], i + 1, 1);
+    }
+    for (int i = 0; i < 6; ++i) {
+        layout_ctrl->addWidget(new QLabel(ctrl_labels[i]), i + 1, 2);
+        label_glove_ctrl_[6 + i] = new QLabel("0");
+        label_glove_ctrl_[6 + i]->setAlignment(Qt::AlignCenter);
+        label_glove_ctrl_[6 + i]->setMinimumWidth(60);
+        layout_ctrl->addWidget(label_glove_ctrl_[6 + i], i + 1, 3);
+    }
+
+    group_ctrl->setLayout(layout_ctrl);
+    layout->addWidget(group_ctrl);
+
+    // --- Connections ---
+    connect(btn_glove_start_, &QPushButton::clicked, this, [this](){
+        if (!glove_sdk_) {
+            glove_sdk_ = std::make_unique<UDEGloveSDK>();
+            glove_sdk_->SetPortNum(spin_glove_port_->value());
+            int ret = glove_sdk_->Initialize();
+            if (ret != 0) {
+                label_glove_status_->setText(tr_ui("初始化失败", "Init Failed"));
+                label_glove_status_->setStyleSheet("font-weight: bold; color: red;");
+                glove_sdk_.reset();
+                return;
+            }
+        }
+        glove_sdk_->StartListening();
+        label_glove_status_->setText(tr_ui("监听中", "Listening"));
+        label_glove_status_->setStyleSheet("font-weight: bold; color: green;");
+        btn_glove_start_->setEnabled(false);
+        btn_glove_stop_->setEnabled(true);
+        spin_glove_port_->setEnabled(false);
+
+        if (!glove_timer_) {
+            glove_timer_ = new QTimer(this);
+            connect(glove_timer_, &QTimer::timeout, this, &AppWindow::updateGloveData);
+        }
+        glove_timer_->start(50); // 20Hz UI update
+    });
+
+    connect(btn_glove_stop_, &QPushButton::clicked, this, [this](){
+        if (glove_timer_) {
+            glove_timer_->stop();
+        }
+        if (glove_sdk_) {
+            // Cannot cleanly stop the detached recv thread, just reset
+            glove_sdk_.reset();
+        }
+        label_glove_status_->setText(tr_ui("已停止", "Stopped"));
+        label_glove_status_->setStyleSheet("font-weight: bold; color: orange;");
+        btn_glove_start_->setEnabled(true);
+        btn_glove_stop_->setEnabled(false);
+        spin_glove_port_->setEnabled(true);
+        label_glove_role_->setText("--");
+    });
+
+    return widget;
+}
+
+void AppWindow::updateGloveData() {
+    if (!glove_sdk_ || glove_sdk_->GetStatus() != ServerStatus::IN_LISTENING)
+        return;
+
+    auto roles = glove_sdk_->GetRoleNameList();
+    if (roles.empty()) {
+        label_glove_role_->setText(tr_ui("等待数据...", "Waiting..."));
+        return;
+    }
+
+    label_glove_role_->setText(QString::fromStdString(roles[0]));
+
+    auto finger_data = glove_sdk_->GetVecFingerData(roles[0]);
+    if ((int)finger_data.size() < 30) return;
+
+    // Left hand: indices 0-14
+    for (int i = 0; i < 15; ++i) {
+        table_glove_left_->item(i, 0)->setText(QString::number(finger_data[i].x, 'f', 1));
+        table_glove_left_->item(i, 1)->setText(QString::number(finger_data[i].y, 'f', 1));
+        table_glove_left_->item(i, 2)->setText(QString::number(finger_data[i].z, 'f', 1));
+    }
+
+    // Right hand: indices 15-29
+    for (int i = 0; i < 15; ++i) {
+        table_glove_right_->item(i, 0)->setText(QString::number(finger_data[15 + i].x, 'f', 1));
+        table_glove_right_->item(i, 1)->setText(QString::number(finger_data[15 + i].y, 'f', 1));
+        table_glove_right_->item(i, 2)->setText(QString::number(finger_data[15 + i].z, 'f', 1));
+    }
+
+    // Controller data
+    float* ctrl = glove_sdk_->GetVecControllerData(roles[0]);
+    if (ctrl) {
+        for (int i = 0; i < 12; ++i) {
+            label_glove_ctrl_[i]->setText(QString::number(ctrl[i], 'f', 2));
+        }
+    }
 }

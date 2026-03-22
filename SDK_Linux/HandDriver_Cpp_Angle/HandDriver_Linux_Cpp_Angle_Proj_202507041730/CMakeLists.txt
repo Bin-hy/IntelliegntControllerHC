@@ -1,0 +1,15 @@
+PROJECT(libUDEServer)
+CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+
+set(PROJECT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread")
+include_directories(${PROJECT_SOURCE_DIR}/include/json)
+target_link_libraries(${PROJECT_SOURCE_DIR}/lib)
+add_subdirectory(${PROJECT_SOURCE_DIR}/include)
+
+add_library(UDEServer SHARED UDEServer.cxx UDEServer.h)
