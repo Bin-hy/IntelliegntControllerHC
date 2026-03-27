@@ -15,6 +15,7 @@
 #include <array>
 #include <map>
 #include <string>
+#include <atomic>
 #include <jsoncpp/json/json.h>
 
 using namespace std;
@@ -179,6 +180,7 @@ static string ControllerHeaders[12] =
 class UDEGloveSDK
 {
     public:
+        ~UDEGloveSDK();
         int Initialize();
         void SetPortNum(int port);
         int GetPortNum() { return Port; };
@@ -189,27 +191,24 @@ class UDEGloveSDK
         vector<string> GetRoleNameList();
         vector<Vector3Float> GetVecFingerData(string RoleName);
         float* GetVecControllerData(string RoleName);
-        
+
         map<string, vector<float>> GetFingerData(string RoleName);
         map<string, float> GetControllerData(string RoleName);
 
     private:
-        int sock_fd;
+        int sock_fd = -1;
         int Port = 5555;
+        std::atomic<bool> running_{false};
         vector<string> NameList;
         float* ControllerRes = new float[12];
         vector<Vector3Float> GloveVecRes;
         ServerStatus CurStatus = ServerStatus::NO_INIT;
         std::thread recv_t;
         sockaddr_in server_addr;
-        void static recv_func(int sock_fd_);
+        void static recv_func(int sock_fd_, std::atomic<bool>* running);
         static vector<GloveData>gloveDataList;
         static vector<GloveControllerData>gloveControllerDataList;
-        
+
         map<string, vector<float>> GloveRes;
         map<string, float> ControllerMapRes;
-
-        //string Send_IP = "127.0.0.1";
-        //sockaddr_in client_addr;
-        //void static send_func(int sock_fd_);
 };

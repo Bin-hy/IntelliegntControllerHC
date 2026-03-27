@@ -3,15 +3,32 @@
 vector<GloveData> UDEGloveSDK::gloveDataList;
 vector<GloveControllerData> UDEGloveSDK::gloveControllerDataList;
 
+UDEGloveSDK::~UDEGloveSDK()
+{
+    running_ = false;
+    if (sock_fd >= 0) {
+        close(sock_fd);
+        sock_fd = -1;
+    }
+    if (recv_t.joinable()) {
+        recv_t.join();
+    }
+    delete[] ControllerRes;
+    ControllerRes = nullptr;
+}
+
 int UDEGloveSDK::Initialize()
 {
-    sock_fd = socket(AF_INET , SOCK_DGRAM , 0); 
+    sock_fd = socket(AF_INET , SOCK_DGRAM , 0);
     if(sock_fd < 0){
         perror("failed to open socket");
         return -1;
     }
 
-    /** 绑定IP和端口号 */ 
+    int reuse = 1;
+    setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    /** 绑定IP和端口号 */
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY; // 本地任意IP
     server_addr.sin_port = htons(UDEGloveSDK::Port);   // 指定端口号
@@ -20,6 +37,7 @@ int UDEGloveSDK::Initialize()
     {
         perror("failed to bind");
         close(sock_fd);
+        sock_fd = -1;
         return -1;
     }
 
@@ -49,13 +67,13 @@ int UDEGloveSDK::Initialize()
     return 0;
 }
 
-void UDEGloveSDK::recv_func(int sock_fd_)
+void UDEGloveSDK::recv_func(int sock_fd_, std::atomic<bool>* running)
 {
     char buffer[1024 * 1024];
     struct sockaddr_in addr;
     socklen_t addr_len = sizeof(addr);
 
-    while(true)
+    while(*running)
     {
         memset(buffer, 0, sizeof(buffer));
         ssize_t len = recvfrom(sock_fd_, buffer, sizeof(buffer), 0, reinterpret_cast<struct sockaddr *>(&addr), &addr_len);
@@ -150,7 +168,7 @@ void UDEGloveSDK::recv_func(int sock_fd_)
             }
 
         }else{
-            perror("recv error");
+            if (!*running) break;
         }
     }
 }
@@ -184,15 +202,22 @@ void UDEGloveSDK::SetPortNum(int port)
 
 void UDEGloveSDK::StartListening()
 {
-    UDEGloveSDK::recv_t = thread(UDEGloveSDK::recv_func, UDEGloveSDK::sock_fd);
-    recv_t.detach();
-    UDEGloveSDK::CurStatus = ServerStatus::IN_LISTENING;
+    running_ = true;
+    recv_t = thread(UDEGloveSDK::recv_func, sock_fd, &running_);
+    CurStatus = ServerStatus::IN_LISTENING;
 }
 
 void UDEGloveSDK::EndListening()
 {
-    UDEGloveSDK::recv_t.join();
-    UDEGloveSDK::CurStatus = ServerStatus::END;
+    running_ = false;
+    if (sock_fd >= 0) {
+        close(sock_fd);
+        sock_fd = -1;
+    }
+    if (recv_t.joinable()) {
+        recv_t.join();
+    }
+    CurStatus = ServerStatus::END;
 }
 
 ServerStatus UDEGloveSDK::GetStatus()
