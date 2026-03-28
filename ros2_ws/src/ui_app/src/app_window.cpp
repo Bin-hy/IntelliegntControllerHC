@@ -72,9 +72,9 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node,
     btn_power_off_ = nullptr;
     spin_vel_ = nullptr;
     spin_acc_ = nullptr;
-    combo_io_type_ = nullptr;
-    spin_io_port_ = nullptr;
-    chk_io_value_ = nullptr;
+    combo_io_group_ = nullptr;
+    io_grid_ = nullptr;
+    io_rows_container_ = nullptr;
     combo_camera_ = nullptr;
     combo_pc_topic_ = nullptr;
     btn_scan_ = nullptr;
@@ -1078,61 +1078,265 @@ QWidget* AppWindow::createIOTab() {
     auto * widget = new QWidget();
     auto * layout = new QVBoxLayout();
 
-    auto * group_io = new QGroupBox("Digital IO Control");
-    auto * io_layout = new QGridLayout();
+    // === IO Group Selector ===
+    auto * top_bar = new QHBoxLayout();
+    top_bar->addWidget(new QLabel(tr_ui("IO 分组:", "IO Group:")));
+    combo_io_group_ = new QComboBox();
+    combo_io_group_->addItems({
+        tr_ui("标准 DIO (1-8)", "Standard DIO (1-8)"),
+        tr_ui("标准 DIO (9-16)", "Standard DIO (9-16)"),
+        tr_ui("工具 IO (1-2)", "Tool IO (1-2)"),
+        tr_ui("功能 IO (1-8)", "Function IO (1-8)"),
+    });
+    top_bar->addWidget(combo_io_group_);
 
-    io_layout->addWidget(new QLabel("IO Type:"), 0, 0);
-    combo_io_type_ = new QComboBox();
-    combo_io_type_->addItems({"DO (Digital Output)", "DI (Digital Input)"});
-    io_layout->addWidget(combo_io_type_, 0, 1);
+    auto * btn_refresh = new QPushButton(tr_ui("刷新状态", "Refresh"));
+    btn_refresh->setObjectName("action_button");
+    top_bar->addWidget(btn_refresh);
 
-    io_layout->addWidget(new QLabel("Port:"), 0, 2);
-    spin_io_port_ = new QSpinBox();
-    spin_io_port_->setRange(0, 15);
-    io_layout->addWidget(spin_io_port_, 0, 3);
+    auto * btn_all_off = new QPushButton(tr_ui("全部关闭", "All OFF"));
+    btn_all_off->setObjectName("action_button");
+    top_bar->addWidget(btn_all_off);
+    top_bar->addStretch();
 
-    io_layout->addWidget(new QLabel("Value:"), 1, 0);
-    chk_io_value_ = new QCheckBox("ON");
-    io_layout->addWidget(chk_io_value_, 1, 1);
+    layout->addLayout(top_bar);
 
-    auto * btn_set_io = new QPushButton("Set IO");
-    btn_set_io->setObjectName("action_button");
-    io_layout->addWidget(btn_set_io, 1, 2);
+    // === IO Table ===
+    io_rows_container_ = new QWidget();
+    io_grid_ = new QGridLayout(io_rows_container_);
+    io_grid_->setSpacing(4);
 
-    auto * btn_get_io = new QPushButton("Read IO");
-    btn_get_io->setObjectName("action_button");
-    io_layout->addWidget(btn_get_io, 1, 3);
+    // Header row
+    io_grid_->addWidget(new QLabel(tr_ui("端口", "Port")), 0, 0);
+    io_grid_->addWidget(new QLabel(tr_ui("名称", "Name")), 0, 1);
+    io_grid_->addWidget(new QLabel(tr_ui("DO 状态", "DO State")), 0, 2, Qt::AlignCenter);
+    io_grid_->addWidget(new QLabel(tr_ui("DI 状态", "DI State")), 0, 3, Qt::AlignCenter);
+    io_grid_->addWidget(new QLabel(tr_ui("控制", "Control")), 0, 4, 1, 2, Qt::AlignCenter);
 
-    group_io->setLayout(io_layout);
-    layout->addWidget(group_io);
+    // Pre-create rows for max ports
+    for (int i = 0; i < IO_MAX_PORTS; ++i) {
+        int row = i + 1;
+        io_name_labels_[i] = new QLabel();
+        do_status_labels_[i] = new QLabel("--");
+        do_status_labels_[i]->setAlignment(Qt::AlignCenter);
+        do_status_labels_[i]->setFixedWidth(60);
+        di_status_labels_[i] = new QLabel("--");
+        di_status_labels_[i]->setAlignment(Qt::AlignCenter);
+        di_status_labels_[i]->setFixedWidth(60);
 
-    auto * label_io_result = new QLabel("IO Status: -");
-    layout->addWidget(label_io_result);
-    layout->addStretch();
+        do_on_buttons_[i] = new QPushButton(tr_ui("启动", "ON"));
+        do_on_buttons_[i]->setObjectName("action_button");
+        do_on_buttons_[i]->setFixedWidth(60);
+        do_off_buttons_[i] = new QPushButton(tr_ui("停止", "OFF"));
+        do_off_buttons_[i]->setObjectName("action_button");
+        do_off_buttons_[i]->setFixedWidth(60);
 
+        io_grid_->addWidget(new QLabel(QString::number(i + 1)), row, 0);
+        io_grid_->addWidget(io_name_labels_[i], row, 1);
+        io_grid_->addWidget(do_status_labels_[i], row, 2, Qt::AlignCenter);
+        io_grid_->addWidget(di_status_labels_[i], row, 3, Qt::AlignCenter);
+        io_grid_->addWidget(do_on_buttons_[i], row, 4);
+        io_grid_->addWidget(do_off_buttons_[i], row, 5);
+    }
+
+    auto * scroll = new QScrollArea();
+    scroll->setWidget(io_rows_container_);
+    scroll->setWidgetResizable(true);
+    layout->addWidget(scroll);
     widget->setLayout(layout);
 
-    connect(btn_set_io, &QPushButton::clicked, this, [this]() {
+    // === Connect signals ===
+    // Group selection change
+    connect(combo_io_group_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) { rebuildIORows(idx); });
+
+    // Refresh button
+    connect(btn_refresh, &QPushButton::clicked, this, [this]() { refreshIOGroup(); });
+
+    // All OFF button
+    connect(btn_all_off, &QPushButton::clicked, this, [this]() {
         if (permission_manager_ &&
             !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
             QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
                                  tr_ui("当前用户无权执行 IO 控制操作", "Insufficient permission for IO control"));
             return;
         }
-        int type = combo_io_type_->currentIndex(); // 0 = DO, 1 = DI
-        int port = spin_io_port_->value();
-        bool value = chk_io_value_->isChecked();
-        node_->call_robot_io("set", type, port, value);
+        int group = combo_io_group_->currentIndex();
+        if (group >= 3) return; // Function IO is read-only
+        int io_type = (group <= 1) ? 0 : 1; // 0=standard, 1=tool
+        int base = (group == 1) ? 9 : 1;
+        for (int i = 0; i < io_visible_count_; ++i) {
+            setDoOutput(io_type, base + i, false, i);
+        }
     });
 
-    connect(btn_get_io, &QPushButton::clicked, this, [this, label_io_result]() {
-        int type = combo_io_type_->currentIndex();
-        int port = spin_io_port_->value();
-        node_->call_robot_io("get", type, port, false);
-        label_io_result->setText(QString("IO Status: Reading port %1...").arg(port));
-    });
+    // ON/OFF buttons for each row
+    for (int i = 0; i < IO_MAX_PORTS; ++i) {
+        connect(do_on_buttons_[i], &QPushButton::clicked, this, [this, i]() {
+            if (permission_manager_ &&
+                !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+                QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                     tr_ui("当前用户无权执行 IO 控制操作", "Insufficient permission for IO control"));
+                return;
+            }
+            int group = combo_io_group_->currentIndex();
+            int io_type = (group <= 1) ? 0 : 1;
+            int base = (group == 1) ? 9 : 1;
+            setDoOutput(io_type, base + i, true, i);
+        });
+        connect(do_off_buttons_[i], &QPushButton::clicked, this, [this, i]() {
+            if (permission_manager_ &&
+                !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+                QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                     tr_ui("当前用户无权执行 IO 控制操作", "Insufficient permission for IO control"));
+                return;
+            }
+            int group = combo_io_group_->currentIndex();
+            int io_type = (group <= 1) ? 0 : 1;
+            int base = (group == 1) ? 9 : 1;
+            setDoOutput(io_type, base + i, false, i);
+        });
+    }
+
+    // Initialize first group
+    rebuildIORows(0);
 
     return widget;
+}
+
+void AppWindow::rebuildIORows(int group_index) {
+    // Standard DIO device names (port 1-8)
+    static const QString std_names[] = {
+        tr_ui("清洗机",       "Cleaner"),
+        tr_ui("左侧吹风机",   "Left Blower"),
+        tr_ui("右侧烘干机",   "Right Dryer"),
+        tr_ui("升降平台解锁",  "Lift Brake Release"),
+        tr_ui("黄灯",         "Yellow Light"),
+        tr_ui("绿灯",         "Green Light"),
+        tr_ui("红灯",         "Red Light"),
+        tr_ui("蜂鸣器",       "Buzzer"),
+    };
+
+    int count = 0;
+    bool read_only = false;
+
+    switch (group_index) {
+        case 0: count = 8;  break; // Standard 1-8
+        case 1: count = 8;  break; // Standard 9-16
+        case 2: count = 2;  break; // Tool 1-2
+        case 3: count = 8; read_only = true; break; // Function 1-8
+    }
+    io_visible_count_ = count;
+
+    int base = (group_index == 1) ? 9 : 1;
+
+    for (int i = 0; i < IO_MAX_PORTS; ++i) {
+        int row = i + 1;
+        bool visible = (i < count);
+
+        // Show/hide row widgets
+        io_grid_->itemAtPosition(row, 0)->widget()->setVisible(visible);
+        io_name_labels_[i]->setVisible(visible);
+        do_status_labels_[i]->setVisible(visible);
+        di_status_labels_[i]->setVisible(visible);
+        do_on_buttons_[i]->setVisible(visible && !read_only);
+        do_off_buttons_[i]->setVisible(visible && !read_only);
+
+        if (!visible) continue;
+
+        // Update port number label
+        static_cast<QLabel*>(io_grid_->itemAtPosition(row, 0)->widget())
+            ->setText(QString::number(base + i));
+
+        // Update name
+        if (group_index == 0 && i < 8) {
+            io_name_labels_[i]->setText(std_names[i]);
+        } else if (group_index == 2) {
+            io_name_labels_[i]->setText(QString("Tool IO %1").arg(i + 1));
+        } else if (group_index == 3) {
+            io_name_labels_[i]->setText(QString("Func IO %1").arg(i + 1));
+        } else {
+            io_name_labels_[i]->setText(QString("DIO %1").arg(base + i));
+        }
+
+        // Reset status
+        do_status_labels_[i]->setText("--");
+        do_status_labels_[i]->setStyleSheet("");
+        di_status_labels_[i]->setText("--");
+        di_status_labels_[i]->setStyleSheet("");
+    }
+}
+
+void AppWindow::refreshIOGroup() {
+    int group = combo_io_group_->currentIndex();
+    int io_type = (group <= 1) ? 0 : (group == 2) ? 1 : 2;
+    int base = (group == 1) ? 9 : 1;
+    int count = io_visible_count_;
+
+    // Stagger requests: 150ms between each port to avoid overwhelming the driver
+    for (int i = 0; i < count; ++i) {
+        int port = base + i;
+        int delay = i * 150;  // port 0: 0ms, port 1: 150ms, port 2: 300ms, ...
+        QTimer::singleShot(delay, this, [this, io_type, port, i]() {
+            readDoStatus(io_type, port, i);
+            readDiStatus(io_type, port, i);
+        });
+    }
+}
+
+void AppWindow::setDoOutput(int io_type, int port, bool value, int idx) {
+    if (idx < 0 || idx >= IO_MAX_PORTS) return;
+    do_status_labels_[idx]->setText("...");
+    node_->call_robot_io("setIo", io_type, port, value, [this, io_type, port, idx](const std::string& result) {
+        QMetaObject::invokeMethod(this, [this, io_type, port, idx, result]() {
+            bool ok = false;
+            try { ok = (std::stoi(result) >= 0); } catch (...) {}
+            if (ok) {
+                readDoStatus(io_type, port, idx);
+            } else {
+                do_status_labels_[idx]->setText("ERR");
+                do_status_labels_[idx]->setStyleSheet("color: red;");
+            }
+        });
+    });
+}
+
+void AppWindow::readDoStatus(int io_type, int port, int idx) {
+    if (idx < 0 || idx >= IO_MAX_PORTS) return;
+    do_status_labels_[idx]->setText("...");
+    node_->call_robot_io("getDo", io_type, port, false, [this, idx](const std::string& result) {
+        QMetaObject::invokeMethod(this, [this, idx, result]() {
+            if (result == "1") {
+                do_status_labels_[idx]->setText("ON");
+                do_status_labels_[idx]->setStyleSheet("color: green; font-weight: bold;");
+            } else if (result == "0") {
+                do_status_labels_[idx]->setText("OFF");
+                do_status_labels_[idx]->setStyleSheet("color: gray;");
+            } else {
+                do_status_labels_[idx]->setText("N/A");
+                do_status_labels_[idx]->setStyleSheet("color: #999;");
+            }
+        });
+    });
+}
+
+void AppWindow::readDiStatus(int io_type, int port, int idx) {
+    if (idx < 0 || idx >= IO_MAX_PORTS) return;
+    di_status_labels_[idx]->setText("...");
+    node_->call_robot_io("getIo", io_type, port, false, [this, idx](const std::string& result) {
+        QMetaObject::invokeMethod(this, [this, idx, result]() {
+            if (result == "1") {
+                di_status_labels_[idx]->setText("HIGH");
+                di_status_labels_[idx]->setStyleSheet("color: green; font-weight: bold;");
+            } else if (result == "0") {
+                di_status_labels_[idx]->setText("LOW");
+                di_status_labels_[idx]->setStyleSheet("color: gray;");
+            } else {
+                di_status_labels_[idx]->setText("N/A");
+                di_status_labels_[idx]->setStyleSheet("color: #999;");
+            }
+        });
+    });
 }
 
 QWidget* AppWindow::createLHandTab() {

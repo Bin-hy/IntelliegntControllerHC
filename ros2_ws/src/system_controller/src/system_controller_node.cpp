@@ -683,18 +683,14 @@ private:
         auto request = std::make_shared<duco_msg::srv::RobotIoControl::Request>();
         request->command = "setIo";
         request->arm_num = 0;
-        request->type = 0;  // gen IO (控制柜IO)
+        request->type = step.io_type;  // 0=standard, 1=tool
         request->port = step.io_port;
         request->value = step.io_value;
         request->block = true;
 
-        std::string port_name;
-        if (step.io_port == 1) port_name = "清洗机";
-        else if (step.io_port == 2) port_name = "吹风机";
-        else port_name = "IO_" + std::to_string(step.io_port);
-
-        RCLCPP_INFO(this->get_logger(), "IO Step: %s port=%d (%s) value=%s",
-            step.name.c_str(), step.io_port, port_name.c_str(),
+        std::string type_name = (step.io_type == 1) ? "Tool" : "Standard";
+        RCLCPP_INFO(this->get_logger(), "IO Step: %s type=%s port=%d value=%s",
+            step.name.c_str(), type_name.c_str(), step.io_port,
             step.io_value ? "HIGH" : "LOW");
 
         auto future = client_io_->async_send_request(request);
@@ -774,6 +770,9 @@ private:
             return;
         }
 
+        // Note: single-threaded executor cannot wait synchronously for inner service calls.
+        // UI now calls /duco_robot/robot_io_control directly for IO operations.
+        // This handler is kept for task execution compatibility.
         auto future = client_io_->async_send_request(request,
             [this](rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedFuture f) {
                 try {

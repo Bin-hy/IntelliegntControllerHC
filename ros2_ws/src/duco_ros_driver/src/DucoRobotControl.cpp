@@ -385,6 +385,7 @@ void DucoRobotControl::handle_robot_io_control(const std::shared_ptr<duco_msg::s
         response->response = std::to_string(ret);
         return;
     }
+    // type: 0=standard(1-16), 1=tool(1-2), 2=function(1-8, read-only)
     if ("setIo"==request->command || "SetIo"==request->command)
     {
         if (0==request->type)
@@ -401,6 +402,8 @@ void DucoRobotControl::handle_robot_io_control(const std::shared_ptr<duco_msg::s
             else
                 ret = _duco_robots[request->arm_num]->set_tool_digital_out(request->port,request->value,request->block);
         }
+        else if(2==request->type)
+            RCLCPP_ERROR(this->get_logger(),"Function IO is read-only");
         else
             RCLCPP_ERROR(this->get_logger(),"Invalid Io Type");
     }
@@ -419,6 +422,39 @@ void DucoRobotControl::handle_robot_io_control(const std::shared_ptr<duco_msg::s
                 RCLCPP_ERROR(this->get_logger(),"Invalid io port");
             else
                 ret = _duco_robots[request->arm_num]->get_tool_digital_in(request->port);
+        }
+        else if(2==request->type)
+        {
+            if (request->port<=0 || request->port>8)
+                RCLCPP_ERROR(this->get_logger(),"Invalid io port");
+            else
+                ret = _duco_robots[request->arm_num]->get_function_digital_in(request->port);
+        }
+        else
+            RCLCPP_ERROR(this->get_logger(),"Invalid Io Type");
+    }
+    else if ("getDo"==request->command || "GetDo"==request->command)
+    {
+        if (0==request->type)
+        {
+            if (request->port<=0 || request->port>16)
+                RCLCPP_ERROR(this->get_logger(),"Invalid io port");
+            else
+                ret = _duco_robots[request->arm_num]->get_standard_digital_out(request->port);
+        }
+        else if(1==request->type)
+        {
+            if (request->port<=0 || request->port>2)
+                RCLCPP_ERROR(this->get_logger(),"Invalid io port");
+            else
+                ret = _duco_robots[request->arm_num]->get_tool_digital_out(request->port);
+        }
+        else if(2==request->type)
+        {
+            if (request->port<=0 || request->port>8)
+                RCLCPP_ERROR(this->get_logger(),"Invalid io port");
+            else
+                ret = _duco_robots[request->arm_num]->get_function_digital_out(request->port);
         }
         else
             RCLCPP_ERROR(this->get_logger(),"Invalid Io Type");

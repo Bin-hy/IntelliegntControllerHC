@@ -77,8 +77,10 @@ private:
     QComboBox* combo_camera_type_;
 
     // IO UI (属于 duco arm 设备)
-    QComboBox* combo_io_device_;  // 清洗机(1), 吹风机(2)
+    QComboBox* combo_io_group_;   // Standard 1-8 / 9-16 / Tool
+    QComboBox* combo_io_port_;    // Port within group
     QComboBox* combo_io_value_;   // HIGH / LOW
+    void onIOGroupChanged(int index);
 
     QLineEdit* edit_name_;
 };

@@ -61,7 +61,8 @@ public:
                        const std::vector<float>& q, 
                        float v, float a, float r, 
                        const std::string& tool, const std::string& wobj);
-  void call_robot_io(const std::string& command, int type, int port, bool value);
+  void call_robot_io(const std::string& command, int type, int port, bool value,
+                     std::function<void(const std::string&)> callback = nullptr);
   void call_pause_task(bool pause);
   void set_user_context(const std::string& username, const std::string& role, const std::string& session_id);
   // void save_image(); // Deprecated in favor of multi-camera

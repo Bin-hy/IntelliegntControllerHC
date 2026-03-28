@@ -51,7 +51,7 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
 
     // Service Clients
     client_control_ = create_client<duco_msg::srv::RobotControl>("/ui/request_control");
-    client_io_ = create_client<duco_msg::srv::RobotIoControl>("/ui/request_io");
+    client_io_ = create_client<duco_msg::srv::RobotIoControl>("/duco_robot/robot_io_control");
     client_move_ = create_client<duco_msg::srv::RobotMove>("/ui/request_move");
     client_pause_task_ = create_client<std_srvs::srv::SetBool>("/system/pause_task");
     client_set_user_ = create_client<common_msgs::srv::SetCurrentUser>("/system/set_current_user");
@@ -524,9 +524,11 @@ void RosNode::call_robot_move_joint(const std::vector<double>& joints) {
         });
 }
 
-void RosNode::call_robot_io(const std::string& command, int type, int port, bool value) {
+void RosNode::call_robot_io(const std::string& command, int type, int port, bool value,
+                            std::function<void(const std::string&)> callback) {
     if (!client_io_->wait_for_service(std::chrono::seconds(1))) {
         RCLCPP_WARN(this->get_logger(), "IO Service not available");
+        if (callback) callback("Service unavailable");
         return;
     }
     auto request = std::make_shared<duco_msg::srv::RobotIoControl::Request>();
@@ -538,13 +540,15 @@ void RosNode::call_robot_io(const std::string& command, int type, int port, bool
     request->block = false;
 
     using ServiceT = duco_msg::srv::RobotIoControl;
-    client_io_->async_send_request(request, 
-        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+    client_io_->async_send_request(request,
+        [this, callback](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
                 RCLCPP_INFO(get_logger(), "IO Result: %s", response->response.c_str());
+                if (callback) callback(response->response);
             } catch (const std::exception &e) {
                 RCLCPP_ERROR(get_logger(), "IO service call failed: %s", e.what());
+                if (callback) callback("error");
             }
         });
 }

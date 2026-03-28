@@ -169,14 +169,23 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
 
     widget_io_ = new QWidget();
     auto * io_layout = new QFormLayout(widget_io_);
-    combo_io_device_ = new QComboBox();
-    combo_io_device_->addItem(QString::fromUtf8("清洗机 (IO 1)"), 1);
-    combo_io_device_->addItem(QString::fromUtf8("吹风机 (IO 2)"), 2);
-    io_layout->addRow(QString::fromUtf8("IO 设备:"), combo_io_device_);
+    combo_io_group_ = new QComboBox();
+    combo_io_group_->addItem(QString::fromUtf8("标准 DIO (1-8)"), 0);   // type=0, base=1
+    combo_io_group_->addItem(QString::fromUtf8("标准 DIO (9-16)"), 1);  // type=0, base=9
+    combo_io_group_->addItem(QString::fromUtf8("工具 IO (1-2)"), 2);    // type=1, base=1
+    io_layout->addRow(QString::fromUtf8("IO 分组:"), combo_io_group_);
+
+    combo_io_port_ = new QComboBox();
+    io_layout->addRow(QString::fromUtf8("IO 端口:"), combo_io_port_);
+
     combo_io_value_ = new QComboBox();
     combo_io_value_->addItem(QString::fromUtf8("开启 (HIGH)"), true);
     combo_io_value_->addItem(QString::fromUtf8("关闭 (LOW)"), false);
     io_layout->addRow(QString::fromUtf8("电平:"), combo_io_value_);
+
+    connect(combo_io_group_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &StepAddDialog::onIOGroupChanged);
+    onIOGroupChanged(0);
 
     stack->addWidget(widget_arm_);
     stack->addWidget(widget_hand_);
@@ -238,6 +247,26 @@ void StepAddDialog::onTypeChanged(const QString& type) {
     else stack->setCurrentWidget(widget_camera_);
 }
 
+void StepAddDialog::onIOGroupChanged(int index) {
+    combo_io_port_->clear();
+    static const QString std_names[] = {
+        QString::fromUtf8("清洗机"), QString::fromUtf8("左侧吹风机"),
+        QString::fromUtf8("右侧烘干机"), QString::fromUtf8("升降平台解锁"),
+        QString::fromUtf8("黄灯"), QString::fromUtf8("绿灯"),
+        QString::fromUtf8("红灯"), QString::fromUtf8("蜂鸣器"),
+    };
+    if (index == 0) { // Standard 1-8
+        for (int i = 0; i < 8; ++i)
+            combo_io_port_->addItem(QString("%1 - %2").arg(i + 1).arg(std_names[i]), i + 1);
+    } else if (index == 1) { // Standard 9-16
+        for (int i = 0; i < 8; ++i)
+            combo_io_port_->addItem(QString("DIO %1").arg(i + 9), i + 9);
+    } else if (index == 2) { // Tool 1-2
+        combo_io_port_->addItem(QString::fromUtf8("Tool IO 1"), 1);
+        combo_io_port_->addItem(QString::fromUtf8("Tool IO 2"), 2);
+    }
+}
+
 void StepAddDialog::onCaptureCurrent() {
     std::lock_guard<std::mutex> lock(node_->data_mutex_);
     if (node_->current_joints_.size() >= 6) {
@@ -286,9 +315,18 @@ void StepAddDialog::setStep(const common_msgs::msg::TaskStep& step) {
             if (ct_idx >= 0) combo_camera_type_->setCurrentIndex(ct_idx);
         }
     } else if (step.type == "io") {
-        for (int i = 0; i < combo_io_device_->count(); ++i) {
-            if (combo_io_device_->itemData(i).toInt() == step.io_port) {
-                combo_io_device_->setCurrentIndex(i);
+        // Determine group from io_type and io_port
+        int group = 0;
+        if (step.io_type == 1) {
+            group = 2; // Tool IO
+        } else if (step.io_port >= 9) {
+            group = 1; // Standard 9-16
+        }
+        combo_io_group_->setCurrentIndex(group);
+        // Find port in combo
+        for (int i = 0; i < combo_io_port_->count(); ++i) {
+            if (combo_io_port_->itemData(i).toInt() == step.io_port) {
+                combo_io_port_->setCurrentIndex(i);
                 break;
             }
         }
@@ -313,7 +351,9 @@ common_msgs::msg::TaskStep StepAddDialog::getStep() const {
         step.camera_type.clear();
         step.camera_type.push_back(combo_camera_type_->currentText().toStdString());
     } else if (step.type == "io") {
-        step.io_port = static_cast<int8_t>(combo_io_device_->currentData().toInt());
+        int group = combo_io_group_->currentIndex();
+        step.io_type = (group == 2) ? 1 : 0; // 0=standard, 1=tool
+        step.io_port = static_cast<int8_t>(combo_io_port_->currentData().toInt());
         step.io_value = combo_io_value_->currentData().toBool();
     }
     return step;

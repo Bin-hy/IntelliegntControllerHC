@@ -20,6 +20,7 @@ class QComboBox;
 class QCheckBox;
 class QTabWidget;
 class QTableWidget;
+class QGridLayout;
 class QLineEdit;
 class QDateTimeEdit;
 class QToolButton;
@@ -96,9 +97,23 @@ private:
   QDoubleSpinBox* spin_vel_;
   QDoubleSpinBox* spin_acc_;
 
-  QComboBox* combo_io_type_;
-  QSpinBox* spin_io_port_;
-  QCheckBox* chk_io_value_;
+  // IO Control Panel
+  static constexpr int IO_MAX_PORTS = 16;
+  QComboBox* combo_io_group_;
+  QGridLayout* io_grid_;
+  QWidget* io_rows_container_;
+  QLabel* do_status_labels_[IO_MAX_PORTS];
+  QLabel* di_status_labels_[IO_MAX_PORTS];
+  QPushButton* do_on_buttons_[IO_MAX_PORTS];
+  QPushButton* do_off_buttons_[IO_MAX_PORTS];
+  QLabel* io_name_labels_[IO_MAX_PORTS];
+  int io_visible_count_ = 0;
+
+  void rebuildIORows(int group_index);
+  void refreshIOGroup();
+  void setDoOutput(int io_type, int port, bool value, int idx);
+  void readDoStatus(int io_type, int port, int idx);
+  void readDiStatus(int io_type, int port, int idx);
 
   QComboBox* combo_camera_;
   QComboBox* combo_pc_topic_;
