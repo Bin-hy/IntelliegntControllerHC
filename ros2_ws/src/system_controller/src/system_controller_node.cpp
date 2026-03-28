@@ -404,6 +404,8 @@ private:
                     step_success = execute_hand_step(step, goal_handle);
                 } else if (step.type == "camera") {
                     step_success = execute_camera_step(step, goal_handle, goal->task_config.task_name, run_time, round);
+                } else if (step.type == "io") {
+                    step_success = execute_io_step(step, goal_handle);
                 } else {
                     RCLCPP_WARN(this->get_logger(), "Unknown step type: %s", step.type.c_str());
                 }
@@ -670,6 +672,49 @@ private:
         }
         
         return success;
+    }
+
+    bool execute_io_step(const common_msgs::msg::TaskStep& step, std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
+        if (!client_io_->wait_for_service(2s)) {
+            RCLCPP_ERROR(this->get_logger(), "IO service not available");
+            return false;
+        }
+
+        auto request = std::make_shared<duco_msg::srv::RobotIoControl::Request>();
+        request->command = "setIo";
+        request->arm_num = 0;
+        request->type = 0;  // gen IO (控制柜IO)
+        request->port = step.io_port;
+        request->value = step.io_value;
+        request->block = true;
+
+        std::string port_name;
+        if (step.io_port == 1) port_name = "清洗机";
+        else if (step.io_port == 2) port_name = "吹风机";
+        else port_name = "IO_" + std::to_string(step.io_port);
+
+        RCLCPP_INFO(this->get_logger(), "IO Step: %s port=%d (%s) value=%s",
+            step.name.c_str(), step.io_port, port_name.c_str(),
+            step.io_value ? "HIGH" : "LOW");
+
+        auto future = client_io_->async_send_request(request);
+        while (rclcpp::ok()) {
+            auto status = future.wait_for(100ms);
+            if (status == std::future_status::ready) break;
+            if (goal_handle->is_canceling()) {
+                RCLCPP_WARN(this->get_logger(), "Task canceled during IO step");
+                return false;
+            }
+        }
+
+        try {
+            auto response = future.get();
+            RCLCPP_INFO(this->get_logger(), "IO step result: %s", response->response.c_str());
+            return true;
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "IO step exception: %s", e.what());
+            return false;
+        }
     }
 
     void handle_move_request(const std::shared_ptr<duco_msg::srv::RobotMove::Request> request,

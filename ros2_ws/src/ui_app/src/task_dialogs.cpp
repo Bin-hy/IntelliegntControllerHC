@@ -131,7 +131,7 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     layout->addLayout(h_name);
 
     combo_type_ = new QComboBox();
-    combo_type_->addItems({"arm", "lhand", "rhand", "camera"});
+    combo_type_->addItems({"arm", "lhand", "rhand", "camera", "io"});
     layout->addWidget(new QLabel("Step Type:"));
     layout->addWidget(combo_type_);
 
@@ -167,9 +167,21 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     combo_camera_type_->addItems({"color", "depth", "ir_left", "ir_right", "point_cloud"});
     cam_layout->addRow("Camera Type:", combo_camera_type_);
 
+    widget_io_ = new QWidget();
+    auto * io_layout = new QFormLayout(widget_io_);
+    combo_io_device_ = new QComboBox();
+    combo_io_device_->addItem(QString::fromUtf8("清洗机 (IO 1)"), 1);
+    combo_io_device_->addItem(QString::fromUtf8("吹风机 (IO 2)"), 2);
+    io_layout->addRow(QString::fromUtf8("IO 设备:"), combo_io_device_);
+    combo_io_value_ = new QComboBox();
+    combo_io_value_->addItem(QString::fromUtf8("开启 (HIGH)"), true);
+    combo_io_value_->addItem(QString::fromUtf8("关闭 (LOW)"), false);
+    io_layout->addRow(QString::fromUtf8("电平:"), combo_io_value_);
+
     stack->addWidget(widget_arm_);
     stack->addWidget(widget_hand_);
     stack->addWidget(widget_camera_);
+    stack->addWidget(widget_io_);
     layout->addWidget(stack);
 
     auto * buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -190,11 +202,30 @@ void StepAddDialog::onTypeChanged(const QString& type) {
             combo_device_->addItem(QString::fromStdString(cam), QString::fromStdString(cam));
         }
     } else {
-        std::string target_type = (type == "arm") ? "duco" : type.toStdString();
+        // arm 和 io 都属于 duco 机械臂设备
+        std::string target_type;
+        if (type == "arm" || type == "io") {
+            target_type = "duco";
+        } else {
+            target_type = type.toStdString();
+        }
+
         for (const auto& dev : devices_) {
             if (dev.device_type == target_type) {
                 QString label = QString::fromStdString(dev.device_name.empty() ? dev.device_sn : dev.device_name);
                 combo_device_->addItem(label, QString::fromStdString(dev.device_sn));
+            }
+        }
+
+        // fallback: 任务设备列表中没有时从已连接设备扫描
+        if (combo_device_->count() == 0) {
+            auto connected = node_->get_connected_devices();
+            for (const auto& dev : connected) {
+                if (dev.device_type == target_type) {
+                    QString label = QString::fromStdString(dev.device_model.empty() ? dev.device_name : dev.device_model);
+                    if (!dev.device_sn.empty()) label += " (" + QString::fromStdString(dev.device_sn) + ")";
+                    combo_device_->addItem(label, QString::fromStdString(dev.device_sn));
+                }
             }
         }
     }
@@ -203,6 +234,7 @@ void StepAddDialog::onTypeChanged(const QString& type) {
     if (!stack) return;
     if (type == "arm") stack->setCurrentWidget(widget_arm_);
     else if (type == "lhand" || type == "rhand") stack->setCurrentWidget(widget_hand_);
+    else if (type == "io") stack->setCurrentWidget(widget_io_);
     else stack->setCurrentWidget(widget_camera_);
 }
 
@@ -253,6 +285,14 @@ void StepAddDialog::setStep(const common_msgs::msg::TaskStep& step) {
             int ct_idx = combo_camera_type_->findText(QString::fromStdString(step.camera_type[0]));
             if (ct_idx >= 0) combo_camera_type_->setCurrentIndex(ct_idx);
         }
+    } else if (step.type == "io") {
+        for (int i = 0; i < combo_io_device_->count(); ++i) {
+            if (combo_io_device_->itemData(i).toInt() == step.io_port) {
+                combo_io_device_->setCurrentIndex(i);
+                break;
+            }
+        }
+        combo_io_value_->setCurrentIndex(step.io_value ? 0 : 1);
     }
 }
 
@@ -272,6 +312,9 @@ common_msgs::msg::TaskStep StepAddDialog::getStep() const {
     } else if (step.type == "camera") {
         step.camera_type.clear();
         step.camera_type.push_back(combo_camera_type_->currentText().toStdString());
+    } else if (step.type == "io") {
+        step.io_port = static_cast<int8_t>(combo_io_device_->currentData().toInt());
+        step.io_value = combo_io_value_->currentData().toBool();
     }
     return step;
 }

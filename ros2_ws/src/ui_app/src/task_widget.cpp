@@ -168,7 +168,10 @@ void TaskWidget::saveTasks() {
             QJsonArray camTypes;
             for (const auto& c : step.camera_type) camTypes.append(QString::fromStdString(c));
             stepObj["camera_type"] = camTypes;
-            
+
+            stepObj["io_port"] = step.io_port;
+            stepObj["io_value"] = step.io_value;
+
             steps.append(stepObj);
         }
         taskObj["task_seqs"] = steps;
@@ -238,7 +241,10 @@ void TaskWidget::loadTasks() {
                  // Fallback for legacy single string
                  step.camera_type.push_back(sObj["camera_type"].toString().toStdString());
             }
-            
+
+            step.io_port = static_cast<int8_t>(sObj["io_port"].toInt(0));
+            step.io_value = sObj["io_value"].toBool(false);
+
             task.task_seqs.push_back(step);
         }
         
@@ -420,7 +426,7 @@ void TaskWidget::onExportCSV() {
 
     QTextStream out(&file);
     // Header
-    out << "step_name,type,J1,J2,J3,J4,J5,J6,H1,H2,H3,H4,H5,H6,camera_type\n";
+    out << "step_name,type,J1,J2,J3,J4,J5,J6,H1,H2,H3,H4,H5,H6,camera_type,io_port,io_value\n";
 
     for (const auto& step : task.task_seqs) {
         out << QString::fromStdString(step.name) << ","
@@ -447,6 +453,9 @@ void TaskWidget::onExportCSV() {
         if (!step.camera_type.empty()) {
             out << QString::fromStdString(step.camera_type[0]);
         }
+        // IO fields
+        out << "," << step.io_port;
+        out << "," << (step.io_value ? "HIGH" : "LOW");
         out << "\n";
     }
 
