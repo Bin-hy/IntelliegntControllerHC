@@ -14,6 +14,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(vision_server REQUIRED)
+find_package(lift_server REQUIRED)
 find_package(lhandpro_interfaces REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -62,6 +63,7 @@ find_package(rclcpp_action REQUIRED)
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
     ${CMAKE_BINARY_DIR}/../vision_server/rosidl_generator_cpp
+    ${CMAKE_BINARY_DIR}/../lift_server/rosidl_generator_cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/ude_glove_sdk
   )
 
@@ -90,6 +92,7 @@ find_package(rclcpp_action REQUIRED)
     OpenCV
     lhandpro_interfaces
     vision_server
+    lift_server
     tf2_ros
     tf2_geometry_msgs
     geometry_msgs

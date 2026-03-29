@@ -67,6 +67,14 @@ private:
     QWidget* widget_camera_;
     QWidget* widget_io_;
 
+    // Lift UI
+    QWidget* widget_lift_;
+    QComboBox* combo_lift_command_;
+    QSpinBox* spin_lift_speed_rpm_;
+    QSpinBox* spin_lift_target_pulses_;
+    QSpinBox* spin_lift_accel_ms_;
+    QSpinBox* spin_lift_decel_ms_;
+
     // Arm UI
     QDoubleSpinBox* spin_arm_pos_[6];
 
@@ -81,6 +89,9 @@ private:
     QComboBox* combo_io_port_;    // Port within group
     QComboBox* combo_io_value_;   // HIGH / LOW
     void onIOGroupChanged(int index);
+
+    // Delay UI
+    QSpinBox* spin_delay_ms_;
 
     QLineEdit* edit_name_;
 };

@@ -1,0 +1,9 @@
+# Measure earphone insertion angle and depth after placement
+string file_tag          # optional tag for archiving; empty = measure only
+---
+bool    success
+string  message
+float64 angle_deg        # earphone tilt angle relative to ear canal (degrees)
+float64 depth_mm         # insertion depth / protrusion from ear surface (mm)
+float64 confidence       # measurement confidence 0~1
+string  saved_path       # path to saved debug image (empty if file_tag empty)

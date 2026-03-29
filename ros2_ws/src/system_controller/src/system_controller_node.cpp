@@ -12,6 +12,10 @@
 #include <lhandpro_interfaces/srv/set_position.hpp>
 #include <lhandpro_interfaces/srv/move_motors.hpp>
 #include <vision_server/srv/save_image.hpp>
+#include <vision_server/srv/measure_depth.hpp>
+#include <lift_server/srv/lift_control.hpp>
+#include <common_msgs/msg/collision_status.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <std_srvs/srv/set_bool.hpp>
 #include <mutex>
@@ -81,8 +85,27 @@ public:
             std::bind(&SystemController::handle_cancel, this, std::placeholders::_1),
             std::bind(&SystemController::handle_accepted, this, std::placeholders::_1));
 
-        // Timer to publish this controller's status or aggregate status?
-        // Maybe not needed for now.
+        // Collision detector integration
+        sub_collision_ = this->create_subscription<common_msgs::msg::CollisionStatus>(
+            "/collision_detector/status", 10,
+            [this](common_msgs::msg::CollisionStatus::SharedPtr msg) {
+                if (msg->status == "emergency" && is_busy_ && !is_paused_) {
+                    RCLCPP_ERROR(this->get_logger(), "Collision emergency: %s", msg->message.c_str());
+                    is_paused_ = true;
+                    pause_reason_ = "碰撞检测紧急停止: " + msg->message;
+                }
+            });
+        pub_collision_topic_ = this->create_publisher<std_msgs::msg::String>(
+            "/collision_detector/set_topic", 10);
+
+        // Depth measure client + camera switch publisher
+        pub_depth_camera_ = this->create_publisher<std_msgs::msg::String>(
+            "/depth_measure/set_camera", 10);
+        client_depth_measure_ = this->create_client<vision_server::srv::MeasureDepth>(
+            "/depth_measure/measure");
+
+        // Lift platform client
+        client_lift_ = this->create_client<lift_server::srv::LiftControl>("/lift_server/lift_control");
 
         RCLCPP_INFO(this->get_logger(), "SystemController Node Started.");
     }
@@ -111,12 +134,19 @@ private:
     // Subscribers
     rclcpp::Subscription<duco_msg::msg::DucoRobotState>::SharedPtr sub_state_;
     rclcpp::Subscription<common_msgs::msg::DeviceStatus>::SharedPtr sub_device_status_;
+    rclcpp::Subscription<common_msgs::msg::CollisionStatus>::SharedPtr sub_collision_;
+
+    // Publishers
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_collision_topic_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_depth_camera_;
 
     // Clients
     rclcpp::Client<duco_msg::srv::RobotMove>::SharedPtr client_move_;
     rclcpp::Client<duco_msg::srv::RobotControl>::SharedPtr client_control_;
     rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedPtr client_io_;
     rclcpp::Client<duco_msg::srv::RobotTaskStateRquest>::SharedPtr client_task_state_;
+    rclcpp::Client<vision_server::srv::MeasureDepth>::SharedPtr client_depth_measure_;
+    rclcpp::Client<lift_server::srv::LiftControl>::SharedPtr client_lift_;
 
     // Services
     rclcpp::Service<duco_msg::srv::RobotMove>::SharedPtr srv_move_;
@@ -230,6 +260,20 @@ private:
         if (!check.device_sn.empty() && status.device_sn != check.device_sn) return false;
         if (!check.device_type.empty() && status.device_type != check.device_type) return false;
         return true;
+    }
+
+    // Resolve camera SN to a namespace string (e.g., "/CV2R1610004H")
+    std::string resolve_camera_ns(const std::string& camera_sn) {
+        if (camera_sn.empty()) return {};
+        if (camera_sn.front() == '/') return camera_sn;
+        {
+            std::lock_guard<std::mutex> lock(devices_mutex_);
+            auto it = connected_devices_.find(camera_sn);
+            if (it != connected_devices_.end() && !it->second.topic_prefix.empty()) {
+                return it->second.topic_prefix;
+            }
+        }
+        return "/" + camera_sn;
     }
 
     bool check_vision_topics(const common_msgs::msg::TaskDeviceCheck& check) {
@@ -361,6 +405,21 @@ private:
         
         RCLCPP_INFO(this->get_logger(), "All devices found.");
 
+        // Notify collision_detector and depth_measure of task camera
+        if (!goal->task_config.collision_camera_sn.empty()) {
+            std::string ns = resolve_camera_ns(goal->task_config.collision_camera_sn);
+            if (!ns.empty()) {
+                auto msg = std_msgs::msg::String();
+                msg.data = ns + "/depth/points";
+                pub_collision_topic_->publish(msg);
+                // Also set depth_measure camera to the same
+                auto msg2 = std_msgs::msg::String();
+                msg2.data = ns;
+                pub_depth_camera_->publish(msg2);
+                RCLCPP_INFO(this->get_logger(), "Task camera set: %s", ns.c_str());
+            }
+        }
+
         int rounds = goal->task_config.exec_rounds > 0 ? goal->task_config.exec_rounds : 1;
         std::string run_time = current_run_time_tag();
         int step_index = 0;
@@ -406,6 +465,8 @@ private:
                     step_success = execute_camera_step(step, goal_handle, goal->task_config.task_name, run_time, round);
                 } else if (step.type == "io") {
                     step_success = execute_io_step(step, goal_handle);
+                } else if (step.type == "lift") {
+                    step_success = execute_lift_step(step, goal_handle);
                 } else {
                     RCLCPP_WARN(this->get_logger(), "Unknown step type: %s", step.type.c_str());
                 }
@@ -422,6 +483,41 @@ private:
                     result->message = "Step " + std::to_string(step_index) + " failed";
                     goal_handle->abort(result);
                     return;
+                }
+
+                if (step.delay_ms > 0) {
+                    RCLCPP_INFO(this->get_logger(), "Delaying for %d ms", step.delay_ms);
+                    feedback->current_status = "Delaying " + std::to_string(step.delay_ms) + " ms";
+                    goal_handle->publish_feedback(feedback);
+                    
+                    auto start_time = std::chrono::steady_clock::now();
+                    while (rclcpp::ok()) {
+                        if (goal_handle->is_canceling()) {
+                            result->success = false;
+                            result->message = "Canceled during delay";
+                            goal_handle->canceled(result);
+                            return;
+                        }
+                        
+                        auto now = std::chrono::steady_clock::now();
+                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
+                        if (elapsed >= step.delay_ms) {
+                            break;
+                        }
+                        
+                        if (is_paused_) {
+                            feedback->current_status = pause_reason_.empty() ? "Paused" : pause_reason_;
+                            goal_handle->publish_feedback(feedback);
+                            std::unique_lock<std::mutex> lock(pause_mutex_);
+                            pause_cv_.wait(lock, [this, &goal_handle]{ return !is_paused_ || goal_handle->is_canceling(); });
+                            // Resume the delay
+                            start_time = std::chrono::steady_clock::now() - std::chrono::milliseconds(elapsed);
+                            feedback->current_status = "Delaying " + std::to_string(step.delay_ms) + " ms";
+                            goal_handle->publish_feedback(feedback);
+                        }
+                        
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    }
                 }
 
                 step_index++;
@@ -667,6 +763,44 @@ private:
                 } else if (type == "ir_right") {
                      std::string right_ir = cam_ns + "/right_ir/image_raw";
                      if (!call_save(right_ir, step_tag + "_IRRight")) success = false;
+                } else if (type == "depth_measure") {
+                     // Snapshot depth measurement and save
+                     if (!client_depth_measure_->wait_for_service(2s)) {
+                         RCLCPP_ERROR(this->get_logger(), "MeasureDepth service not available");
+                         success = false;
+                     } else {
+                         auto dm_req = std::make_shared<vision_server::srv::MeasureDepth::Request>();
+                         dm_req->file_tag = base_tag + "/" + step_tag + "_DepthMeasure";
+                         auto dm_future = client_depth_measure_->async_send_request(dm_req);
+                         auto dm_start = std::chrono::steady_clock::now();
+                         while (rclcpp::ok()) {
+                             auto st = dm_future.wait_for(100ms);
+                             if (st == std::future_status::ready) break;
+                             if (goal_handle->is_canceling()) { success = false; break; }
+                             if (std::chrono::steady_clock::now() - dm_start > 5s) {
+                                 RCLCPP_ERROR(this->get_logger(), "MeasureDepth timeout");
+                                 success = false;
+                                 break;
+                             }
+                         }
+                         if (success) {
+                             try {
+                                 auto dm_res = dm_future.get();
+                                 if (dm_res->success) {
+                                     RCLCPP_INFO(this->get_logger(),
+                                         "DepthMeasure: %.1fmm  Pos=(%.4f,%.4f,%.4f) | %s",
+                                         dm_res->depth_mm, dm_res->pos_x, dm_res->pos_y, dm_res->pos_z,
+                                         dm_res->message.c_str());
+                                 } else {
+                                     RCLCPP_WARN(this->get_logger(), "DepthMeasure failed: %s", dm_res->message.c_str());
+                                     success = false;
+                                 }
+                             } catch (const std::exception& e) {
+                                 RCLCPP_ERROR(this->get_logger(), "DepthMeasure exception: %s", e.what());
+                                 success = false;
+                             }
+                         }
+                     }
                 }
             }
         }
@@ -711,6 +845,135 @@ private:
             RCLCPP_ERROR(this->get_logger(), "IO step exception: %s", e.what());
             return false;
         }
+    }
+
+    bool call_lift_service(const std::string& command, int speed_rpm,
+                           std::shared_ptr<GoalHandleExecuteTask> goal_handle,
+                           int target_pulses = 0, int accel_ms = 0, int decel_ms = 0) {
+        if (!client_lift_->wait_for_service(2s)) {
+            RCLCPP_ERROR(this->get_logger(), "Lift service not available");
+            return false;
+        }
+        auto request = std::make_shared<lift_server::srv::LiftControl::Request>();
+        request->command = command;
+        request->speed_rpm = speed_rpm;
+        request->target_pulses = target_pulses;
+        request->accel_ms = accel_ms;
+        request->decel_ms = decel_ms;
+
+        auto future = client_lift_->async_send_request(request);
+        while (rclcpp::ok()) {
+            auto status = future.wait_for(100ms);
+            if (status == std::future_status::ready) break;
+            if (goal_handle->is_canceling()) {
+                RCLCPP_WARN(this->get_logger(), "Task canceled during lift step");
+                return false;
+            }
+        }
+        try {
+            auto response = future.get();
+            RCLCPP_INFO(this->get_logger(), "Lift result: %s", response->message.c_str());
+            return response->success;
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Lift service exception: %s", e.what());
+            return false;
+        }
+    }
+
+    bool call_io_sync(int io_type, int port, bool value,
+                      std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
+        if (!client_io_->wait_for_service(2s)) {
+            RCLCPP_ERROR(this->get_logger(), "IO service not available for brake control");
+            return false;
+        }
+        auto request = std::make_shared<duco_msg::srv::RobotIoControl::Request>();
+        request->command = "setIo";
+        request->arm_num = 0;
+        request->type = io_type;
+        request->port = port;
+        request->value = value;
+        request->block = true;
+
+        auto future = client_io_->async_send_request(request);
+        while (rclcpp::ok()) {
+            auto status = future.wait_for(100ms);
+            if (status == std::future_status::ready) break;
+            if (goal_handle->is_canceling()) return false;
+        }
+        try {
+            future.get();
+            return true;
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "IO call failed: %s", e.what());
+            return false;
+        }
+    }
+
+    bool execute_lift_step(const common_msgs::msg::TaskStep& step,
+                           std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
+        const std::string& cmd = step.lift_command;
+        int speed = step.lift_speed_rpm > 0 ? step.lift_speed_rpm : 1000;
+
+        RCLCPP_INFO(this->get_logger(), "Lift Step: %s cmd=%s speed=%d",
+                    step.name.c_str(), cmd.c_str(), speed);
+
+        if (cmd == "stop") {
+            // Stop servo, then re-engage brake (DO4=LOW)
+            bool ok = call_lift_service("stop", 0, goal_handle);
+            std::this_thread::sleep_for(200ms);
+            call_io_sync(0, 4, false, goal_handle);  // DO4 LOW = engage brake
+            return ok;
+        }
+
+        // For move commands: release brake first (DO4=HIGH), then enable + move
+        if (cmd == "move_up" || cmd == "move_down") {
+            // Step 1: Release brake (DO4=HIGH)
+            if (!call_io_sync(0, 4, true, goal_handle)) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to release brake (DO4)");
+                return false;
+            }
+            std::this_thread::sleep_for(200ms);  // Wait for brake to release
+
+            // Step 2: Enable servo
+            if (!call_lift_service("enable", speed, goal_handle)) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to enable lift servo");
+                call_io_sync(0, 4, false, goal_handle);  // Re-engage brake on failure
+                return false;
+            }
+
+            // Step 3: Move in direction
+            if (!call_lift_service(cmd, speed, goal_handle)) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to execute lift %s", cmd.c_str());
+                call_lift_service("stop", 0, goal_handle);
+                call_io_sync(0, 4, false, goal_handle);
+                return false;
+            }
+            return true;
+        }
+
+        // Position mode commands
+        if (cmd == "position_move") {
+            // Release brake first
+            if (!call_io_sync(0, 4, true, goal_handle)) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to release brake for position move");
+                return false;
+            }
+            std::this_thread::sleep_for(200ms);
+            return call_lift_service(cmd, speed, goal_handle,
+                                     step.lift_target_pulses, step.lift_accel_ms, step.lift_decel_ms);
+        }
+        if (cmd == "position_next") {
+            return call_lift_service(cmd, 0, goal_handle);
+        }
+        if (cmd == "position_stop") {
+            bool ok = call_lift_service(cmd, 0, goal_handle);
+            std::this_thread::sleep_for(200ms);
+            call_io_sync(0, 4, false, goal_handle);  // Re-engage brake
+            return ok;
+        }
+
+        // Direct commands (enable/disable/get_position)
+        return call_lift_service(cmd, speed, goal_handle);
     }
 
     void handle_move_request(const std::shared_ptr<duco_msg::srv::RobotMove::Request> request,

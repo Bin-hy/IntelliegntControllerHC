@@ -354,15 +354,23 @@ void OBCameraNode::setupDevices() {
 
   auto sensor_list = device_->getSensorList();
   for (size_t i = 0; i < sensor_list->getCount(); i++) {
-    auto sensor = sensor_list->getSensor(i);
-    auto profiles = sensor->getStreamProfileList();
-    for (size_t j = 0; j < profiles->getCount(); j++) {
-      auto profile = profiles->getProfile(j);
-      stream_index_pair sip{profile->getType(), 0};
-      if (sensors_.find(sip) != sensors_.end()) {
-        continue;
+    try {
+      auto sensor = sensor_list->getSensor(i);
+      auto profiles = sensor->getStreamProfileList();
+      for (size_t j = 0; j < profiles->getCount(); j++) {
+        auto profile = profiles->getProfile(j);
+        stream_index_pair sip{profile->getType(), 0};
+        if (sensors_.find(sip) != sensors_.end()) {
+          continue;
+        }
+        sensors_[sip] = sensor;
       }
-      sensors_[sip] = sensor;
+    } catch (const ob::Error &e) {
+      RCLCPP_WARN_STREAM(logger_, "Failed to enumerate sensor " << i << ": "
+                                      << e.getMessage() << " -- skipping");
+    } catch (const std::exception &e) {
+      RCLCPP_WARN_STREAM(logger_, "Failed to enumerate sensor " << i << ": "
+                                      << e.what() << " -- skipping");
     }
   }
 
@@ -2385,6 +2393,14 @@ void OBCameraNode::setupTopics() {
                                     << " -- continuing with defaults");
   } catch (...) {
     RCLCPP_WARN(logger_, "setupDevices partially failed -- continuing with defaults");
+  }
+
+  // If depth was disabled (e.g. sensor enumeration failed), disable features that depend on it
+  if (!enable_stream_[DEPTH]) {
+    enable_point_cloud_ = false;
+    enable_colored_point_cloud_ = false;
+    depth_registration_ = false;
+    enable_d2c_viewer_ = false;
   }
 
   // Post-process filters are optional

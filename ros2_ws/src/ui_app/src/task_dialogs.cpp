@@ -131,7 +131,7 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     layout->addLayout(h_name);
 
     combo_type_ = new QComboBox();
-    combo_type_->addItems({"arm", "lhand", "rhand", "camera", "io"});
+    combo_type_->addItems({"arm", "lhand", "rhand", "camera", "io", "lift"});
     layout->addWidget(new QLabel("Step Type:"));
     layout->addWidget(combo_type_);
 
@@ -187,11 +187,49 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
             this, &StepAddDialog::onIOGroupChanged);
     onIOGroupChanged(0);
 
+    widget_lift_ = new QWidget();
+    auto * lift_layout = new QFormLayout(widget_lift_);
+    combo_lift_command_ = new QComboBox();
+    combo_lift_command_->addItem(QString::fromUtf8("上升 (move_up)"), "move_up");
+    combo_lift_command_->addItem(QString::fromUtf8("下降 (move_down)"), "move_down");
+    combo_lift_command_->addItem(QString::fromUtf8("停止 (stop)"), "stop");
+    combo_lift_command_->addItem(QString::fromUtf8("定位移动 (position_move)"), "position_move");
+    combo_lift_command_->addItem(QString::fromUtf8("回原点 (position_next)"), "position_next");
+    combo_lift_command_->addItem(QString::fromUtf8("定位停止 (position_stop)"), "position_stop");
+    lift_layout->addRow(QString::fromUtf8("升降命令:"), combo_lift_command_);
+    spin_lift_speed_rpm_ = new QSpinBox();
+    spin_lift_speed_rpm_->setRange(1, 65535);
+    spin_lift_speed_rpm_->setValue(1000);
+    spin_lift_speed_rpm_->setSingleStep(100);
+    lift_layout->addRow(QString::fromUtf8("速度:"), spin_lift_speed_rpm_);
+    spin_lift_target_pulses_ = new QSpinBox();
+    spin_lift_target_pulses_->setRange(-99999999, 99999999);
+    spin_lift_target_pulses_->setValue(10000);
+    spin_lift_target_pulses_->setSingleStep(1000);
+    lift_layout->addRow(QString::fromUtf8("目标脉冲:"), spin_lift_target_pulses_);
+    spin_lift_accel_ms_ = new QSpinBox();
+    spin_lift_accel_ms_->setRange(0, 65535);
+    spin_lift_accel_ms_->setValue(1000);
+    lift_layout->addRow(QString::fromUtf8("加速时间(ms):"), spin_lift_accel_ms_);
+    spin_lift_decel_ms_ = new QSpinBox();
+    spin_lift_decel_ms_->setRange(0, 65535);
+    spin_lift_decel_ms_->setValue(1000);
+    lift_layout->addRow(QString::fromUtf8("减速时间(ms):"), spin_lift_decel_ms_);
+
     stack->addWidget(widget_arm_);
     stack->addWidget(widget_hand_);
     stack->addWidget(widget_camera_);
     stack->addWidget(widget_io_);
+    stack->addWidget(widget_lift_);
     layout->addWidget(stack);
+
+    auto * h_delay = new QHBoxLayout();
+    h_delay->addWidget(new QLabel("Delay after step (ms):"));
+    spin_delay_ms_ = new QSpinBox();
+    spin_delay_ms_->setRange(0, 3600000); // Up to 1 hour
+    spin_delay_ms_->setValue(0);
+    h_delay->addWidget(spin_delay_ms_);
+    layout->addLayout(h_delay);
 
     auto * buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     layout->addWidget(buttons);
@@ -244,6 +282,7 @@ void StepAddDialog::onTypeChanged(const QString& type) {
     if (type == "arm") stack->setCurrentWidget(widget_arm_);
     else if (type == "lhand" || type == "rhand") stack->setCurrentWidget(widget_hand_);
     else if (type == "io") stack->setCurrentWidget(widget_io_);
+    else if (type == "lift") stack->setCurrentWidget(widget_lift_);
     else stack->setCurrentWidget(widget_camera_);
 }
 
@@ -298,6 +337,8 @@ void StepAddDialog::setStep(const common_msgs::msg::TaskStep& step) {
         }
     }
 
+    spin_delay_ms_->setValue(step.delay_ms);
+
     // Fill type-specific fields
     if (step.type == "arm") {
         int n = std::min(static_cast<int>(step.arm_pos.size()), 6);
@@ -331,6 +372,17 @@ void StepAddDialog::setStep(const common_msgs::msg::TaskStep& step) {
             }
         }
         combo_io_value_->setCurrentIndex(step.io_value ? 0 : 1);
+    } else if (step.type == "lift") {
+        for (int i = 0; i < combo_lift_command_->count(); ++i) {
+            if (combo_lift_command_->itemData(i).toString().toStdString() == step.lift_command) {
+                combo_lift_command_->setCurrentIndex(i);
+                break;
+            }
+        }
+        spin_lift_speed_rpm_->setValue(step.lift_speed_rpm > 0 ? step.lift_speed_rpm : 1000);
+        spin_lift_target_pulses_->setValue(step.lift_target_pulses);
+        spin_lift_accel_ms_->setValue(step.lift_accel_ms > 0 ? step.lift_accel_ms : 1000);
+        spin_lift_decel_ms_->setValue(step.lift_decel_ms > 0 ? step.lift_decel_ms : 1000);
     }
 }
 
@@ -340,6 +392,8 @@ common_msgs::msg::TaskStep StepAddDialog::getStep() const {
     step.type = combo_type_->currentText().toStdString();
     step.device_sn = combo_device_->currentData().toString().toStdString();
     if (step.device_sn.empty()) step.device_sn = combo_device_->currentText().toStdString();
+
+    step.delay_ms = spin_delay_ms_->value();
 
     if (step.type == "arm") {
         step.arm_pos.clear();
@@ -355,6 +409,12 @@ common_msgs::msg::TaskStep StepAddDialog::getStep() const {
         step.io_type = (group == 2) ? 1 : 0; // 0=standard, 1=tool
         step.io_port = static_cast<int8_t>(combo_io_port_->currentData().toInt());
         step.io_value = combo_io_value_->currentData().toBool();
+    } else if (step.type == "lift") {
+        step.lift_command = combo_lift_command_->currentData().toString().toStdString();
+        step.lift_speed_rpm = spin_lift_speed_rpm_->value();
+        step.lift_target_pulses = spin_lift_target_pulses_->value();
+        step.lift_accel_ms = spin_lift_accel_ms_->value();
+        step.lift_decel_ms = spin_lift_decel_ms_->value();
     }
     return step;
 }

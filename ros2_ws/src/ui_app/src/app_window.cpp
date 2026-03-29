@@ -409,9 +409,19 @@ void AppWindow::updateUI() {
       
       if (text_robot_state_) {
           std::lock_guard<std::mutex> lock(node_->data_mutex_);
-          if (!node_->last_robot_state_str_.empty()) {
-              text_robot_state_->setText(QString::fromStdString(node_->last_robot_state_str_));
+          std::string display = node_->last_robot_state_str_;
+          if (!node_->last_collision_str_.empty()) {
+              display += "\n" + node_->last_collision_str_;
           }
+          if (!display.empty()) {
+              text_robot_state_->setText(QString::fromStdString(display));
+          }
+      }
+
+      // Update depth measurement label (in camera tab)
+      if (label_depth_measure_) {
+          std::lock_guard<std::mutex> lock(node_->data_mutex_);
+          label_depth_measure_->setText(QString::fromStdString(node_->last_depth_measure_str_));
       }
 
       {
@@ -774,6 +784,13 @@ QWidget* AppWindow::createCameraTab() {
     widget_depth_ = createVideoWidget(tr_ui("深度流", "Depth Stream"), label_depth_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), false, true, false, false, false, make_callback());
     });
+    // Add depth measurement label inside the depth stream group box
+    if (auto* gb = qobject_cast<QGroupBox*>(widget_depth_)) {
+        label_depth_measure_ = new QLabel(tr_ui("深度测量: 等待数据...", "Depth Measure: waiting..."));
+        label_depth_measure_->setWordWrap(true);
+        label_depth_measure_->setStyleSheet("color: #00ff88; font-size: 11px; padding: 2px 4px;");
+        gb->layout()->addWidget(label_depth_measure_);
+    }
     widget_ir_left_ = createVideoWidget(tr_ui("红外左流", "IR Left Stream"), label_ir_left_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, true, false, false, make_callback());
     });
@@ -1201,7 +1218,323 @@ QWidget* AppWindow::createIOTab() {
     // Initialize first group
     rebuildIORows(0);
 
+    // === Lift Platform Control Section ===
+    auto * lift_group = new QGroupBox(tr_ui("升降平台控制", "Lift Platform Control"));
+    auto * lift_layout = new QHBoxLayout(lift_group);
+
+    // Speed control
+    lift_layout->addWidget(new QLabel(tr_ui("速度(RPM):", "Speed(RPM):")));
+    spin_lift_speed_ = new QSpinBox();
+    spin_lift_speed_->setRange(100, 3000);
+    spin_lift_speed_->setValue(1000);
+    spin_lift_speed_->setSingleStep(100);
+    spin_lift_speed_->setFixedWidth(80);
+    lift_layout->addWidget(spin_lift_speed_);
+
+    // Up button
+    btn_lift_up_ = new QPushButton(tr_ui("上升", "UP"));
+    btn_lift_up_->setObjectName("action_button");
+    btn_lift_up_->setFixedWidth(70);
+    lift_layout->addWidget(btn_lift_up_);
+
+    // Down button
+    btn_lift_down_ = new QPushButton(tr_ui("下降", "DOWN"));
+    btn_lift_down_->setObjectName("action_button");
+    btn_lift_down_->setFixedWidth(70);
+    lift_layout->addWidget(btn_lift_down_);
+
+    // Stop button
+    btn_lift_stop_ = new QPushButton(tr_ui("停止", "STOP"));
+    btn_lift_stop_->setObjectName("action_button");
+    btn_lift_stop_->setStyleSheet("QPushButton { background-color: #cc3333; color: white; font-weight: bold; }");
+    btn_lift_stop_->setFixedWidth(70);
+    lift_layout->addWidget(btn_lift_stop_);
+
+    // Status label
+    label_lift_status_ = new QLabel("--");
+    label_lift_status_->setFixedWidth(200);
+    lift_layout->addWidget(label_lift_status_);
+
+    lift_layout->addStretch();
+    layout->addWidget(lift_group);
+
+    // === Lift Position Mode Section ===
+    auto * pos_group = new QGroupBox(tr_ui("升降平台-位置模式", "Lift Platform - Position Mode"));
+    auto * pos_layout = new QHBoxLayout(pos_group);
+
+    pos_layout->addWidget(new QLabel(tr_ui("目标脉冲:", "Target:")));
+    spin_lift_pos_target_ = new QSpinBox();
+    spin_lift_pos_target_->setRange(-99999999, 99999999);
+    spin_lift_pos_target_->setValue(10000);
+    spin_lift_pos_target_->setSingleStep(1000);
+    spin_lift_pos_target_->setFixedWidth(100);
+    pos_layout->addWidget(spin_lift_pos_target_);
+
+    pos_layout->addWidget(new QLabel(tr_ui("速度(0.1rpm):", "Speed:")));
+    spin_lift_pos_speed_ = new QSpinBox();
+    spin_lift_pos_speed_->setRange(1, 65535);
+    spin_lift_pos_speed_->setValue(1000);
+    spin_lift_pos_speed_->setSingleStep(100);
+    spin_lift_pos_speed_->setFixedWidth(80);
+    pos_layout->addWidget(spin_lift_pos_speed_);
+
+    pos_layout->addWidget(new QLabel(tr_ui("加速(ms):", "Accel:")));
+    spin_lift_pos_accel_ = new QSpinBox();
+    spin_lift_pos_accel_->setRange(0, 65535);
+    spin_lift_pos_accel_->setValue(1000);
+    spin_lift_pos_accel_->setFixedWidth(70);
+    pos_layout->addWidget(spin_lift_pos_accel_);
+
+    pos_layout->addWidget(new QLabel(tr_ui("减速(ms):", "Decel:")));
+    spin_lift_pos_decel_ = new QSpinBox();
+    spin_lift_pos_decel_->setRange(0, 65535);
+    spin_lift_pos_decel_->setValue(1000);
+    spin_lift_pos_decel_->setFixedWidth(70);
+    pos_layout->addWidget(spin_lift_pos_decel_);
+
+    btn_lift_pos_move_ = new QPushButton(tr_ui("移动", "Move"));
+    btn_lift_pos_move_->setObjectName("action_button");
+    btn_lift_pos_move_->setFixedWidth(70);
+    pos_layout->addWidget(btn_lift_pos_move_);
+
+    btn_lift_pos_home_ = new QPushButton(tr_ui("回原点", "Home"));
+    btn_lift_pos_home_->setObjectName("action_button");
+    btn_lift_pos_home_->setFixedWidth(70);
+    pos_layout->addWidget(btn_lift_pos_home_);
+
+    btn_lift_pos_stop_ = new QPushButton(tr_ui("停止", "STOP"));
+    btn_lift_pos_stop_->setObjectName("action_button");
+    btn_lift_pos_stop_->setStyleSheet("QPushButton { background-color: #cc3333; color: white; font-weight: bold; }");
+    btn_lift_pos_stop_->setFixedWidth(70);
+    pos_layout->addWidget(btn_lift_pos_stop_);
+
+    label_lift_pos_status_ = new QLabel("--");
+    label_lift_pos_status_->setFixedWidth(200);
+    pos_layout->addWidget(label_lift_pos_status_);
+
+    pos_layout->addStretch();
+    layout->addWidget(pos_group);
+
+    // === Lift button connections ===
+    auto check_lift_permission = [this]() -> bool {
+        if (permission_manager_ &&
+            !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+            QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                 tr_ui("当前用户无权控制升降平台", "Insufficient permission for lift control"));
+            return false;
+        }
+        return true;
+    };
+
+    connect(btn_lift_up_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        int speed = spin_lift_speed_->value();
+        label_lift_status_->setText(tr_ui("解锁抱闸...", "Releasing brake..."));
+        // Step 1: Release brake (DO4=HIGH)
+        node_->call_robot_io("setIo", 0, 4, true, [this, speed](const std::string& result) {
+            QMetaObject::invokeMethod(this, [this, speed, result]() {
+                if (result == "error" || result == "Service unavailable") {
+                    label_lift_status_->setText(tr_ui("抱闸解锁失败", "Brake release failed"));
+                    return;
+                }
+                label_lift_status_->setText(tr_ui("使能中...", "Enabling..."));
+                // Step 2: Enable servo (after 200ms for brake to release)
+                QTimer::singleShot(200, this, [this, speed]() {
+                    node_->call_lift_control("enable", speed, [this, speed](bool ok, const std::string& msg, int) {
+                        QMetaObject::invokeMethod(this, [this, ok, speed, msg]() {
+                            if (!ok) {
+                                label_lift_status_->setText(QString::fromStdString(msg));
+                                node_->call_robot_io("setIo", 0, 4, false);  // Re-engage brake
+                                return;
+                            }
+                            // Step 3: Move up
+                            node_->call_lift_control("move_up", speed, [this](bool ok2, const std::string& msg2, int) {
+                                QMetaObject::invokeMethod(this, [this, ok2, msg2]() {
+                                    label_lift_status_->setText(ok2
+                                        ? tr_ui("上升中...", "Moving up...")
+                                        : QString::fromStdString(msg2));
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+
+    connect(btn_lift_down_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        int speed = spin_lift_speed_->value();
+        label_lift_status_->setText(tr_ui("解锁抱闸...", "Releasing brake..."));
+        // Step 1: Release brake (DO4=HIGH)
+        node_->call_robot_io("setIo", 0, 4, true, [this, speed](const std::string& result) {
+            QMetaObject::invokeMethod(this, [this, speed, result]() {
+                if (result == "error" || result == "Service unavailable") {
+                    label_lift_status_->setText(tr_ui("抱闸解锁失败", "Brake release failed"));
+                    return;
+                }
+                label_lift_status_->setText(tr_ui("使能中...", "Enabling..."));
+                QTimer::singleShot(200, this, [this, speed]() {
+                    node_->call_lift_control("enable", speed, [this, speed](bool ok, const std::string& msg, int) {
+                        QMetaObject::invokeMethod(this, [this, ok, speed, msg]() {
+                            if (!ok) {
+                                label_lift_status_->setText(QString::fromStdString(msg));
+                                node_->call_robot_io("setIo", 0, 4, false);
+                                return;
+                            }
+                            node_->call_lift_control("move_down", speed, [this](bool ok2, const std::string& msg2, int) {
+                                QMetaObject::invokeMethod(this, [this, ok2, msg2]() {
+                                    label_lift_status_->setText(ok2
+                                        ? tr_ui("下降中...", "Moving down...")
+                                        : QString::fromStdString(msg2));
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+
+    connect(btn_lift_stop_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        label_lift_status_->setText(tr_ui("停止中...", "Stopping..."));
+        node_->call_lift_control("stop", 0, [this](bool ok, const std::string& msg, int) {
+            QMetaObject::invokeMethod(this, [this, ok, msg]() {
+                if (ok) {
+                    // Re-engage brake (DO4=LOW) after stop
+                    QTimer::singleShot(200, this, [this]() {
+                        node_->call_robot_io("setIo", 0, 4, false, [this](const std::string&) {
+                            QMetaObject::invokeMethod(this, [this]() {
+                                label_lift_status_->setText(tr_ui("已停止", "Stopped"));
+                            });
+                        });
+                    });
+                } else {
+                    label_lift_status_->setText(QString::fromStdString(msg));
+                }
+            });
+        });
+    });
+
+    // === Position Mode button connections ===
+    connect(btn_lift_pos_move_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        int pulses = spin_lift_pos_target_->value();
+        int speed  = spin_lift_pos_speed_->value();
+        int acc    = spin_lift_pos_accel_->value();
+        int dec    = spin_lift_pos_decel_->value();
+        label_lift_pos_status_->setText(tr_ui("解锁抱闸...", "Releasing brake..."));
+        // Step 1: Release brake (DO4=HIGH)
+        node_->call_robot_io("setIo", 0, 4, true, [this, pulses, speed, acc, dec](const std::string& result) {
+            QMetaObject::invokeMethod(this, [this, pulses, speed, acc, dec, result]() {
+                if (result == "error" || result == "Service unavailable") {
+                    label_lift_pos_status_->setText(tr_ui("抱闸解锁失败", "Brake release failed"));
+                    return;
+                }
+                label_lift_pos_status_->setText(tr_ui("定位中...", "Positioning..."));
+                QTimer::singleShot(200, this, [this, pulses, speed, acc, dec]() {
+                    node_->call_lift_control("position_move", speed,
+                        [this](bool ok, const std::string& msg, int) {
+                            QMetaObject::invokeMethod(this, [this, ok, msg]() {
+                                if (ok) {
+                                    startLiftPositionPoll();
+                                } else {
+                                    label_lift_pos_status_->setText(QString::fromStdString(msg));
+                                }
+                            });
+                        }, pulses, acc, dec);
+                });
+            });
+        });
+    });
+
+    connect(btn_lift_pos_home_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        label_lift_pos_status_->setText(tr_ui("回原点...", "Homing..."));
+        // Trigger segment 2 (return to origin)
+        node_->call_lift_control("position_next", 0, [this](bool ok, const std::string& msg, int) {
+            QMetaObject::invokeMethod(this, [this, ok, msg]() {
+                if (ok) {
+                    startLiftPositionPoll();
+                } else {
+                    label_lift_pos_status_->setText(QString::fromStdString(msg));
+                }
+            });
+        });
+    });
+
+    connect(btn_lift_pos_stop_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        stopLiftPositionPoll("");
+        label_lift_pos_status_->setText(tr_ui("停止中...", "Stopping..."));
+        node_->call_lift_control("position_stop", 0, [this](bool ok, const std::string& msg, int) {
+            QMetaObject::invokeMethod(this, [this, ok, msg]() {
+                if (ok) {
+                    QTimer::singleShot(200, this, [this]() {
+                        node_->call_robot_io("setIo", 0, 4, false, [this](const std::string&) {
+                            QMetaObject::invokeMethod(this, [this]() {
+                                label_lift_pos_status_->setText(tr_ui("已停止", "Stopped"));
+                            });
+                        });
+                    });
+                } else {
+                    label_lift_pos_status_->setText(QString::fromStdString(msg));
+                }
+            });
+        });
+    });
+
     return widget;
+}
+
+void AppWindow::startLiftPositionPoll() {
+    lift_poll_last_pos_ = INT_MIN;
+    lift_poll_stable_count_ = 0;
+    lift_poll_elapsed_ = 0;
+
+    if (!timer_lift_pos_poll_) {
+        timer_lift_pos_poll_ = new QTimer(this);
+        timer_lift_pos_poll_->setInterval(500);
+        connect(timer_lift_pos_poll_, &QTimer::timeout, this, [this]() {
+            lift_poll_elapsed_ += 500;
+            if (lift_poll_elapsed_ > 30000) {
+                stopLiftPositionPoll(tr_ui("超时", "Timeout"));
+                return;
+            }
+            node_->call_lift_control("get_position", 0, [this](bool ok, const std::string&, int pos) {
+                QMetaObject::invokeMethod(this, [this, ok, pos]() {
+                    if (!timer_lift_pos_poll_ || !timer_lift_pos_poll_->isActive()) return;
+                    if (!ok) {
+                        label_lift_pos_status_->setText(tr_ui("读取位置失败", "Read pos failed"));
+                        return;
+                    }
+                    label_lift_pos_status_->setText(
+                        tr_ui("位置: ", "Pos: ") + QString::number(pos));
+                    if (pos == lift_poll_last_pos_) {
+                        lift_poll_stable_count_++;
+                        if (lift_poll_stable_count_ >= 3) {
+                            stopLiftPositionPoll(
+                                tr_ui("✓ 到位 (", "✓ Done (") + QString::number(pos) + ")");
+                        }
+                    } else {
+                        lift_poll_stable_count_ = 0;
+                    }
+                    lift_poll_last_pos_ = pos;
+                });
+            });
+        });
+    }
+    timer_lift_pos_poll_->start();
+}
+
+void AppWindow::stopLiftPositionPoll(const QString& final_status) {
+    if (timer_lift_pos_poll_ && timer_lift_pos_poll_->isActive()) {
+        timer_lift_pos_poll_->stop();
+    }
+    if (!final_status.isEmpty()) {
+        label_lift_pos_status_->setText(final_status);
+    }
 }
 
 void AppWindow::rebuildIORows(int group_index) {

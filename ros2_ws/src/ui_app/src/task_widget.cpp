@@ -172,6 +172,11 @@ void TaskWidget::saveTasks() {
             stepObj["io_type"] = step.io_type;
             stepObj["io_port"] = step.io_port;
             stepObj["io_value"] = step.io_value;
+            stepObj["lift_command"] = QString::fromStdString(step.lift_command);
+            stepObj["lift_speed_rpm"] = step.lift_speed_rpm;
+            stepObj["lift_target_pulses"] = step.lift_target_pulses;
+            stepObj["lift_accel_ms"] = step.lift_accel_ms;
+            stepObj["lift_decel_ms"] = step.lift_decel_ms;
 
             steps.append(stepObj);
         }
@@ -246,6 +251,11 @@ void TaskWidget::loadTasks() {
             step.io_type = static_cast<int8_t>(sObj["io_type"].toInt(0));
             step.io_port = static_cast<int8_t>(sObj["io_port"].toInt(0));
             step.io_value = sObj["io_value"].toBool(false);
+            step.lift_command = sObj["lift_command"].toString().toStdString();
+            step.lift_speed_rpm = sObj["lift_speed_rpm"].toInt(0);
+            step.lift_target_pulses = sObj["lift_target_pulses"].toInt(0);
+            step.lift_accel_ms = sObj["lift_accel_ms"].toInt(0);
+            step.lift_decel_ms = sObj["lift_decel_ms"].toInt(0);
 
             task.task_seqs.push_back(step);
         }
@@ -428,7 +438,7 @@ void TaskWidget::onExportCSV() {
 
     QTextStream out(&file);
     // Header
-    out << "step_name,type,J1,J2,J3,J4,J5,J6,H1,H2,H3,H4,H5,H6,camera_type,io_type,io_port,io_value\n";
+    out << "step_name,type,J1,J2,J3,J4,J5,J6,H1,H2,H3,H4,H5,H6,camera_type,io_type,io_port,io_value,lift_command,lift_speed_rpm\n";
 
     for (const auto& step : task.task_seqs) {
         out << QString::fromStdString(step.name) << ","
@@ -459,6 +469,9 @@ void TaskWidget::onExportCSV() {
         out << "," << (step.io_type == 1 ? "tool" : "standard");
         out << "," << step.io_port;
         out << "," << (step.io_value ? "HIGH" : "LOW");
+        // Lift fields
+        out << "," << QString::fromStdString(step.lift_command);
+        out << "," << step.lift_speed_rpm;
         out << "\n";
     }
 

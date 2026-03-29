@@ -10,6 +10,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TaskStep.msg"
   "msg/TaskConfig.msg"
   "msg/DeviceStatus.msg"
+  "msg/CollisionStatus.msg"
+  "msg/DepthMeasurement.msg"
   "srv/SetCurrentUser.srv"
   "action/ExecuteTask.action"
   DEPENDENCIES std_msgs action_msgs
