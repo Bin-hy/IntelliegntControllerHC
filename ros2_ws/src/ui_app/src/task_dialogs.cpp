@@ -567,6 +567,11 @@ void TaskConfigDialog::onDeleteStep() {
 TaskRunDialog::TaskRunDialog(std::shared_ptr<RosNode> node, const common_msgs::msg::TaskConfig& task, std::shared_ptr<TaskRecordManager> record_manager, QWidget *parent)
     : QDialog(parent), node_(node), record_manager_(record_manager), task_(task), devices_ready_(false) {
     setWindowTitle(tr_ui("运行任务", "Run Task"));
+    setWindowFlags(windowFlags() | Qt::WindowMinMaxButtonsHint | Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
+    
+    // 强制模态以防止点击后面内容，但允许系统操作
+    setWindowModality(Qt::ApplicationModal);
+    
     auto * layout = new QVBoxLayout(this);
 
     label_status_ = new QLabel(tr_ui("检查设备中...", "Checking devices..."));

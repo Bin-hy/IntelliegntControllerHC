@@ -513,6 +513,11 @@ void AppWindow::showDeviceInfoDialog() {
 void AppWindow::showTaskDialog() {
     auto * dialog = new QDialog(this);
     dialog->setWindowTitle(tr_ui("任务模块", "Task Module"));
+    dialog->setWindowFlags(dialog->windowFlags() | Qt::WindowMinMaxButtonsHint | Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
+    
+    // 强制模态
+    dialog->setWindowModality(Qt::ApplicationModal);
+    
     auto * layout = new QVBoxLayout(dialog);
     auto * task_widget = new TaskWidget(node_, current_user_, current_role_, dialog);
     layout->addWidget(task_widget);
