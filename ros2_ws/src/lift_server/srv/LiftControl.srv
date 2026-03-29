@@ -1,0 +1,9 @@
+string command       # enable/move_up/move_down/stop/status/position_move/position_next/position_stop
+int32 speed_rpm      # Speed in RPM (speed mode) or 0.1rpm (position mode)
+int32 target_pulses  # Target position in pulses for position mode
+int32 accel_ms       # Acceleration time ms (default 1000)
+int32 decel_ms       # Deceleration time ms (default 1000)
+---
+bool success
+string message
+int32 encoder_position

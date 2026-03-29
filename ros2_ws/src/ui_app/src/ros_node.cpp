@@ -49,14 +49,26 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     sub_device_status_ = create_subscription<common_msgs::msg::DeviceStatus>(
       "/system/device_status", 10, std::bind(&RosNode::device_status_callback, this, std::placeholders::_1));
 
+    // Subscriber: Collision Detector Status
+    sub_collision_ = create_subscription<common_msgs::msg::CollisionStatus>(
+      "/collision_detector/status", 10,
+      std::bind(&RosNode::collision_status_callback, this, std::placeholders::_1));
+
+    // Subscriber: Depth Measurement
+    sub_depth_measure_ = create_subscription<common_msgs::msg::DepthMeasurement>(
+      "/depth_measure/result", 10,
+      std::bind(&RosNode::depth_measure_callback, this, std::placeholders::_1));
+
     // Service Clients
     client_control_ = create_client<duco_msg::srv::RobotControl>("/ui/request_control");
-    client_io_ = create_client<duco_msg::srv::RobotIoControl>("/ui/request_io");
+    client_io_ = create_client<duco_msg::srv::RobotIoControl>("/duco_robot/robot_io_control");
     client_move_ = create_client<duco_msg::srv::RobotMove>("/ui/request_move");
     client_pause_task_ = create_client<std_srvs::srv::SetBool>("/system/pause_task");
     client_set_user_ = create_client<common_msgs::srv::SetCurrentUser>("/system/set_current_user");
     // New Save Image Service (Vision Server)
     client_save_image_ = create_client<vision_server::srv::SaveImage>("/image_saver/save_image");
+    // Lift platform
+    client_lift_ = create_client<lift_server::srv::LiftControl>("/lift_server/lift_control");
 
     // LHand Clients
     client_lhand_enable_ = create_client<lhandpro_interfaces::srv::SetEnable>("/lhandpro_service/set_enable");
@@ -198,6 +210,34 @@ void RosNode::robot_state_callback(const duco_msg::msg::DucoRobotState::SharedPt
     status.device_sn = "duco_arm_1";
     
     connected_devices_["duco"] = status;
+}
+
+void RosNode::collision_status_callback(const common_msgs::msg::CollisionStatus::SharedPtr msg) {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    std::string level;
+    if      (msg->status == "emergency") level = "[!!!]";
+    else if (msg->status == "warning")   level = "[!]";
+    else if (msg->status == "caution")   level = "[~]";
+    else if (msg->status == "safe")      level = "[OK]";
+    else                                 level = "[--]";
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "碰撞检测 %s  dist=%.2fm  %s",
+        level.c_str(), msg->min_distance, msg->nearest_link.c_str());
+    last_collision_str_ = buf;
+}
+
+void RosNode::depth_measure_callback(const common_msgs::msg::DepthMeasurement::SharedPtr msg) {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    if (msg->status == "measuring" && msg->valid_points > 0) {
+        char buf[256];
+        std::snprintf(buf, sizeof(buf),
+            "深度: %.1fmm | 位置: (%.3f, %.3f, %.3f)m | 像素:(%d,%d) | 有效点:%d",
+            msg->depth_mm, msg->pos_x, msg->pos_y, msg->pos_z,
+            msg->roi_center_u, msg->roi_center_v, msg->valid_points);
+        last_depth_measure_str_ = buf;
+    } else {
+        last_depth_measure_str_ = "深度测量: " + msg->status;
+    }
 }
 
 void RosNode::device_status_callback(const common_msgs::msg::DeviceStatus::SharedPtr msg) {
@@ -524,9 +564,11 @@ void RosNode::call_robot_move_joint(const std::vector<double>& joints) {
         });
 }
 
-void RosNode::call_robot_io(const std::string& command, int type, int port, bool value) {
+void RosNode::call_robot_io(const std::string& command, int type, int port, bool value,
+                            std::function<void(const std::string&)> callback) {
     if (!client_io_->wait_for_service(std::chrono::seconds(1))) {
         RCLCPP_WARN(this->get_logger(), "IO Service not available");
+        if (callback) callback("Service unavailable");
         return;
     }
     auto request = std::make_shared<duco_msg::srv::RobotIoControl::Request>();
@@ -538,13 +580,44 @@ void RosNode::call_robot_io(const std::string& command, int type, int port, bool
     request->block = false;
 
     using ServiceT = duco_msg::srv::RobotIoControl;
-    client_io_->async_send_request(request, 
-        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+    client_io_->async_send_request(request,
+        [this, callback](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
                 RCLCPP_INFO(get_logger(), "IO Result: %s", response->response.c_str());
+                if (callback) callback(response->response);
             } catch (const std::exception &e) {
                 RCLCPP_ERROR(get_logger(), "IO service call failed: %s", e.what());
+                if (callback) callback("error");
+            }
+        });
+}
+
+void RosNode::call_lift_control(const std::string& command, int speed_rpm,
+                                std::function<void(bool, const std::string&, int)> callback,
+                                int target_pulses, int accel_ms, int decel_ms) {
+    if (!client_lift_->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(this->get_logger(), "Lift service not available");
+        if (callback) callback(false, "Service unavailable", 0);
+        return;
+    }
+    auto request = std::make_shared<lift_server::srv::LiftControl::Request>();
+    request->command = command;
+    request->speed_rpm = speed_rpm;
+    request->target_pulses = target_pulses;
+    request->accel_ms = accel_ms;
+    request->decel_ms = decel_ms;
+
+    using ServiceT = lift_server::srv::LiftControl;
+    client_lift_->async_send_request(request,
+        [this, callback](rclcpp::Client<ServiceT>::SharedFuture future) {
+            try {
+                auto response = future.get();
+                RCLCPP_INFO(get_logger(), "Lift result: %s", response->message.c_str());
+                if (callback) callback(response->success, response->message, response->encoder_position);
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(get_logger(), "Lift service call failed: %s", e.what());
+                if (callback) callback(false, std::string("exception: ") + e.what(), 0);
             }
         });
 }

@@ -20,6 +20,7 @@ class QComboBox;
 class QCheckBox;
 class QTabWidget;
 class QTableWidget;
+class QGridLayout;
 class QLineEdit;
 class QDateTimeEdit;
 class QToolButton;
@@ -96,9 +97,48 @@ private:
   QDoubleSpinBox* spin_vel_;
   QDoubleSpinBox* spin_acc_;
 
-  QComboBox* combo_io_type_;
-  QSpinBox* spin_io_port_;
-  QCheckBox* chk_io_value_;
+  // IO Control Panel
+  static constexpr int IO_MAX_PORTS = 16;
+  QComboBox* combo_io_group_;
+  QGridLayout* io_grid_;
+  QWidget* io_rows_container_;
+  QLabel* do_status_labels_[IO_MAX_PORTS];
+  QLabel* di_status_labels_[IO_MAX_PORTS];
+  QPushButton* do_on_buttons_[IO_MAX_PORTS];
+  QPushButton* do_off_buttons_[IO_MAX_PORTS];
+  QLabel* io_name_labels_[IO_MAX_PORTS];
+  int io_visible_count_ = 0;
+
+  // Lift Platform Control - Speed Mode
+  QSpinBox* spin_lift_speed_ = nullptr;
+  QPushButton* btn_lift_up_ = nullptr;
+  QPushButton* btn_lift_down_ = nullptr;
+  QPushButton* btn_lift_stop_ = nullptr;
+  QLabel* label_lift_status_ = nullptr;
+
+  // Lift Platform Control - Position Mode
+  QSpinBox* spin_lift_pos_target_ = nullptr;
+  QSpinBox* spin_lift_pos_speed_ = nullptr;
+  QSpinBox* spin_lift_pos_accel_ = nullptr;
+  QSpinBox* spin_lift_pos_decel_ = nullptr;
+  QPushButton* btn_lift_pos_move_ = nullptr;
+  QPushButton* btn_lift_pos_home_ = nullptr;
+  QPushButton* btn_lift_pos_stop_ = nullptr;
+  QLabel* label_lift_pos_status_ = nullptr;
+
+  // Lift position polling
+  QTimer* timer_lift_pos_poll_ = nullptr;
+  int lift_poll_last_pos_ = INT_MIN;
+  int lift_poll_stable_count_ = 0;
+  int lift_poll_elapsed_ = 0;
+  void startLiftPositionPoll();
+  void stopLiftPositionPoll(const QString& final_status);
+
+  void rebuildIORows(int group_index);
+  void refreshIOGroup();
+  void setDoOutput(int io_type, int port, bool value, int idx);
+  void readDoStatus(int io_type, int port, int idx);
+  void readDiStatus(int io_type, int port, int idx);
 
   QComboBox* combo_camera_;
   QComboBox* combo_pc_topic_;
@@ -114,6 +154,7 @@ private:
   QWidget* widget_depth_;
   QWidget* widget_ir_left_;
   QWidget* widget_ir_right_;
+  QLabel* label_depth_measure_ = nullptr;
 
   QLabel* label_color_stream_;
   QLabel* label_depth_stream_;

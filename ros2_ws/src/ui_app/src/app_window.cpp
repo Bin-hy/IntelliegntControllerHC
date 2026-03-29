@@ -72,9 +72,9 @@ AppWindow::AppWindow(std::shared_ptr<RosNode> node,
     btn_power_off_ = nullptr;
     spin_vel_ = nullptr;
     spin_acc_ = nullptr;
-    combo_io_type_ = nullptr;
-    spin_io_port_ = nullptr;
-    chk_io_value_ = nullptr;
+    combo_io_group_ = nullptr;
+    io_grid_ = nullptr;
+    io_rows_container_ = nullptr;
     combo_camera_ = nullptr;
     combo_pc_topic_ = nullptr;
     btn_scan_ = nullptr;
@@ -179,12 +179,11 @@ void AppWindow::buildDashboard() {
         auto reply = QMessageBox::question(
             this,
             tr_ui("语言切换", "Language Switch"),
-            tr_ui("语言将在重启后生效，是否立即重启？",
-                  "Language will take effect after restart. Restart now?"),
+            tr_ui("语言将在重启后生效，是否立即退出并由您手动重新启动程序？",
+                  "Language will take effect after restart. Quit now so you can manually restart?"),
             QMessageBox::Yes | QMessageBox::No
         );
         if (reply == QMessageBox::Yes) {
-            QProcess::startDetached(qApp->applicationFilePath(), qApp->arguments());
             qApp->quit();
         }
     });
@@ -409,9 +408,19 @@ void AppWindow::updateUI() {
       
       if (text_robot_state_) {
           std::lock_guard<std::mutex> lock(node_->data_mutex_);
-          if (!node_->last_robot_state_str_.empty()) {
-              text_robot_state_->setText(QString::fromStdString(node_->last_robot_state_str_));
+          std::string display = node_->last_robot_state_str_;
+          if (!node_->last_collision_str_.empty()) {
+              display += "\n" + node_->last_collision_str_;
           }
+          if (!display.empty()) {
+              text_robot_state_->setText(QString::fromStdString(display));
+          }
+      }
+
+      // Update depth measurement label (in camera tab)
+      if (label_depth_measure_) {
+          std::lock_guard<std::mutex> lock(node_->data_mutex_);
+          label_depth_measure_->setText(QString::fromStdString(node_->last_depth_measure_str_));
       }
 
       {
@@ -774,6 +783,13 @@ QWidget* AppWindow::createCameraTab() {
     widget_depth_ = createVideoWidget(tr_ui("深度流", "Depth Stream"), label_depth_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), false, true, false, false, false, make_callback());
     });
+    // Add depth measurement label inside the depth stream group box
+    if (auto* gb = qobject_cast<QGroupBox*>(widget_depth_)) {
+        label_depth_measure_ = new QLabel(tr_ui("深度测量: 等待数据...", "Depth Measure: waiting..."));
+        label_depth_measure_->setWordWrap(true);
+        label_depth_measure_->setStyleSheet("color: #00ff88; font-size: 11px; padding: 2px 4px;");
+        gb->layout()->addWidget(label_depth_measure_);
+    }
     widget_ir_left_ = createVideoWidget(tr_ui("红外左流", "IR Left Stream"), label_ir_left_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), false, false, true, false, false, make_callback());
     });
@@ -1078,61 +1094,581 @@ QWidget* AppWindow::createIOTab() {
     auto * widget = new QWidget();
     auto * layout = new QVBoxLayout();
 
-    auto * group_io = new QGroupBox("Digital IO Control");
-    auto * io_layout = new QGridLayout();
+    // === IO Group Selector ===
+    auto * top_bar = new QHBoxLayout();
+    top_bar->addWidget(new QLabel(tr_ui("IO 分组:", "IO Group:")));
+    combo_io_group_ = new QComboBox();
+    combo_io_group_->addItems({
+        tr_ui("标准 DIO (1-8)", "Standard DIO (1-8)"),
+        tr_ui("标准 DIO (9-16)", "Standard DIO (9-16)"),
+        tr_ui("工具 IO (1-2)", "Tool IO (1-2)"),
+        tr_ui("功能 IO (1-8)", "Function IO (1-8)"),
+    });
+    top_bar->addWidget(combo_io_group_);
 
-    io_layout->addWidget(new QLabel("IO Type:"), 0, 0);
-    combo_io_type_ = new QComboBox();
-    combo_io_type_->addItems({"DO (Digital Output)", "DI (Digital Input)"});
-    io_layout->addWidget(combo_io_type_, 0, 1);
+    auto * btn_refresh = new QPushButton(tr_ui("刷新状态", "Refresh"));
+    btn_refresh->setObjectName("action_button");
+    top_bar->addWidget(btn_refresh);
 
-    io_layout->addWidget(new QLabel("Port:"), 0, 2);
-    spin_io_port_ = new QSpinBox();
-    spin_io_port_->setRange(0, 15);
-    io_layout->addWidget(spin_io_port_, 0, 3);
+    auto * btn_all_off = new QPushButton(tr_ui("全部关闭", "All OFF"));
+    btn_all_off->setObjectName("action_button");
+    top_bar->addWidget(btn_all_off);
+    top_bar->addStretch();
 
-    io_layout->addWidget(new QLabel("Value:"), 1, 0);
-    chk_io_value_ = new QCheckBox("ON");
-    io_layout->addWidget(chk_io_value_, 1, 1);
+    layout->addLayout(top_bar);
 
-    auto * btn_set_io = new QPushButton("Set IO");
-    btn_set_io->setObjectName("action_button");
-    io_layout->addWidget(btn_set_io, 1, 2);
+    // === IO Table ===
+    io_rows_container_ = new QWidget();
+    io_grid_ = new QGridLayout(io_rows_container_);
+    io_grid_->setSpacing(4);
 
-    auto * btn_get_io = new QPushButton("Read IO");
-    btn_get_io->setObjectName("action_button");
-    io_layout->addWidget(btn_get_io, 1, 3);
+    // Header row
+    io_grid_->addWidget(new QLabel(tr_ui("端口", "Port")), 0, 0);
+    io_grid_->addWidget(new QLabel(tr_ui("名称", "Name")), 0, 1);
+    io_grid_->addWidget(new QLabel(tr_ui("DO 状态", "DO State")), 0, 2, Qt::AlignCenter);
+    io_grid_->addWidget(new QLabel(tr_ui("DI 状态", "DI State")), 0, 3, Qt::AlignCenter);
+    io_grid_->addWidget(new QLabel(tr_ui("控制", "Control")), 0, 4, 1, 2, Qt::AlignCenter);
 
-    group_io->setLayout(io_layout);
-    layout->addWidget(group_io);
+    // Pre-create rows for max ports
+    for (int i = 0; i < IO_MAX_PORTS; ++i) {
+        int row = i + 1;
+        io_name_labels_[i] = new QLabel();
+        do_status_labels_[i] = new QLabel("--");
+        do_status_labels_[i]->setAlignment(Qt::AlignCenter);
+        do_status_labels_[i]->setFixedWidth(60);
+        di_status_labels_[i] = new QLabel("--");
+        di_status_labels_[i]->setAlignment(Qt::AlignCenter);
+        di_status_labels_[i]->setFixedWidth(60);
 
-    auto * label_io_result = new QLabel("IO Status: -");
-    layout->addWidget(label_io_result);
-    layout->addStretch();
+        do_on_buttons_[i] = new QPushButton(tr_ui("启动", "ON"));
+        do_on_buttons_[i]->setObjectName("action_button");
+        do_on_buttons_[i]->setFixedWidth(60);
+        do_off_buttons_[i] = new QPushButton(tr_ui("停止", "OFF"));
+        do_off_buttons_[i]->setObjectName("action_button");
+        do_off_buttons_[i]->setFixedWidth(60);
 
+        io_grid_->addWidget(new QLabel(QString::number(i + 1)), row, 0);
+        io_grid_->addWidget(io_name_labels_[i], row, 1);
+        io_grid_->addWidget(do_status_labels_[i], row, 2, Qt::AlignCenter);
+        io_grid_->addWidget(di_status_labels_[i], row, 3, Qt::AlignCenter);
+        io_grid_->addWidget(do_on_buttons_[i], row, 4);
+        io_grid_->addWidget(do_off_buttons_[i], row, 5);
+    }
+
+    auto * scroll = new QScrollArea();
+    scroll->setWidget(io_rows_container_);
+    scroll->setWidgetResizable(true);
+    layout->addWidget(scroll);
     widget->setLayout(layout);
 
-    connect(btn_set_io, &QPushButton::clicked, this, [this]() {
+    // === Connect signals ===
+    // Group selection change
+    connect(combo_io_group_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) { rebuildIORows(idx); });
+
+    // Refresh button
+    connect(btn_refresh, &QPushButton::clicked, this, [this]() { refreshIOGroup(); });
+
+    // All OFF button
+    connect(btn_all_off, &QPushButton::clicked, this, [this]() {
         if (permission_manager_ &&
             !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
             QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
                                  tr_ui("当前用户无权执行 IO 控制操作", "Insufficient permission for IO control"));
             return;
         }
-        int type = combo_io_type_->currentIndex(); // 0 = DO, 1 = DI
-        int port = spin_io_port_->value();
-        bool value = chk_io_value_->isChecked();
-        node_->call_robot_io("set", type, port, value);
+        int group = combo_io_group_->currentIndex();
+        if (group >= 3) return; // Function IO is read-only
+        int io_type = (group <= 1) ? 0 : 1; // 0=standard, 1=tool
+        int base = (group == 1) ? 9 : 1;
+        for (int i = 0; i < io_visible_count_; ++i) {
+            setDoOutput(io_type, base + i, false, i);
+        }
     });
 
-    connect(btn_get_io, &QPushButton::clicked, this, [this, label_io_result]() {
-        int type = combo_io_type_->currentIndex();
-        int port = spin_io_port_->value();
-        node_->call_robot_io("get", type, port, false);
-        label_io_result->setText(QString("IO Status: Reading port %1...").arg(port));
+    // ON/OFF buttons for each row
+    for (int i = 0; i < IO_MAX_PORTS; ++i) {
+        connect(do_on_buttons_[i], &QPushButton::clicked, this, [this, i]() {
+            if (permission_manager_ &&
+                !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+                QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                     tr_ui("当前用户无权执行 IO 控制操作", "Insufficient permission for IO control"));
+                return;
+            }
+            int group = combo_io_group_->currentIndex();
+            int io_type = (group <= 1) ? 0 : 1;
+            int base = (group == 1) ? 9 : 1;
+            setDoOutput(io_type, base + i, true, i);
+        });
+        connect(do_off_buttons_[i], &QPushButton::clicked, this, [this, i]() {
+            if (permission_manager_ &&
+                !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+                QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                     tr_ui("当前用户无权执行 IO 控制操作", "Insufficient permission for IO control"));
+                return;
+            }
+            int group = combo_io_group_->currentIndex();
+            int io_type = (group <= 1) ? 0 : 1;
+            int base = (group == 1) ? 9 : 1;
+            setDoOutput(io_type, base + i, false, i);
+        });
+    }
+
+    // Initialize first group
+    rebuildIORows(0);
+
+    // === Lift Platform Control Section ===
+    auto * lift_group = new QGroupBox(tr_ui("升降平台控制", "Lift Platform Control"));
+    auto * lift_layout = new QHBoxLayout(lift_group);
+
+    // Speed control
+    lift_layout->addWidget(new QLabel(tr_ui("速度(RPM):", "Speed(RPM):")));
+    spin_lift_speed_ = new QSpinBox();
+    spin_lift_speed_->setRange(100, 3000);
+    spin_lift_speed_->setValue(1000);
+    spin_lift_speed_->setSingleStep(100);
+    spin_lift_speed_->setFixedWidth(80);
+    lift_layout->addWidget(spin_lift_speed_);
+
+    // Up button
+    btn_lift_up_ = new QPushButton(tr_ui("上升", "UP"));
+    btn_lift_up_->setObjectName("action_button");
+    btn_lift_up_->setFixedWidth(70);
+    lift_layout->addWidget(btn_lift_up_);
+
+    // Down button
+    btn_lift_down_ = new QPushButton(tr_ui("下降", "DOWN"));
+    btn_lift_down_->setObjectName("action_button");
+    btn_lift_down_->setFixedWidth(70);
+    lift_layout->addWidget(btn_lift_down_);
+
+    // Stop button
+    btn_lift_stop_ = new QPushButton(tr_ui("停止", "STOP"));
+    btn_lift_stop_->setObjectName("action_button");
+    btn_lift_stop_->setStyleSheet("QPushButton { background-color: #cc3333; color: white; font-weight: bold; }");
+    btn_lift_stop_->setFixedWidth(70);
+    lift_layout->addWidget(btn_lift_stop_);
+
+    // Status label
+    label_lift_status_ = new QLabel("--");
+    label_lift_status_->setFixedWidth(200);
+    lift_layout->addWidget(label_lift_status_);
+
+    lift_layout->addStretch();
+    layout->addWidget(lift_group);
+
+    // === Lift Position Mode Section ===
+    auto * pos_group = new QGroupBox(tr_ui("升降平台-位置模式", "Lift Platform - Position Mode"));
+    auto * pos_layout = new QHBoxLayout(pos_group);
+
+    pos_layout->addWidget(new QLabel(tr_ui("目标脉冲:", "Target:")));
+    spin_lift_pos_target_ = new QSpinBox();
+    spin_lift_pos_target_->setRange(-99999999, 99999999);
+    spin_lift_pos_target_->setValue(10000);
+    spin_lift_pos_target_->setSingleStep(1000);
+    spin_lift_pos_target_->setFixedWidth(100);
+    pos_layout->addWidget(spin_lift_pos_target_);
+
+    pos_layout->addWidget(new QLabel(tr_ui("速度(0.1rpm):", "Speed:")));
+    spin_lift_pos_speed_ = new QSpinBox();
+    spin_lift_pos_speed_->setRange(1, 65535);
+    spin_lift_pos_speed_->setValue(1000);
+    spin_lift_pos_speed_->setSingleStep(100);
+    spin_lift_pos_speed_->setFixedWidth(80);
+    pos_layout->addWidget(spin_lift_pos_speed_);
+
+    pos_layout->addWidget(new QLabel(tr_ui("加速(ms):", "Accel:")));
+    spin_lift_pos_accel_ = new QSpinBox();
+    spin_lift_pos_accel_->setRange(0, 65535);
+    spin_lift_pos_accel_->setValue(1000);
+    spin_lift_pos_accel_->setFixedWidth(70);
+    pos_layout->addWidget(spin_lift_pos_accel_);
+
+    pos_layout->addWidget(new QLabel(tr_ui("减速(ms):", "Decel:")));
+    spin_lift_pos_decel_ = new QSpinBox();
+    spin_lift_pos_decel_->setRange(0, 65535);
+    spin_lift_pos_decel_->setValue(1000);
+    spin_lift_pos_decel_->setFixedWidth(70);
+    pos_layout->addWidget(spin_lift_pos_decel_);
+
+    btn_lift_pos_move_ = new QPushButton(tr_ui("移动", "Move"));
+    btn_lift_pos_move_->setObjectName("action_button");
+    btn_lift_pos_move_->setFixedWidth(70);
+    pos_layout->addWidget(btn_lift_pos_move_);
+
+    btn_lift_pos_home_ = new QPushButton(tr_ui("回原点", "Home"));
+    btn_lift_pos_home_->setObjectName("action_button");
+    btn_lift_pos_home_->setFixedWidth(70);
+    pos_layout->addWidget(btn_lift_pos_home_);
+
+    btn_lift_pos_stop_ = new QPushButton(tr_ui("停止", "STOP"));
+    btn_lift_pos_stop_->setObjectName("action_button");
+    btn_lift_pos_stop_->setStyleSheet("QPushButton { background-color: #cc3333; color: white; font-weight: bold; }");
+    btn_lift_pos_stop_->setFixedWidth(70);
+    pos_layout->addWidget(btn_lift_pos_stop_);
+
+    label_lift_pos_status_ = new QLabel("--");
+    label_lift_pos_status_->setFixedWidth(200);
+    pos_layout->addWidget(label_lift_pos_status_);
+
+    pos_layout->addStretch();
+    layout->addWidget(pos_group);
+
+    // === Lift button connections ===
+    auto check_lift_permission = [this]() -> bool {
+        if (permission_manager_ &&
+            !permission_manager_->hasPermission(current_role_, ActionType::ModifyParam)) {
+            QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                                 tr_ui("当前用户无权控制升降平台", "Insufficient permission for lift control"));
+            return false;
+        }
+        return true;
+    };
+
+    connect(btn_lift_up_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        int speed = spin_lift_speed_->value();
+        label_lift_status_->setText(tr_ui("解锁抱闸...", "Releasing brake..."));
+        // Step 1: Release brake (DO4=HIGH)
+        node_->call_robot_io("setIo", 0, 4, true, [this, speed](const std::string& result) {
+            QMetaObject::invokeMethod(this, [this, speed, result]() {
+                if (result == "error" || result == "Service unavailable") {
+                    label_lift_status_->setText(tr_ui("抱闸解锁失败", "Brake release failed"));
+                    return;
+                }
+                label_lift_status_->setText(tr_ui("使能中...", "Enabling..."));
+                // Step 2: Enable servo (after 200ms for brake to release)
+                QTimer::singleShot(200, this, [this, speed]() {
+                    node_->call_lift_control("enable", speed, [this, speed](bool ok, const std::string& msg, int) {
+                        QMetaObject::invokeMethod(this, [this, ok, speed, msg]() {
+                            if (!ok) {
+                                label_lift_status_->setText(QString::fromStdString(msg));
+                                node_->call_robot_io("setIo", 0, 4, false);  // Re-engage brake
+                                return;
+                            }
+                            // Step 3: Move up
+                            node_->call_lift_control("move_up", speed, [this](bool ok2, const std::string& msg2, int) {
+                                QMetaObject::invokeMethod(this, [this, ok2, msg2]() {
+                                    label_lift_status_->setText(ok2
+                                        ? tr_ui("上升中...", "Moving up...")
+                                        : QString::fromStdString(msg2));
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+
+    connect(btn_lift_down_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        int speed = spin_lift_speed_->value();
+        label_lift_status_->setText(tr_ui("解锁抱闸...", "Releasing brake..."));
+        // Step 1: Release brake (DO4=HIGH)
+        node_->call_robot_io("setIo", 0, 4, true, [this, speed](const std::string& result) {
+            QMetaObject::invokeMethod(this, [this, speed, result]() {
+                if (result == "error" || result == "Service unavailable") {
+                    label_lift_status_->setText(tr_ui("抱闸解锁失败", "Brake release failed"));
+                    return;
+                }
+                label_lift_status_->setText(tr_ui("使能中...", "Enabling..."));
+                QTimer::singleShot(200, this, [this, speed]() {
+                    node_->call_lift_control("enable", speed, [this, speed](bool ok, const std::string& msg, int) {
+                        QMetaObject::invokeMethod(this, [this, ok, speed, msg]() {
+                            if (!ok) {
+                                label_lift_status_->setText(QString::fromStdString(msg));
+                                node_->call_robot_io("setIo", 0, 4, false);
+                                return;
+                            }
+                            node_->call_lift_control("move_down", speed, [this](bool ok2, const std::string& msg2, int) {
+                                QMetaObject::invokeMethod(this, [this, ok2, msg2]() {
+                                    label_lift_status_->setText(ok2
+                                        ? tr_ui("下降中...", "Moving down...")
+                                        : QString::fromStdString(msg2));
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+
+    connect(btn_lift_stop_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        label_lift_status_->setText(tr_ui("停止中...", "Stopping..."));
+        node_->call_lift_control("stop", 0, [this](bool ok, const std::string& msg, int) {
+            QMetaObject::invokeMethod(this, [this, ok, msg]() {
+                if (ok) {
+                    // Re-engage brake (DO4=LOW) after stop
+                    QTimer::singleShot(200, this, [this]() {
+                        node_->call_robot_io("setIo", 0, 4, false, [this](const std::string&) {
+                            QMetaObject::invokeMethod(this, [this]() {
+                                label_lift_status_->setText(tr_ui("已停止", "Stopped"));
+                            });
+                        });
+                    });
+                } else {
+                    label_lift_status_->setText(QString::fromStdString(msg));
+                }
+            });
+        });
+    });
+
+    // === Position Mode button connections ===
+    connect(btn_lift_pos_move_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        int pulses = spin_lift_pos_target_->value();
+        int speed  = spin_lift_pos_speed_->value();
+        int acc    = spin_lift_pos_accel_->value();
+        int dec    = spin_lift_pos_decel_->value();
+        label_lift_pos_status_->setText(tr_ui("解锁抱闸...", "Releasing brake..."));
+        // Step 1: Release brake (DO4=HIGH)
+        node_->call_robot_io("setIo", 0, 4, true, [this, pulses, speed, acc, dec](const std::string& result) {
+            QMetaObject::invokeMethod(this, [this, pulses, speed, acc, dec, result]() {
+                if (result == "error" || result == "Service unavailable") {
+                    label_lift_pos_status_->setText(tr_ui("抱闸解锁失败", "Brake release failed"));
+                    return;
+                }
+                label_lift_pos_status_->setText(tr_ui("定位中...", "Positioning..."));
+                QTimer::singleShot(200, this, [this, pulses, speed, acc, dec]() {
+                    node_->call_lift_control("position_move", speed,
+                        [this](bool ok, const std::string& msg, int) {
+                            QMetaObject::invokeMethod(this, [this, ok, msg]() {
+                                if (ok) {
+                                    startLiftPositionPoll();
+                                } else {
+                                    label_lift_pos_status_->setText(QString::fromStdString(msg));
+                                }
+                            });
+                        }, pulses, acc, dec);
+                });
+            });
+        });
+    });
+
+    connect(btn_lift_pos_home_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        label_lift_pos_status_->setText(tr_ui("回原点...", "Homing..."));
+        // Trigger segment 2 (return to origin)
+        node_->call_lift_control("position_next", 0, [this](bool ok, const std::string& msg, int) {
+            QMetaObject::invokeMethod(this, [this, ok, msg]() {
+                if (ok) {
+                    startLiftPositionPoll();
+                } else {
+                    label_lift_pos_status_->setText(QString::fromStdString(msg));
+                }
+            });
+        });
+    });
+
+    connect(btn_lift_pos_stop_, &QPushButton::clicked, this, [this, check_lift_permission]() {
+        if (!check_lift_permission()) return;
+        stopLiftPositionPoll("");
+        label_lift_pos_status_->setText(tr_ui("停止中...", "Stopping..."));
+        node_->call_lift_control("position_stop", 0, [this](bool ok, const std::string& msg, int) {
+            QMetaObject::invokeMethod(this, [this, ok, msg]() {
+                if (ok) {
+                    QTimer::singleShot(200, this, [this]() {
+                        node_->call_robot_io("setIo", 0, 4, false, [this](const std::string&) {
+                            QMetaObject::invokeMethod(this, [this]() {
+                                label_lift_pos_status_->setText(tr_ui("已停止", "Stopped"));
+                            });
+                        });
+                    });
+                } else {
+                    label_lift_pos_status_->setText(QString::fromStdString(msg));
+                }
+            });
+        });
     });
 
     return widget;
+}
+
+void AppWindow::startLiftPositionPoll() {
+    lift_poll_last_pos_ = INT_MIN;
+    lift_poll_stable_count_ = 0;
+    lift_poll_elapsed_ = 0;
+
+    if (!timer_lift_pos_poll_) {
+        timer_lift_pos_poll_ = new QTimer(this);
+        timer_lift_pos_poll_->setInterval(500);
+        connect(timer_lift_pos_poll_, &QTimer::timeout, this, [this]() {
+            lift_poll_elapsed_ += 500;
+            if (lift_poll_elapsed_ > 30000) {
+                stopLiftPositionPoll(tr_ui("超时", "Timeout"));
+                return;
+            }
+            node_->call_lift_control("get_position", 0, [this](bool ok, const std::string&, int pos) {
+                QMetaObject::invokeMethod(this, [this, ok, pos]() {
+                    if (!timer_lift_pos_poll_ || !timer_lift_pos_poll_->isActive()) return;
+                    if (!ok) {
+                        label_lift_pos_status_->setText(tr_ui("读取位置失败", "Read pos failed"));
+                        return;
+                    }
+                    label_lift_pos_status_->setText(
+                        tr_ui("位置: ", "Pos: ") + QString::number(pos));
+                    if (pos == lift_poll_last_pos_) {
+                        lift_poll_stable_count_++;
+                        if (lift_poll_stable_count_ >= 3) {
+                            stopLiftPositionPoll(
+                                tr_ui("✓ 到位 (", "✓ Done (") + QString::number(pos) + ")");
+                        }
+                    } else {
+                        lift_poll_stable_count_ = 0;
+                    }
+                    lift_poll_last_pos_ = pos;
+                });
+            });
+        });
+    }
+    timer_lift_pos_poll_->start();
+}
+
+void AppWindow::stopLiftPositionPoll(const QString& final_status) {
+    if (timer_lift_pos_poll_ && timer_lift_pos_poll_->isActive()) {
+        timer_lift_pos_poll_->stop();
+    }
+    if (!final_status.isEmpty()) {
+        label_lift_pos_status_->setText(final_status);
+    }
+}
+
+void AppWindow::rebuildIORows(int group_index) {
+    // Standard DIO device names (port 1-8)
+    static const QString std_names[] = {
+        tr_ui("清洗机",       "Cleaner"),
+        tr_ui("左侧吹风机",   "Left Blower"),
+        tr_ui("右侧烘干机",   "Right Dryer"),
+        tr_ui("升降平台解锁",  "Lift Brake Release"),
+        tr_ui("黄灯",         "Yellow Light"),
+        tr_ui("绿灯",         "Green Light"),
+        tr_ui("红灯",         "Red Light"),
+        tr_ui("蜂鸣器",       "Buzzer"),
+    };
+
+    int count = 0;
+    bool read_only = false;
+
+    switch (group_index) {
+        case 0: count = 8;  break; // Standard 1-8
+        case 1: count = 8;  break; // Standard 9-16
+        case 2: count = 2;  break; // Tool 1-2
+        case 3: count = 8; read_only = true; break; // Function 1-8
+    }
+    io_visible_count_ = count;
+
+    int base = (group_index == 1) ? 9 : 1;
+
+    for (int i = 0; i < IO_MAX_PORTS; ++i) {
+        int row = i + 1;
+        bool visible = (i < count);
+
+        // Show/hide row widgets
+        io_grid_->itemAtPosition(row, 0)->widget()->setVisible(visible);
+        io_name_labels_[i]->setVisible(visible);
+        do_status_labels_[i]->setVisible(visible);
+        di_status_labels_[i]->setVisible(visible);
+        do_on_buttons_[i]->setVisible(visible && !read_only);
+        do_off_buttons_[i]->setVisible(visible && !read_only);
+
+        if (!visible) continue;
+
+        // Update port number label
+        static_cast<QLabel*>(io_grid_->itemAtPosition(row, 0)->widget())
+            ->setText(QString::number(base + i));
+
+        // Update name
+        if (group_index == 0 && i < 8) {
+            io_name_labels_[i]->setText(std_names[i]);
+        } else if (group_index == 2) {
+            io_name_labels_[i]->setText(QString("Tool IO %1").arg(i + 1));
+        } else if (group_index == 3) {
+            io_name_labels_[i]->setText(QString("Func IO %1").arg(i + 1));
+        } else {
+            io_name_labels_[i]->setText(QString("DIO %1").arg(base + i));
+        }
+
+        // Reset status
+        do_status_labels_[i]->setText("--");
+        do_status_labels_[i]->setStyleSheet("");
+        di_status_labels_[i]->setText("--");
+        di_status_labels_[i]->setStyleSheet("");
+    }
+}
+
+void AppWindow::refreshIOGroup() {
+    int group = combo_io_group_->currentIndex();
+    int io_type = (group <= 1) ? 0 : (group == 2) ? 1 : 2;
+    int base = (group == 1) ? 9 : 1;
+    int count = io_visible_count_;
+
+    // Stagger requests: 150ms between each port to avoid overwhelming the driver
+    for (int i = 0; i < count; ++i) {
+        int port = base + i;
+        int delay = i * 150;  // port 0: 0ms, port 1: 150ms, port 2: 300ms, ...
+        QTimer::singleShot(delay, this, [this, io_type, port, i]() {
+            readDoStatus(io_type, port, i);
+            readDiStatus(io_type, port, i);
+        });
+    }
+}
+
+void AppWindow::setDoOutput(int io_type, int port, bool value, int idx) {
+    if (idx < 0 || idx >= IO_MAX_PORTS) return;
+    do_status_labels_[idx]->setText("...");
+    node_->call_robot_io("setIo", io_type, port, value, [this, io_type, port, idx](const std::string& result) {
+        QMetaObject::invokeMethod(this, [this, io_type, port, idx, result]() {
+            bool ok = false;
+            try { ok = (std::stoi(result) >= 0); } catch (...) {}
+            if (ok) {
+                readDoStatus(io_type, port, idx);
+            } else {
+                do_status_labels_[idx]->setText("ERR");
+                do_status_labels_[idx]->setStyleSheet("color: red;");
+            }
+        });
+    });
+}
+
+void AppWindow::readDoStatus(int io_type, int port, int idx) {
+    if (idx < 0 || idx >= IO_MAX_PORTS) return;
+    do_status_labels_[idx]->setText("...");
+    node_->call_robot_io("getDo", io_type, port, false, [this, idx](const std::string& result) {
+        QMetaObject::invokeMethod(this, [this, idx, result]() {
+            if (result == "1") {
+                do_status_labels_[idx]->setText("ON");
+                do_status_labels_[idx]->setStyleSheet("color: green; font-weight: bold;");
+            } else if (result == "0") {
+                do_status_labels_[idx]->setText("OFF");
+                do_status_labels_[idx]->setStyleSheet("color: gray;");
+            } else {
+                do_status_labels_[idx]->setText("N/A");
+                do_status_labels_[idx]->setStyleSheet("color: #999;");
+            }
+        });
+    });
+}
+
+void AppWindow::readDiStatus(int io_type, int port, int idx) {
+    if (idx < 0 || idx >= IO_MAX_PORTS) return;
+    di_status_labels_[idx]->setText("...");
+    node_->call_robot_io("getIo", io_type, port, false, [this, idx](const std::string& result) {
+        QMetaObject::invokeMethod(this, [this, idx, result]() {
+            if (result == "1") {
+                di_status_labels_[idx]->setText("HIGH");
+                di_status_labels_[idx]->setStyleSheet("color: green; font-weight: bold;");
+            } else if (result == "0") {
+                di_status_labels_[idx]->setText("LOW");
+                di_status_labels_[idx]->setStyleSheet("color: gray;");
+            } else {
+                di_status_labels_[idx]->setText("N/A");
+                di_status_labels_[idx]->setStyleSheet("color: #999;");
+            }
+        });
+    });
 }
 
 QWidget* AppWindow::createLHandTab() {
@@ -1285,23 +1821,23 @@ QWidget* AppWindow::createAdminTab() {
     auto * widget = new QWidget();
     auto * layout = new QVBoxLayout(widget);
 
-    auto * group_users = new QGroupBox("用户管理");
+    auto * group_users = new QGroupBox(tr_ui("用户管理", "User Management"));
     auto * layout_users = new QVBoxLayout();
     admin_user_table_ = new QTableWidget();
     admin_user_table_->setColumnCount(5);
-    admin_user_table_->setHorizontalHeaderLabels(QStringList() << "用户名" << "角色" << "失败次数" << "锁定" << "禁用");
+    admin_user_table_->setHorizontalHeaderLabels(QStringList() << tr_ui("用户名", "Username") << tr_ui("角色", "Role") << tr_ui("失败次数", "Failures") << tr_ui("锁定", "Locked") << tr_ui("禁用", "Disabled"));
     admin_user_table_->horizontalHeader()->setStretchLastSection(true);
     admin_user_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     admin_user_table_->setSelectionMode(QAbstractItemView::SingleSelection);
     layout_users->addWidget(admin_user_table_);
 
     auto * user_btn_layout = new QHBoxLayout();
-    auto * btn_refresh_users = new QPushButton("刷新");
-    auto * btn_create_user = new QPushButton("创建用户");
-    auto * btn_delete_user = new QPushButton("删除用户");
-    auto * btn_lock_user = new QPushButton("锁定");
-    auto * btn_unlock_user = new QPushButton("解锁");
-    auto * btn_reset_password = new QPushButton("重置密码");
+    auto * btn_refresh_users = new QPushButton(tr_ui("刷新", "Refresh"));
+    auto * btn_create_user = new QPushButton(tr_ui("创建用户", "Create User"));
+    auto * btn_delete_user = new QPushButton(tr_ui("删除用户", "Delete User"));
+    auto * btn_lock_user = new QPushButton(tr_ui("锁定", "Lock"));
+    auto * btn_unlock_user = new QPushButton(tr_ui("解锁", "Unlock"));
+    auto * btn_reset_password = new QPushButton(tr_ui("重置密码", "Reset Password"));
 
     user_btn_layout->addWidget(btn_refresh_users);
     user_btn_layout->addWidget(btn_create_user);
@@ -1333,8 +1869,8 @@ QWidget* AppWindow::createAdminTab() {
             auto * item_fail = new QTableWidgetItem(QString::number(u.failed_attempts));
             qint64 now = QDateTime::currentSecsSinceEpoch();
             bool locked = u.lock_until > now;
-            auto * item_locked = new QTableWidgetItem(locked ? "是" : "否");
-            auto * item_disabled = new QTableWidgetItem(u.disabled ? "是" : "否");
+            auto * item_locked = new QTableWidgetItem(locked ? tr_ui("是", "Yes") : tr_ui("否", "No"));
+            auto * item_disabled = new QTableWidgetItem(u.disabled ? tr_ui("是", "Yes") : tr_ui("否", "No"));
             admin_user_table_->setItem(i, 0, item_name);
             admin_user_table_->setItem(i, 1, item_role);
             admin_user_table_->setItem(i, 2, item_fail);
@@ -1372,22 +1908,22 @@ QWidget* AppWindow::createAdminTab() {
             return;
         }
         bool ok = false;
-        QString username = QInputDialog::getText(this, "创建用户", "用户名:", QLineEdit::Normal, "", &ok);
+        QString username = QInputDialog::getText(this, tr_ui("创建用户", "Create User"), tr_ui("用户名:", "Username:"), QLineEdit::Normal, "", &ok);
         if (!ok || username.trimmed().isEmpty()) {
             return;
         }
-        QString password = QInputDialog::getText(this, "创建用户", "密码:", QLineEdit::Password, "", &ok);
+        QString password = QInputDialog::getText(this, tr_ui("创建用户", "Create User"), tr_ui("密码:", "Password:"), QLineEdit::Password, "", &ok);
         if (!ok || password.isEmpty()) {
             return;
         }
-        QString confirm = QInputDialog::getText(this, "创建用户", "确认密码:", QLineEdit::Password, "", &ok);
+        QString confirm = QInputDialog::getText(this, tr_ui("创建用户", "Create User"), tr_ui("确认密码:", "Confirm Password:"), QLineEdit::Password, "", &ok);
         if (!ok || confirm != password) {
-            QMessageBox::warning(this, "创建用户失败", "两次输入的密码不一致");
+            QMessageBox::warning(this, tr_ui("创建用户失败", "Create User Failed"), tr_ui("两次输入的密码不一致", "Passwords do not match"));
             return;
         }
         QStringList roles;
         roles << "Operator" << "Maintainer" << "Admin";
-        QString role_str = QInputDialog::getItem(this, "创建用户", "角色:", roles, 0, false, &ok);
+        QString role_str = QInputDialog::getItem(this, tr_ui("创建用户", "Create User"), tr_ui("角色:", "Role:"), roles, 0, false, &ok);
         if (!ok || role_str.isEmpty()) {
             return;
         }
@@ -1399,7 +1935,7 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString err;
         if (!auth_manager_->createUser(username.trimmed(), password, role, err)) {
-            QMessageBox::warning(this, "创建用户失败", err);
+            QMessageBox::warning(this, tr_ui("创建用户失败", "Create User Failed"), err);
             return;
         }
         refreshUsers();
@@ -1427,15 +1963,15 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString username = selectedUsername();
         if (username.isEmpty()) {
-            QMessageBox::warning(this, "删除用户", "请先选择要删除的用户");
+            QMessageBox::warning(this, tr_ui("删除用户", "Delete User"), tr_ui("请先选择要删除的用户", "Please select a user to delete"));
             return;
         }
-        if (QMessageBox::question(this, "删除用户", "确认删除用户 " + username + " ?") != QMessageBox::Yes) {
+        if (QMessageBox::question(this, tr_ui("删除用户", "Delete User"), tr_ui("确认删除用户 ", "Are you sure to delete user ") + username + " ?") != QMessageBox::Yes) {
             return;
         }
         QString err;
         if (!auth_manager_->deleteUser(username, err)) {
-            QMessageBox::warning(this, "删除用户失败", err);
+            QMessageBox::warning(this, tr_ui("删除用户失败", "Delete User Failed"), err);
             return;
         }
         refreshUsers();
@@ -1447,12 +1983,12 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString username = selectedUsername();
         if (username.isEmpty()) {
-            QMessageBox::warning(this, "锁定用户", "请先选择要锁定的用户");
+            QMessageBox::warning(this, tr_ui("锁定用户", "Lock User"), tr_ui("请先选择要锁定的用户", "Please select a user to lock"));
             return;
         }
         QString err;
         if (!auth_manager_->setLocked(username, true, err)) {
-            QMessageBox::warning(this, "锁定用户失败", err);
+            QMessageBox::warning(this, tr_ui("锁定用户失败", "Lock User Failed"), err);
             return;
         }
         refreshUsers();
@@ -1464,12 +2000,12 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString username = selectedUsername();
         if (username.isEmpty()) {
-            QMessageBox::warning(this, "解锁用户", "请先选择要解锁的用户");
+            QMessageBox::warning(this, tr_ui("解锁用户", "Unlock User"), tr_ui("请先选择要解锁的用户", "Please select a user to unlock"));
             return;
         }
         QString err;
         if (!auth_manager_->setLocked(username, false, err)) {
-            QMessageBox::warning(this, "解锁用户失败", err);
+            QMessageBox::warning(this, tr_ui("解锁用户失败", "Unlock User Failed"), err);
             return;
         }
         refreshUsers();
@@ -1481,22 +2017,22 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString username = selectedUsername();
         if (username.isEmpty()) {
-            QMessageBox::warning(this, "重置密码", "请先选择要重置密码的用户");
+            QMessageBox::warning(this, tr_ui("重置密码", "Reset Password"), tr_ui("请先选择要重置密码的用户", "Please select a user to reset password"));
             return;
         }
         bool ok = false;
-        QString password = QInputDialog::getText(this, "重置密码", "新密码:", QLineEdit::Password, "", &ok);
+        QString password = QInputDialog::getText(this, tr_ui("重置密码", "Reset Password"), tr_ui("新密码:", "New Password:"), QLineEdit::Password, "", &ok);
         if (!ok || password.isEmpty()) {
             return;
         }
-        QString confirm = QInputDialog::getText(this, "重置密码", "确认新密码:", QLineEdit::Password, "", &ok);
+        QString confirm = QInputDialog::getText(this, tr_ui("重置密码", "Reset Password"), tr_ui("确认新密码:", "Confirm New Password:"), QLineEdit::Password, "", &ok);
         if (!ok || confirm != password) {
-            QMessageBox::warning(this, "重置密码失败", "两次输入的密码不一致");
+            QMessageBox::warning(this, tr_ui("重置密码失败", "Reset Password Failed"), tr_ui("两次输入的密码不一致", "Passwords do not match"));
             return;
         }
         QString err;
         if (!auth_manager_->adminResetPassword(username, password, true, err)) {
-            QMessageBox::warning(this, "重置密码失败", err);
+            QMessageBox::warning(this, tr_ui("重置密码失败", "Reset Password Failed"), err);
             return;
         }
         refreshUsers();
@@ -1505,7 +2041,7 @@ QWidget* AppWindow::createAdminTab() {
     refreshUsers();
 
     if (can_view_logs && auth_log_manager_) {
-        auto * group_logs = new QGroupBox("登录日志");
+        auto * group_logs = new QGroupBox(tr_ui("登录日志", "Login Logs"));
         auto * layout_logs = new QVBoxLayout();
 
         auto * filter_layout = new QHBoxLayout();
@@ -1514,16 +2050,16 @@ QWidget* AppWindow::createAdminTab() {
         admin_log_from_->setDisplayFormat("yyyy-MM-dd HH:mm:ss");
         admin_log_to_->setDisplayFormat("yyyy-MM-dd HH:mm:ss");
         admin_log_user_filter_ = new QLineEdit();
-        admin_log_success_only_ = new QCheckBox("仅成功");
-        admin_log_failure_only_ = new QCheckBox("仅失败");
-        auto * btn_refresh_logs = new QPushButton("刷新");
-        auto * btn_delete_old = new QPushButton("删除早于起始时间的日志");
+        admin_log_success_only_ = new QCheckBox(tr_ui("仅成功", "Success Only"));
+        admin_log_failure_only_ = new QCheckBox(tr_ui("仅失败", "Failure Only"));
+        auto * btn_refresh_logs = new QPushButton(tr_ui("刷新", "Refresh"));
+        auto * btn_delete_old = new QPushButton(tr_ui("删除早于起始时间的日志", "Delete logs before start time"));
 
-        filter_layout->addWidget(new QLabel("起始时间"));
+        filter_layout->addWidget(new QLabel(tr_ui("起始时间", "Start Time")));
         filter_layout->addWidget(admin_log_from_);
-        filter_layout->addWidget(new QLabel("结束时间"));
+        filter_layout->addWidget(new QLabel(tr_ui("结束时间", "End Time")));
         filter_layout->addWidget(admin_log_to_);
-        filter_layout->addWidget(new QLabel("用户过滤"));
+        filter_layout->addWidget(new QLabel(tr_ui("用户过滤", "User Filter")));
         filter_layout->addWidget(admin_log_user_filter_);
         filter_layout->addWidget(admin_log_success_only_);
         filter_layout->addWidget(admin_log_failure_only_);
@@ -1538,7 +2074,7 @@ QWidget* AppWindow::createAdminTab() {
 
         admin_log_table_ = new QTableWidget();
         admin_log_table_->setColumnCount(5);
-        admin_log_table_->setHorizontalHeaderLabels(QStringList() << "时间" << "用户" << "结果" << "原因" << "来源");
+        admin_log_table_->setHorizontalHeaderLabels(QStringList() << tr_ui("时间", "Time") << tr_ui("用户", "User") << tr_ui("结果", "Result") << tr_ui("原因", "Reason") << tr_ui("来源", "Source"));
         admin_log_table_->horizontalHeader()->setStretchLastSection(true);
         admin_log_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         admin_log_table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -1559,7 +2095,7 @@ QWidget* AppWindow::createAdminTab() {
                 const AuthLogEntry& e = logs[i];
                 auto * item_time = new QTableWidgetItem(e.timestamp.toString(Qt::ISODate));
                 auto * item_user = new QTableWidgetItem(e.username);
-                auto * item_result = new QTableWidgetItem(e.success ? "成功" : "失败");
+                auto * item_result = new QTableWidgetItem(e.success ? tr_ui("成功", "Success") : tr_ui("失败", "Failure"));
                 auto * item_reason = new QTableWidgetItem(e.reason);
                 auto * item_source = new QTableWidgetItem(e.source);
                 admin_log_table_->setItem(i, 0, item_time);
@@ -1583,11 +2119,11 @@ QWidget* AppWindow::createAdminTab() {
             if (!before.isValid()) {
                 return;
             }
-            if (QMessageBox::question(this, "删除日志", "确认删除早于起始时间的日志记录?") != QMessageBox::Yes) {
+            if (QMessageBox::question(this, tr_ui("删除日志", "Delete Logs"), tr_ui("确认删除早于起始时间的日志记录?", "Are you sure to delete logs before start time?")) != QMessageBox::Yes) {
                 return;
             }
             if (!auth_log_manager_->deleteLogs(before)) {
-                QMessageBox::warning(this, "删除日志失败", "删除日志时发生错误");
+                QMessageBox::warning(this, tr_ui("删除日志失败", "Delete Logs Failed"), tr_ui("删除日志时发生错误", "Error occurred while deleting logs"));
             }
         });
 
@@ -1650,11 +2186,11 @@ QWidget* AppWindow::createGloveTab() {
     });
     QStringList left_labels;
     const QString finger_names_zh[] = {
-        "拇指1", "拇指2", "拇指3",
-        "食指1", "食指2", "食指3",
-        "中指1", "中指2", "中指3",
-        "无名指1", "无名指2", "无名指3",
-        "小指1", "小指2", "小指3"
+        tr_ui("拇指1", "Thumb1"), tr_ui("拇指2", "Thumb2"), tr_ui("拇指3", "Thumb3"),
+        tr_ui("食指1", "Index1"), tr_ui("食指2", "Index2"), tr_ui("食指3", "Index3"),
+        tr_ui("中指1", "Middle1"), tr_ui("中指2", "Middle2"), tr_ui("中指3", "Middle3"),
+        tr_ui("无名指1", "Ring1"), tr_ui("无名指2", "Ring2"), tr_ui("无名指3", "Ring3"),
+        tr_ui("小指1", "Pinky1"), tr_ui("小指2", "Pinky2"), tr_ui("小指3", "Pinky3")
     };
     const QString finger_names_en[] = {
         "Thumb1", "Thumb2", "Thumb3",

@@ -1,10 +1,11 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction, DeclareLaunchArgument
+from launch.actions import IncludeLaunchDescription, TimerAction, DeclareLaunchArgument, RegisterEventHandler, Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.parameter_descriptions import ParameterValue
 from launch.substitutions import LaunchConfiguration, PythonExpression, PathJoinSubstitution, Command
+from launch.event_handlers import OnProcessExit
 
 def generate_launch_description():
     # Args
@@ -22,7 +23,7 @@ def generate_launch_description():
 
     ethercat_channel_arg = DeclareLaunchArgument(
         'ethercat_channel',
-        default_value='0',
+        default_value='1',
         description='EtherCAT network interface channel index'
     )
 
@@ -38,14 +39,27 @@ def generate_launch_description():
         description='Serial number of camera 2 (e.g. CV2R1610004H). Empty = single camera mode.'
     )
 
+    depth_camera_serial_arg = DeclareLaunchArgument(
+        'depth_camera_serial',
+        default_value='',
+        description='Serial number of depth measurement camera (e.g. AYZ8953002L / Gemini 215). Empty = auto-detect 3rd camera.'
+    )
+
+    lift_serial_port_arg = DeclareLaunchArgument(
+        'lift_serial_port',
+        default_value='/dev/ttyUSB0',
+        description='RS485 serial port for lift platform servo driver'
+    )
+
     # 1. Vision System (Camera + Image Saver)
-    # Launches Orbbec Gemini 330 + Vision Server Node
+    # Launches Orbbec cameras + Vision Server Nodes
     vision_pkg = FindPackageShare('vision_server')
     vision_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([vision_pkg, '/launch/vision_system.launch.py']),
         launch_arguments={
             'camera1_serial': LaunchConfiguration('camera1_serial'),
             'camera2_serial': LaunchConfiguration('camera2_serial'),
+            'depth_camera_serial': LaunchConfiguration('depth_camera_serial'),
         }.items()
     )
 
@@ -108,7 +122,20 @@ def generate_launch_description():
         parameters=[{'joint_prefix': 'L_'}]
     )
 
-    # 4. System Controller (Flow Control)
+    # 4. Lift Platform Server (RS485 Modbus RTU)
+    lift_server_node = Node(
+        package='lift_server',
+        executable='lift_server_node',
+        name='lift_server',
+        output='screen',
+        parameters=[{
+            'serial_port': LaunchConfiguration('lift_serial_port'),
+            'baud_rate': 19200,
+            'slave_id': 1,
+        }]
+    )
+
+    # 5. System Controller (Flow Control)
     sys_ctrl_node = Node(
         package='system_controller',
         executable='system_controller_node',
@@ -116,7 +143,7 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 5. UI App
+    # 6. UI App
     # Launched last with a delay
     
     # Construct URDF path for UI
@@ -152,17 +179,28 @@ def generate_launch_description():
         actions=[ui_node]
     )
 
+    exit_event_handler = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=ui_node,
+            on_exit=[Shutdown()]
+        )
+    )
+
     return LaunchDescription([
         robot_ip_arg,
         model_arg,
         ethercat_channel_arg,
         camera1_serial_arg,
         camera2_serial_arg,
+        depth_camera_serial_arg,
+        lift_serial_port_arg,
         vision_launch,
         robot_launch,
         robot_state_publisher_node,
         lhand_launch,
         lhand_state_publisher,
+        lift_server_node,
         sys_ctrl_node,
-        ui_delayed
+        ui_delayed,
+        exit_event_handler
     ])

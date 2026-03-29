@@ -12,13 +12,18 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(common_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # Generate ROS interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SaveImage.srv"
+  "srv/MeasureDepth.srv"
+  "srv/CaptureBaseline.srv"
+  "srv/MeasureEarphone.srv"
 )
 
 # Image Saver Node
@@ -45,8 +50,48 @@ ament_target_dependencies(image_saver_node
 rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
 target_link_libraries(image_saver_node "${cpp_typesupport_target}")
 
-# Install executable
-install(TARGETS image_saver_node
+# Depth Measure Node
+add_executable(depth_measure_node src/depth_measure_node.cpp)
+target_include_directories(depth_measure_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${cv_bridge_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(depth_measure_node
+  ${OpenCV_LIBRARIES}
+  "${cpp_typesupport_target}"
+)
+ament_target_dependencies(depth_measure_node
+  rclcpp
+  std_msgs
+  sensor_msgs
+  cv_bridge
+  common_msgs
+)
+
+# Earphone Inspector Node
+add_executable(earphone_inspector_node src/earphone_inspector_node.cpp)
+target_include_directories(earphone_inspector_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${cv_bridge_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
+)
+target_link_libraries(earphone_inspector_node
+  ${OpenCV_LIBRARIES}
+  "${cpp_typesupport_target}"
+)
+ament_target_dependencies(earphone_inspector_node
+  rclcpp
+  sensor_msgs
+  cv_bridge
+  Eigen3
+)
+
+# Install executables
+install(TARGETS image_saver_node depth_measure_node earphone_inspector_node
   DESTINATION lib/${PROJECT_NAME})
 
 # Install launch files

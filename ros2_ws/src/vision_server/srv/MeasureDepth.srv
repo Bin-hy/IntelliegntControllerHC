@@ -1,0 +1,9 @@
+# Snapshot depth measurement (save to file)
+string file_tag     # tag for saving CSV; empty = measure only, do not save
+---
+bool success
+string message
+float64 depth_mm    # measured depth (mm)
+float64 pos_x       # 3D X in camera frame (m)
+float64 pos_y       # 3D Y in camera frame (m)
+float64 pos_z       # 3D Z in camera frame (m)
