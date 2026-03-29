@@ -1,4 +1,5 @@
 #include "ui_app/task_dialogs.hpp"
+#include "ui_app/i18n_manager.hpp"
 #include "ui_app/robot_viz_widget.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -22,30 +23,30 @@
 
 DeviceAddDialog::DeviceAddDialog(std::shared_ptr<RosNode> node, QWidget *parent)
     : QDialog(parent), node_(node) {
-    setWindowTitle("Add Device");
+    setWindowTitle(tr_ui("添加设备", "Add Device"));
     auto * layout = new QVBoxLayout(this);
 
     auto * form = new QFormLayout();
     combo_type_ = new QComboBox();
     combo_type_->addItems({"duco", "lhand", "rhand", "orbbec"});
-    form->addRow("Device Type:", combo_type_);
+    form->addRow(tr_ui("设备类型:", "Device Type:"), combo_type_);
 
     edit_usage_ = new QLineEdit();
-    form->addRow("Usage:", edit_usage_);
+    form->addRow(tr_ui("用途:", "Usage:"), edit_usage_);
 
     combo_device_select_ = new QComboBox();
-    form->addRow("Device:", combo_device_select_);
+    form->addRow(tr_ui("设备:", "Device:"), combo_device_select_);
 
     edit_sn_ = new QLineEdit();
-    form->addRow("SN:", edit_sn_);
+    form->addRow(tr_ui("SN码:", "SN:"), edit_sn_);
 
     edit_model_ = new QLineEdit();
-    form->addRow("Model:", edit_model_);
+    form->addRow(tr_ui("型号:", "Model:"), edit_model_);
 
     layout->addLayout(form);
 
     auto * h_btn = new QHBoxLayout();
-    btn_scan_ = new QPushButton("Scan");
+    btn_scan_ = new QPushButton(tr_ui("扫描", "Scan"));
     h_btn->addStretch();
     h_btn->addWidget(btn_scan_);
     layout->addLayout(h_btn);
@@ -104,7 +105,7 @@ void DeviceAddDialog::onScan() {
     }
 
     if (!found) {
-        QMessageBox::information(this, "Scan", "No devices found of type " + type);
+        QMessageBox::information(this, tr_ui("扫描", "Scan"), tr_ui("未找到此类型的设备: ", "No devices found of type ") + type);
     }
 }
 
@@ -121,21 +122,21 @@ common_msgs::msg::TaskDeviceCheck DeviceAddDialog::getDeviceCheck() const {
 
 StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<common_msgs::msg::TaskDeviceCheck>& devices, QWidget *parent)
     : QDialog(parent), node_(node), devices_(devices) {
-    setWindowTitle("Add Step");
+    setWindowTitle(tr_ui("添加步骤", "Add Step"));
     auto * layout = new QVBoxLayout(this);
 
     auto * h_name = new QHBoxLayout();
-    h_name->addWidget(new QLabel("Step Name:"));
+    h_name->addWidget(new QLabel(tr_ui("步骤名称:", "Step Name:")));
     edit_name_ = new QLineEdit();
     h_name->addWidget(edit_name_);
     layout->addLayout(h_name);
 
     combo_type_ = new QComboBox();
     combo_type_->addItems({"arm", "lhand", "rhand", "camera", "io", "lift"});
-    layout->addWidget(new QLabel("Step Type:"));
+    layout->addWidget(new QLabel(tr_ui("步骤类型:", "Step Type:")));
     layout->addWidget(combo_type_);
 
-    layout->addWidget(new QLabel("Target Device:"));
+    layout->addWidget(new QLabel(tr_ui("目标设备:", "Target Device:")));
     combo_device_ = new QComboBox();
     layout->addWidget(combo_device_);
 
@@ -149,7 +150,7 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
         spin_arm_pos_[i]->setSingleStep(0.01);
         arm_layout->addRow(QString("J%1").arg(i+1), spin_arm_pos_[i]);
     }
-    auto * btn_capture = new QPushButton("Capture Current");
+    auto * btn_capture = new QPushButton(tr_ui("获取当前位置", "Capture Current"));
     arm_layout->addRow(btn_capture);
     connect(btn_capture, &QPushButton::clicked, this, &StepAddDialog::onCaptureCurrent);
 
@@ -158,30 +159,30 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     for(int i=0; i<6; ++i) {
         spin_hand_pos_[i] = new QSpinBox();
         spin_hand_pos_[i]->setRange(0, 100000);
-        hand_layout->addRow(QString("Finger %1").arg(i+1), spin_hand_pos_[i]);
+        hand_layout->addRow(tr_ui("手指 %1", "Finger %1").arg(i+1), spin_hand_pos_[i]);
     }
 
     widget_camera_ = new QWidget();
     auto * cam_layout = new QFormLayout(widget_camera_);
     combo_camera_type_ = new QComboBox();
     combo_camera_type_->addItems({"color", "depth", "ir_left", "ir_right", "point_cloud"});
-    cam_layout->addRow("Camera Type:", combo_camera_type_);
+    cam_layout->addRow(tr_ui("相机类型:", "Camera Type:"), combo_camera_type_);
 
     widget_io_ = new QWidget();
     auto * io_layout = new QFormLayout(widget_io_);
     combo_io_group_ = new QComboBox();
-    combo_io_group_->addItem(QString::fromUtf8("标准 DIO (1-8)"), 0);   // type=0, base=1
-    combo_io_group_->addItem(QString::fromUtf8("标准 DIO (9-16)"), 1);  // type=0, base=9
-    combo_io_group_->addItem(QString::fromUtf8("工具 IO (1-2)"), 2);    // type=1, base=1
-    io_layout->addRow(QString::fromUtf8("IO 分组:"), combo_io_group_);
+    combo_io_group_->addItem(tr_ui("标准 DIO (1-8)", "Standard DIO (1-8)"), 0);   // type=0, base=1
+    combo_io_group_->addItem(tr_ui("标准 DIO (9-16)", "Standard DIO (9-16)"), 1);  // type=0, base=9
+    combo_io_group_->addItem(tr_ui("工具 IO (1-2)", "Tool IO (1-2)"), 2);    // type=1, base=1
+    io_layout->addRow(tr_ui("IO 分组:", "IO Group:"), combo_io_group_);
 
     combo_io_port_ = new QComboBox();
-    io_layout->addRow(QString::fromUtf8("IO 端口:"), combo_io_port_);
+    io_layout->addRow(tr_ui("IO 端口:", "IO Port:"), combo_io_port_);
 
     combo_io_value_ = new QComboBox();
-    combo_io_value_->addItem(QString::fromUtf8("开启 (HIGH)"), true);
-    combo_io_value_->addItem(QString::fromUtf8("关闭 (LOW)"), false);
-    io_layout->addRow(QString::fromUtf8("电平:"), combo_io_value_);
+    combo_io_value_->addItem(tr_ui("开启 (HIGH)", "Open (HIGH)"), true);
+    combo_io_value_->addItem(tr_ui("关闭 (LOW)", "Close (LOW)"), false);
+    io_layout->addRow(tr_ui("电平:", "Level:"), combo_io_value_);
 
     connect(combo_io_group_, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &StepAddDialog::onIOGroupChanged);
@@ -190,31 +191,31 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     widget_lift_ = new QWidget();
     auto * lift_layout = new QFormLayout(widget_lift_);
     combo_lift_command_ = new QComboBox();
-    combo_lift_command_->addItem(QString::fromUtf8("上升 (move_up)"), "move_up");
-    combo_lift_command_->addItem(QString::fromUtf8("下降 (move_down)"), "move_down");
-    combo_lift_command_->addItem(QString::fromUtf8("停止 (stop)"), "stop");
-    combo_lift_command_->addItem(QString::fromUtf8("定位移动 (position_move)"), "position_move");
-    combo_lift_command_->addItem(QString::fromUtf8("回原点 (position_next)"), "position_next");
-    combo_lift_command_->addItem(QString::fromUtf8("定位停止 (position_stop)"), "position_stop");
-    lift_layout->addRow(QString::fromUtf8("升降命令:"), combo_lift_command_);
+    combo_lift_command_->addItem(tr_ui("上升 (move_up)", "Up (move_up)"), "move_up");
+    combo_lift_command_->addItem(tr_ui("下降 (move_down)", "Down (move_down)"), "move_down");
+    combo_lift_command_->addItem(tr_ui("停止 (stop)", "Stop (stop)"), "stop");
+    combo_lift_command_->addItem(tr_ui("定位移动 (position_move)", "Position Move"), "position_move");
+    combo_lift_command_->addItem(tr_ui("回原点 (position_next)", "Home (position_next)"), "position_next");
+    combo_lift_command_->addItem(tr_ui("定位停止 (position_stop)", "Position Stop"), "position_stop");
+    lift_layout->addRow(tr_ui("升降命令:", "Lift Command:"), combo_lift_command_);
     spin_lift_speed_rpm_ = new QSpinBox();
     spin_lift_speed_rpm_->setRange(1, 65535);
     spin_lift_speed_rpm_->setValue(1000);
     spin_lift_speed_rpm_->setSingleStep(100);
-    lift_layout->addRow(QString::fromUtf8("速度:"), spin_lift_speed_rpm_);
+    lift_layout->addRow(tr_ui("速度:", "Speed:"), spin_lift_speed_rpm_);
     spin_lift_target_pulses_ = new QSpinBox();
     spin_lift_target_pulses_->setRange(-99999999, 99999999);
     spin_lift_target_pulses_->setValue(10000);
     spin_lift_target_pulses_->setSingleStep(1000);
-    lift_layout->addRow(QString::fromUtf8("目标脉冲:"), spin_lift_target_pulses_);
+    lift_layout->addRow(tr_ui("目标脉冲:", "Target Pulses:"), spin_lift_target_pulses_);
     spin_lift_accel_ms_ = new QSpinBox();
     spin_lift_accel_ms_->setRange(0, 65535);
     spin_lift_accel_ms_->setValue(1000);
-    lift_layout->addRow(QString::fromUtf8("加速时间(ms):"), spin_lift_accel_ms_);
+    lift_layout->addRow(tr_ui("加速时间(ms):", "Accel Time(ms):"), spin_lift_accel_ms_);
     spin_lift_decel_ms_ = new QSpinBox();
     spin_lift_decel_ms_->setRange(0, 65535);
     spin_lift_decel_ms_->setValue(1000);
-    lift_layout->addRow(QString::fromUtf8("减速时间(ms):"), spin_lift_decel_ms_);
+    lift_layout->addRow(tr_ui("减速时间(ms):", "Decel Time(ms):"), spin_lift_decel_ms_);
 
     stack->addWidget(widget_arm_);
     stack->addWidget(widget_hand_);
@@ -224,7 +225,7 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     layout->addWidget(stack);
 
     auto * h_delay = new QHBoxLayout();
-    h_delay->addWidget(new QLabel("Delay after step (ms):"));
+    h_delay->addWidget(new QLabel(tr_ui("步骤后延时 (ms):", "Delay after step (ms):")));
     spin_delay_ms_ = new QSpinBox();
     spin_delay_ms_->setRange(0, 3600000); // Up to 1 hour
     spin_delay_ms_->setValue(0);
@@ -289,10 +290,10 @@ void StepAddDialog::onTypeChanged(const QString& type) {
 void StepAddDialog::onIOGroupChanged(int index) {
     combo_io_port_->clear();
     static const QString std_names[] = {
-        QString::fromUtf8("清洗机"), QString::fromUtf8("左侧吹风机"),
-        QString::fromUtf8("右侧烘干机"), QString::fromUtf8("升降平台解锁"),
-        QString::fromUtf8("黄灯"), QString::fromUtf8("绿灯"),
-        QString::fromUtf8("红灯"), QString::fromUtf8("蜂鸣器"),
+        tr_ui("清洗机", "Washer"), tr_ui("左侧吹风机", "Left Blower"),
+        tr_ui("右侧烘干机", "Right Dryer"), tr_ui("升降平台解锁", "Lift Unlock"),
+        tr_ui("黄灯", "Yellow Light"), tr_ui("绿灯", "Green Light"),
+        tr_ui("红灯", "Red Light"), tr_ui("蜂鸣器", "Buzzer"),
     };
     if (index == 0) { // Standard 1-8
         for (int i = 0; i < 8; ++i)
@@ -421,45 +422,45 @@ common_msgs::msg::TaskStep StepAddDialog::getStep() const {
 
 TaskConfigDialog::TaskConfigDialog(std::shared_ptr<RosNode> node, QWidget *parent)
     : QDialog(parent), node_(node) {
-    setWindowTitle("Task Configuration");
+    setWindowTitle(tr_ui("任务配置", "Task Configuration"));
     auto * layout = new QVBoxLayout(this);
 
     auto * h_name = new QHBoxLayout();
-    h_name->addWidget(new QLabel("Task Name:"));
+    h_name->addWidget(new QLabel(tr_ui("任务名称:", "Task Name:")));
     edit_name_ = new QLineEdit();
     h_name->addWidget(edit_name_);
     layout->addLayout(h_name);
 
     auto * h_rounds = new QHBoxLayout();
-    h_rounds->addWidget(new QLabel("执行轮次:"));
+    h_rounds->addWidget(new QLabel(tr_ui("执行轮次:", "Execution Rounds:")));
     spin_rounds_ = new QSpinBox();
     spin_rounds_->setRange(1, 999);
     spin_rounds_->setValue(1);
     h_rounds->addWidget(spin_rounds_);
     layout->addLayout(h_rounds);
 
-    layout->addWidget(new QLabel("Devices:"));
+    layout->addWidget(new QLabel(tr_ui("设备:", "Devices:")));
     table_devices_ = new QTableWidget();
     table_devices_->setColumnCount(4);
-    table_devices_->setHorizontalHeaderLabels({"Type", "Name", "SN", "Usage"});
+    table_devices_->setHorizontalHeaderLabels({tr_ui("类型", "Type"), tr_ui("名称", "Name"), tr_ui("SN码", "SN"), tr_ui("用途", "Usage")});
     table_devices_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     layout->addWidget(table_devices_);
 
     auto * h_dev_btn = new QHBoxLayout();
-    auto * btn_add_dev = new QPushButton("Add Device");
-    auto * btn_del_dev = new QPushButton("Delete Device");
+    auto * btn_add_dev = new QPushButton(tr_ui("添加设备", "Add Device"));
+    auto * btn_del_dev = new QPushButton(tr_ui("删除设备", "Delete Device"));
     h_dev_btn->addWidget(btn_add_dev);
     h_dev_btn->addWidget(btn_del_dev);
     layout->addLayout(h_dev_btn);
 
-    layout->addWidget(new QLabel("Steps:"));
+    layout->addWidget(new QLabel(tr_ui("步骤:", "Steps:")));
     list_steps_ = new QListWidget();
     layout->addWidget(list_steps_);
 
     auto * h_step_btn = new QHBoxLayout();
-    auto * btn_add_step = new QPushButton("Add Step");
-    auto * btn_edit_step = new QPushButton("Edit Step");
-    auto * btn_del_step = new QPushButton("Delete Step");
+    auto * btn_add_step = new QPushButton(tr_ui("添加步骤", "Add Step"));
+    auto * btn_edit_step = new QPushButton(tr_ui("编辑步骤", "Edit Step"));
+    auto * btn_del_step = new QPushButton(tr_ui("删除步骤", "Delete Step"));
     h_step_btn->addWidget(btn_add_step);
     h_step_btn->addWidget(btn_edit_step);
     h_step_btn->addWidget(btn_del_step);
@@ -543,11 +544,11 @@ void TaskConfigDialog::onAddStep() {
 void TaskConfigDialog::onEditStep() {
     int row = list_steps_->currentRow();
     if (row < 0 || row >= static_cast<int>(steps_.size())) {
-        QMessageBox::information(this, "Edit Step", "Please select a step to edit.");
+        QMessageBox::information(this, tr_ui("编辑步骤", "Edit Step"), tr_ui("请选择要编辑的步骤。", "Please select a step to edit."));
         return;
     }
     StepAddDialog dlg(node_, devices_, this);
-    dlg.setWindowTitle("Edit Step");
+    dlg.setWindowTitle(tr_ui("编辑步骤", "Edit Step"));
     dlg.setStep(steps_[row]);
     if (dlg.exec() == QDialog::Accepted) {
         steps_[row] = dlg.getStep();
@@ -565,10 +566,10 @@ void TaskConfigDialog::onDeleteStep() {
 
 TaskRunDialog::TaskRunDialog(std::shared_ptr<RosNode> node, const common_msgs::msg::TaskConfig& task, std::shared_ptr<TaskRecordManager> record_manager, QWidget *parent)
     : QDialog(parent), node_(node), record_manager_(record_manager), task_(task), devices_ready_(false) {
-    setWindowTitle("Run Task");
+    setWindowTitle(tr_ui("运行任务", "Run Task"));
     auto * layout = new QVBoxLayout(this);
 
-    label_status_ = new QLabel("Checking devices...");
+    label_status_ = new QLabel(tr_ui("检查设备中...", "Checking devices..."));
     layout->addWidget(label_status_);
 
     progress_steps_ = new QProgressBar();
@@ -579,10 +580,10 @@ TaskRunDialog::TaskRunDialog(std::shared_ptr<RosNode> node, const common_msgs::m
     layout->addWidget(progress_steps_);
 
     auto * h_btn = new QHBoxLayout();
-    btn_start_ = new QPushButton("Start");
-    btn_pause_ = new QPushButton("Pause");
-    btn_stop_ = new QPushButton("Stop");
-    auto * btn_edit = new QPushButton("Edit");
+    btn_start_ = new QPushButton(tr_ui("开始", "Start"));
+    btn_pause_ = new QPushButton(tr_ui("暂停", "Pause"));
+    btn_stop_ = new QPushButton(tr_ui("停止", "Stop"));
+    auto * btn_edit = new QPushButton(tr_ui("编辑", "Edit"));
     h_btn->addWidget(btn_start_);
     h_btn->addWidget(btn_pause_);
     h_btn->addWidget(btn_stop_);
@@ -617,11 +618,11 @@ void TaskRunDialog::checkDevices() {
     }
 
     if (all_ok) {
-        label_status_->setText("Devices Checked: All Ready");
+        label_status_->setText(tr_ui("设备检查: 全部就绪", "Devices Checked: All Ready"));
         btn_start_->setEnabled(true);
         devices_ready_ = true;
     } else {
-        label_status_->setText("Missing Devices: " + missing);
+        label_status_->setText(tr_ui("缺失设备: ", "Missing Devices: ") + missing);
         btn_start_->setEnabled(false);
         devices_ready_ = false;
     }
@@ -631,7 +632,7 @@ void TaskRunDialog::onStart() {
     if (!devices_ready_) return;
     btn_start_->setEnabled(false);
     btn_pause_->setEnabled(true);
-    label_status_->setText("Running...");
+    label_status_->setText(tr_ui("运行中...", "Running..."));
 
     current_record_ = TaskExecutionRecord();
     current_record_.task_name = QString::fromStdString(task_.task_name);
@@ -645,12 +646,12 @@ void TaskRunDialog::onStart() {
 }
 
 void TaskRunDialog::onPause() {
-    if (btn_pause_->text() == "Pause") {
+    if (btn_pause_->text() == tr_ui("暂停", "Pause")) {
         node_->call_pause_task(true);
-        btn_pause_->setText("Resume");
+        btn_pause_->setText(tr_ui("继续", "Resume"));
     } else {
         node_->call_pause_task(false);
-        btn_pause_->setText("Pause");
+        btn_pause_->setText(tr_ui("暂停", "Pause"));
     }
 }
 
@@ -668,15 +669,15 @@ void TaskRunDialog::onTaskResult(const rclcpp_action::ClientGoalHandle<common_ms
     current_record_.end_time = QDateTime::currentDateTimeUtc();
 
     if (result.code == rclcpp_action::ResultCode::SUCCEEDED && result.result && result.result->success) {
-        label_status_->setText("Task Completed: " + QString::fromStdString(result.result->message));
+        label_status_->setText(tr_ui("任务完成: ", "Task Completed: ") + QString::fromStdString(result.result->message));
         current_record_.success = true;
         current_record_.error_msg.clear();
     } else if (result.result) {
-        label_status_->setText("Task Failed: " + QString::fromStdString(result.result->message));
+        label_status_->setText(tr_ui("任务失败: ", "Task Failed: ") + QString::fromStdString(result.result->message));
         current_record_.success = false;
         current_record_.error_msg = QString::fromStdString(result.result->message);
     } else {
-        label_status_->setText("Task Finished with no result");
+        label_status_->setText(tr_ui("任务结束(无结果)", "Task Finished with no result"));
         current_record_.success = false;
         current_record_.error_msg = "No result received";
     }

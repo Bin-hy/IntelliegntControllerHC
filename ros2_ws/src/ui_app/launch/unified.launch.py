@@ -1,10 +1,11 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction, DeclareLaunchArgument
+from launch.actions import IncludeLaunchDescription, TimerAction, DeclareLaunchArgument, RegisterEventHandler, Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.parameter_descriptions import ParameterValue
 from launch.substitutions import LaunchConfiguration, PythonExpression, PathJoinSubstitution, Command
+from launch.event_handlers import OnProcessExit
 
 def generate_launch_description():
     # Args
@@ -178,6 +179,13 @@ def generate_launch_description():
         actions=[ui_node]
     )
 
+    exit_event_handler = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=ui_node,
+            on_exit=[Shutdown()]
+        )
+    )
+
     return LaunchDescription([
         robot_ip_arg,
         model_arg,
@@ -193,5 +201,6 @@ def generate_launch_description():
         lhand_state_publisher,
         lift_server_node,
         sys_ctrl_node,
-        ui_delayed
+        ui_delayed,
+        exit_event_handler
     ])

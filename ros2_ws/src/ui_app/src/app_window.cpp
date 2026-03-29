@@ -179,12 +179,11 @@ void AppWindow::buildDashboard() {
         auto reply = QMessageBox::question(
             this,
             tr_ui("语言切换", "Language Switch"),
-            tr_ui("语言将在重启后生效，是否立即重启？",
-                  "Language will take effect after restart. Restart now?"),
+            tr_ui("语言将在重启后生效，是否立即退出并由您手动重新启动程序？",
+                  "Language will take effect after restart. Quit now so you can manually restart?"),
             QMessageBox::Yes | QMessageBox::No
         );
         if (reply == QMessageBox::Yes) {
-            QProcess::startDetached(qApp->applicationFilePath(), qApp->arguments());
             qApp->quit();
         }
     });
@@ -1822,23 +1821,23 @@ QWidget* AppWindow::createAdminTab() {
     auto * widget = new QWidget();
     auto * layout = new QVBoxLayout(widget);
 
-    auto * group_users = new QGroupBox("用户管理");
+    auto * group_users = new QGroupBox(tr_ui("用户管理", "User Management"));
     auto * layout_users = new QVBoxLayout();
     admin_user_table_ = new QTableWidget();
     admin_user_table_->setColumnCount(5);
-    admin_user_table_->setHorizontalHeaderLabels(QStringList() << "用户名" << "角色" << "失败次数" << "锁定" << "禁用");
+    admin_user_table_->setHorizontalHeaderLabels(QStringList() << tr_ui("用户名", "Username") << tr_ui("角色", "Role") << tr_ui("失败次数", "Failures") << tr_ui("锁定", "Locked") << tr_ui("禁用", "Disabled"));
     admin_user_table_->horizontalHeader()->setStretchLastSection(true);
     admin_user_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     admin_user_table_->setSelectionMode(QAbstractItemView::SingleSelection);
     layout_users->addWidget(admin_user_table_);
 
     auto * user_btn_layout = new QHBoxLayout();
-    auto * btn_refresh_users = new QPushButton("刷新");
-    auto * btn_create_user = new QPushButton("创建用户");
-    auto * btn_delete_user = new QPushButton("删除用户");
-    auto * btn_lock_user = new QPushButton("锁定");
-    auto * btn_unlock_user = new QPushButton("解锁");
-    auto * btn_reset_password = new QPushButton("重置密码");
+    auto * btn_refresh_users = new QPushButton(tr_ui("刷新", "Refresh"));
+    auto * btn_create_user = new QPushButton(tr_ui("创建用户", "Create User"));
+    auto * btn_delete_user = new QPushButton(tr_ui("删除用户", "Delete User"));
+    auto * btn_lock_user = new QPushButton(tr_ui("锁定", "Lock"));
+    auto * btn_unlock_user = new QPushButton(tr_ui("解锁", "Unlock"));
+    auto * btn_reset_password = new QPushButton(tr_ui("重置密码", "Reset Password"));
 
     user_btn_layout->addWidget(btn_refresh_users);
     user_btn_layout->addWidget(btn_create_user);
@@ -1870,8 +1869,8 @@ QWidget* AppWindow::createAdminTab() {
             auto * item_fail = new QTableWidgetItem(QString::number(u.failed_attempts));
             qint64 now = QDateTime::currentSecsSinceEpoch();
             bool locked = u.lock_until > now;
-            auto * item_locked = new QTableWidgetItem(locked ? "是" : "否");
-            auto * item_disabled = new QTableWidgetItem(u.disabled ? "是" : "否");
+            auto * item_locked = new QTableWidgetItem(locked ? tr_ui("是", "Yes") : tr_ui("否", "No"));
+            auto * item_disabled = new QTableWidgetItem(u.disabled ? tr_ui("是", "Yes") : tr_ui("否", "No"));
             admin_user_table_->setItem(i, 0, item_name);
             admin_user_table_->setItem(i, 1, item_role);
             admin_user_table_->setItem(i, 2, item_fail);
@@ -1909,22 +1908,22 @@ QWidget* AppWindow::createAdminTab() {
             return;
         }
         bool ok = false;
-        QString username = QInputDialog::getText(this, "创建用户", "用户名:", QLineEdit::Normal, "", &ok);
+        QString username = QInputDialog::getText(this, tr_ui("创建用户", "Create User"), tr_ui("用户名:", "Username:"), QLineEdit::Normal, "", &ok);
         if (!ok || username.trimmed().isEmpty()) {
             return;
         }
-        QString password = QInputDialog::getText(this, "创建用户", "密码:", QLineEdit::Password, "", &ok);
+        QString password = QInputDialog::getText(this, tr_ui("创建用户", "Create User"), tr_ui("密码:", "Password:"), QLineEdit::Password, "", &ok);
         if (!ok || password.isEmpty()) {
             return;
         }
-        QString confirm = QInputDialog::getText(this, "创建用户", "确认密码:", QLineEdit::Password, "", &ok);
+        QString confirm = QInputDialog::getText(this, tr_ui("创建用户", "Create User"), tr_ui("确认密码:", "Confirm Password:"), QLineEdit::Password, "", &ok);
         if (!ok || confirm != password) {
-            QMessageBox::warning(this, "创建用户失败", "两次输入的密码不一致");
+            QMessageBox::warning(this, tr_ui("创建用户失败", "Create User Failed"), tr_ui("两次输入的密码不一致", "Passwords do not match"));
             return;
         }
         QStringList roles;
         roles << "Operator" << "Maintainer" << "Admin";
-        QString role_str = QInputDialog::getItem(this, "创建用户", "角色:", roles, 0, false, &ok);
+        QString role_str = QInputDialog::getItem(this, tr_ui("创建用户", "Create User"), tr_ui("角色:", "Role:"), roles, 0, false, &ok);
         if (!ok || role_str.isEmpty()) {
             return;
         }
@@ -1936,7 +1935,7 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString err;
         if (!auth_manager_->createUser(username.trimmed(), password, role, err)) {
-            QMessageBox::warning(this, "创建用户失败", err);
+            QMessageBox::warning(this, tr_ui("创建用户失败", "Create User Failed"), err);
             return;
         }
         refreshUsers();
@@ -1964,15 +1963,15 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString username = selectedUsername();
         if (username.isEmpty()) {
-            QMessageBox::warning(this, "删除用户", "请先选择要删除的用户");
+            QMessageBox::warning(this, tr_ui("删除用户", "Delete User"), tr_ui("请先选择要删除的用户", "Please select a user to delete"));
             return;
         }
-        if (QMessageBox::question(this, "删除用户", "确认删除用户 " + username + " ?") != QMessageBox::Yes) {
+        if (QMessageBox::question(this, tr_ui("删除用户", "Delete User"), tr_ui("确认删除用户 ", "Are you sure to delete user ") + username + " ?") != QMessageBox::Yes) {
             return;
         }
         QString err;
         if (!auth_manager_->deleteUser(username, err)) {
-            QMessageBox::warning(this, "删除用户失败", err);
+            QMessageBox::warning(this, tr_ui("删除用户失败", "Delete User Failed"), err);
             return;
         }
         refreshUsers();
@@ -1984,12 +1983,12 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString username = selectedUsername();
         if (username.isEmpty()) {
-            QMessageBox::warning(this, "锁定用户", "请先选择要锁定的用户");
+            QMessageBox::warning(this, tr_ui("锁定用户", "Lock User"), tr_ui("请先选择要锁定的用户", "Please select a user to lock"));
             return;
         }
         QString err;
         if (!auth_manager_->setLocked(username, true, err)) {
-            QMessageBox::warning(this, "锁定用户失败", err);
+            QMessageBox::warning(this, tr_ui("锁定用户失败", "Lock User Failed"), err);
             return;
         }
         refreshUsers();
@@ -2001,12 +2000,12 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString username = selectedUsername();
         if (username.isEmpty()) {
-            QMessageBox::warning(this, "解锁用户", "请先选择要解锁的用户");
+            QMessageBox::warning(this, tr_ui("解锁用户", "Unlock User"), tr_ui("请先选择要解锁的用户", "Please select a user to unlock"));
             return;
         }
         QString err;
         if (!auth_manager_->setLocked(username, false, err)) {
-            QMessageBox::warning(this, "解锁用户失败", err);
+            QMessageBox::warning(this, tr_ui("解锁用户失败", "Unlock User Failed"), err);
             return;
         }
         refreshUsers();
@@ -2018,22 +2017,22 @@ QWidget* AppWindow::createAdminTab() {
         }
         QString username = selectedUsername();
         if (username.isEmpty()) {
-            QMessageBox::warning(this, "重置密码", "请先选择要重置密码的用户");
+            QMessageBox::warning(this, tr_ui("重置密码", "Reset Password"), tr_ui("请先选择要重置密码的用户", "Please select a user to reset password"));
             return;
         }
         bool ok = false;
-        QString password = QInputDialog::getText(this, "重置密码", "新密码:", QLineEdit::Password, "", &ok);
+        QString password = QInputDialog::getText(this, tr_ui("重置密码", "Reset Password"), tr_ui("新密码:", "New Password:"), QLineEdit::Password, "", &ok);
         if (!ok || password.isEmpty()) {
             return;
         }
-        QString confirm = QInputDialog::getText(this, "重置密码", "确认新密码:", QLineEdit::Password, "", &ok);
+        QString confirm = QInputDialog::getText(this, tr_ui("重置密码", "Reset Password"), tr_ui("确认新密码:", "Confirm New Password:"), QLineEdit::Password, "", &ok);
         if (!ok || confirm != password) {
-            QMessageBox::warning(this, "重置密码失败", "两次输入的密码不一致");
+            QMessageBox::warning(this, tr_ui("重置密码失败", "Reset Password Failed"), tr_ui("两次输入的密码不一致", "Passwords do not match"));
             return;
         }
         QString err;
         if (!auth_manager_->adminResetPassword(username, password, true, err)) {
-            QMessageBox::warning(this, "重置密码失败", err);
+            QMessageBox::warning(this, tr_ui("重置密码失败", "Reset Password Failed"), err);
             return;
         }
         refreshUsers();
@@ -2042,7 +2041,7 @@ QWidget* AppWindow::createAdminTab() {
     refreshUsers();
 
     if (can_view_logs && auth_log_manager_) {
-        auto * group_logs = new QGroupBox("登录日志");
+        auto * group_logs = new QGroupBox(tr_ui("登录日志", "Login Logs"));
         auto * layout_logs = new QVBoxLayout();
 
         auto * filter_layout = new QHBoxLayout();
@@ -2051,16 +2050,16 @@ QWidget* AppWindow::createAdminTab() {
         admin_log_from_->setDisplayFormat("yyyy-MM-dd HH:mm:ss");
         admin_log_to_->setDisplayFormat("yyyy-MM-dd HH:mm:ss");
         admin_log_user_filter_ = new QLineEdit();
-        admin_log_success_only_ = new QCheckBox("仅成功");
-        admin_log_failure_only_ = new QCheckBox("仅失败");
-        auto * btn_refresh_logs = new QPushButton("刷新");
-        auto * btn_delete_old = new QPushButton("删除早于起始时间的日志");
+        admin_log_success_only_ = new QCheckBox(tr_ui("仅成功", "Success Only"));
+        admin_log_failure_only_ = new QCheckBox(tr_ui("仅失败", "Failure Only"));
+        auto * btn_refresh_logs = new QPushButton(tr_ui("刷新", "Refresh"));
+        auto * btn_delete_old = new QPushButton(tr_ui("删除早于起始时间的日志", "Delete logs before start time"));
 
-        filter_layout->addWidget(new QLabel("起始时间"));
+        filter_layout->addWidget(new QLabel(tr_ui("起始时间", "Start Time")));
         filter_layout->addWidget(admin_log_from_);
-        filter_layout->addWidget(new QLabel("结束时间"));
+        filter_layout->addWidget(new QLabel(tr_ui("结束时间", "End Time")));
         filter_layout->addWidget(admin_log_to_);
-        filter_layout->addWidget(new QLabel("用户过滤"));
+        filter_layout->addWidget(new QLabel(tr_ui("用户过滤", "User Filter")));
         filter_layout->addWidget(admin_log_user_filter_);
         filter_layout->addWidget(admin_log_success_only_);
         filter_layout->addWidget(admin_log_failure_only_);
@@ -2075,7 +2074,7 @@ QWidget* AppWindow::createAdminTab() {
 
         admin_log_table_ = new QTableWidget();
         admin_log_table_->setColumnCount(5);
-        admin_log_table_->setHorizontalHeaderLabels(QStringList() << "时间" << "用户" << "结果" << "原因" << "来源");
+        admin_log_table_->setHorizontalHeaderLabels(QStringList() << tr_ui("时间", "Time") << tr_ui("用户", "User") << tr_ui("结果", "Result") << tr_ui("原因", "Reason") << tr_ui("来源", "Source"));
         admin_log_table_->horizontalHeader()->setStretchLastSection(true);
         admin_log_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         admin_log_table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -2096,7 +2095,7 @@ QWidget* AppWindow::createAdminTab() {
                 const AuthLogEntry& e = logs[i];
                 auto * item_time = new QTableWidgetItem(e.timestamp.toString(Qt::ISODate));
                 auto * item_user = new QTableWidgetItem(e.username);
-                auto * item_result = new QTableWidgetItem(e.success ? "成功" : "失败");
+                auto * item_result = new QTableWidgetItem(e.success ? tr_ui("成功", "Success") : tr_ui("失败", "Failure"));
                 auto * item_reason = new QTableWidgetItem(e.reason);
                 auto * item_source = new QTableWidgetItem(e.source);
                 admin_log_table_->setItem(i, 0, item_time);
@@ -2120,11 +2119,11 @@ QWidget* AppWindow::createAdminTab() {
             if (!before.isValid()) {
                 return;
             }
-            if (QMessageBox::question(this, "删除日志", "确认删除早于起始时间的日志记录?") != QMessageBox::Yes) {
+            if (QMessageBox::question(this, tr_ui("删除日志", "Delete Logs"), tr_ui("确认删除早于起始时间的日志记录?", "Are you sure to delete logs before start time?")) != QMessageBox::Yes) {
                 return;
             }
             if (!auth_log_manager_->deleteLogs(before)) {
-                QMessageBox::warning(this, "删除日志失败", "删除日志时发生错误");
+                QMessageBox::warning(this, tr_ui("删除日志失败", "Delete Logs Failed"), tr_ui("删除日志时发生错误", "Error occurred while deleting logs"));
             }
         });
 
@@ -2187,11 +2186,11 @@ QWidget* AppWindow::createGloveTab() {
     });
     QStringList left_labels;
     const QString finger_names_zh[] = {
-        "拇指1", "拇指2", "拇指3",
-        "食指1", "食指2", "食指3",
-        "中指1", "中指2", "中指3",
-        "无名指1", "无名指2", "无名指3",
-        "小指1", "小指2", "小指3"
+        tr_ui("拇指1", "Thumb1"), tr_ui("拇指2", "Thumb2"), tr_ui("拇指3", "Thumb3"),
+        tr_ui("食指1", "Index1"), tr_ui("食指2", "Index2"), tr_ui("食指3", "Index3"),
+        tr_ui("中指1", "Middle1"), tr_ui("中指2", "Middle2"), tr_ui("中指3", "Middle3"),
+        tr_ui("无名指1", "Ring1"), tr_ui("无名指2", "Ring2"), tr_ui("无名指3", "Ring3"),
+        tr_ui("小指1", "Pinky1"), tr_ui("小指2", "Pinky2"), tr_ui("小指3", "Pinky3")
     };
     const QString finger_names_en[] = {
         "Thumb1", "Thumb2", "Thumb3",
