@@ -11,13 +11,18 @@
 #include <lhandpro_interfaces/srv/set_all_position.hpp>
 #include <lhandpro_interfaces/srv/set_position.hpp>
 #include <lhandpro_interfaces/srv/move_motors.hpp>
+#include <lhandpro_interfaces/srv/set_enable.hpp>
+#include <lhandpro_interfaces/srv/home_motors.hpp>
 #include <vision_server/srv/save_image.hpp>
 #include <vision_server/srv/measure_depth.hpp>
+#include <vision_server/srv/capture_baseline.hpp>
+#include <vision_server/srv/measure_earphone.hpp>
 #include <lift_server/srv/lift_control.hpp>
 #include <common_msgs/msg/collision_status.hpp>
 #include <std_msgs/msg/string.hpp>
 
 #include <std_srvs/srv/set_bool.hpp>
+#include <cmath>
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
@@ -103,6 +108,10 @@ public:
             "/depth_measure/set_camera", 10);
         client_depth_measure_ = this->create_client<vision_server::srv::MeasureDepth>(
             "/depth_measure/measure");
+        client_vision_baseline_ = this->create_client<vision_server::srv::CaptureBaseline>(
+            "/earphone_inspector/capture_baseline");
+        client_vision_measure_ = this->create_client<vision_server::srv::MeasureEarphone>(
+            "/earphone_inspector/measure");
 
         // Lift platform client
         client_lift_ = this->create_client<lift_server::srv::LiftControl>("/lift_server/lift_control");
@@ -146,6 +155,8 @@ private:
     rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedPtr client_io_;
     rclcpp::Client<duco_msg::srv::RobotTaskStateRquest>::SharedPtr client_task_state_;
     rclcpp::Client<vision_server::srv::MeasureDepth>::SharedPtr client_depth_measure_;
+    rclcpp::Client<vision_server::srv::CaptureBaseline>::SharedPtr client_vision_baseline_;
+    rclcpp::Client<vision_server::srv::MeasureEarphone>::SharedPtr client_vision_measure_;
     rclcpp::Client<lift_server::srv::LiftControl>::SharedPtr client_lift_;
 
     // Services
@@ -338,7 +349,7 @@ private:
         is_paused_ = true;
         pause_reason_ = reason;
         feedback->current_status = "Paused: " + reason;
-        goal_handle->publish_feedback(feedback);
+        if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
         while (rclcpp::ok()) {
             if (goal_handle->is_canceling()) {
                 return false;
@@ -355,7 +366,7 @@ private:
             is_paused_ = true;
             pause_reason_ = reason;
             feedback->current_status = "Paused: " + reason;
-            goal_handle->publish_feedback(feedback);
+            if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
         }
         return false;
     }
@@ -394,7 +405,7 @@ private:
         // 1. Device Check
         RCLCPP_INFO(this->get_logger(), "Checking devices...");
         feedback->current_status = "Checking Devices";
-        goal_handle->publish_feedback(feedback);
+        if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
 
         if (!wait_for_devices_ready(goal_handle, feedback, goal->task_config.device_checks)) {
             result->success = false;
@@ -452,7 +463,7 @@ private:
 
                 feedback->current_step_index = step_index;
                 feedback->current_status = "Executing Step " + std::to_string(step_index) + " Round " + std::to_string(round + 1) + "/" + std::to_string(rounds);
-                goal_handle->publish_feedback(feedback);
+                if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
 
                 RCLCPP_INFO(this->get_logger(), "Executing Step %d: Name: %s, Type %s (Round %d/%d)", step_index, step.name.c_str(), step.type.c_str(), round + 1, rounds);
 
@@ -462,11 +473,103 @@ private:
                 } else if (step.type == "lhand" || step.type == "rhand") {
                     step_success = execute_hand_step(step, goal_handle);
                 } else if (step.type == "camera") {
-                    step_success = execute_camera_step(step, goal_handle, goal->task_config.task_name, run_time, round);
+                    step_success = execute_camera_step(step, goal_handle, goal->task_config.task_name, run_time, round, step_index);
                 } else if (step.type == "io") {
                     step_success = execute_io_step(step, goal_handle);
                 } else if (step.type == "lift") {
                     step_success = execute_lift_step(step, goal_handle);
+                } else if (step.type == "control") {
+                    step_success = execute_control_step(step, goal_handle);
+                } else if (step.type == "vision_baseline") {
+                    // Capture depth baseline for earphone inspection
+                    if (!client_vision_baseline_->wait_for_service(2s)) {
+                        RCLCPP_ERROR(this->get_logger(), "CaptureBaseline service not available");
+                        step_success = false;
+                    } else {
+                        auto req = std::make_shared<vision_server::srv::CaptureBaseline::Request>();
+                        auto future = client_vision_baseline_->async_send_request(req);
+                        auto t0 = std::chrono::steady_clock::now();
+                        while (rclcpp::ok()) {
+                            if (future.wait_for(100ms) == std::future_status::ready) break;
+                            if (goal_handle->is_canceling()) { step_success = false; break; }
+                            if (std::chrono::steady_clock::now() - t0 > 5s) {
+                                RCLCPP_ERROR(this->get_logger(), "CaptureBaseline timeout");
+                                step_success = false;
+                                break;
+                            }
+                        }
+                        if (step_success) {
+                            try {
+                                auto res = future.get();
+                                step_success = res->success;
+                                if (res->success) {
+                                    RCLCPP_INFO(this->get_logger(), "Baseline captured: %s", res->message.c_str());
+                                    feedback->current_step_index = step_index;
+                                    feedback->current_status = "VISION_BASELINE_OK:" + res->message;
+                                    if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
+                                } else {
+                                    RCLCPP_WARN(this->get_logger(), "Baseline failed: %s", res->message.c_str());
+                                }
+                            } catch (const std::exception& e) {
+                                RCLCPP_ERROR(this->get_logger(), "Baseline exception: %s", e.what());
+                                step_success = false;
+                            }
+                        }
+                    }
+                } else if (step.type == "vision_measure") {
+                    // Measure earphone angle + depth (soft-fail: don't abort task on failure)
+                    if (!client_vision_measure_->wait_for_service(2s)) {
+                        RCLCPP_WARN(this->get_logger(), "MeasureEarphone service not available — skipping");
+                        feedback->current_step_index = step_index;
+                        feedback->current_status = "VISION_RESULT:0,0,0,";
+                        if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
+                    } else {
+                        auto req = std::make_shared<vision_server::srv::MeasureEarphone::Request>();
+                        req->file_tag = sanitize_component(goal->task_config.task_name) + "/" + run_time;
+                        auto future = client_vision_measure_->async_send_request(req);
+                        auto t0 = std::chrono::steady_clock::now();
+                        bool timed_out = false;
+                        while (rclcpp::ok()) {
+                            if (future.wait_for(100ms) == std::future_status::ready) break;
+                            if (goal_handle->is_canceling()) break;
+                            if (std::chrono::steady_clock::now() - t0 > 10s) {
+                                RCLCPP_WARN(this->get_logger(), "MeasureEarphone timeout — skipping");
+                                timed_out = true;
+                                break;
+                            }
+                        }
+                        if (timed_out || goal_handle->is_canceling()) {
+                            feedback->current_step_index = step_index;
+                            feedback->current_status = "VISION_RESULT:0,0,0,";
+                            if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
+                        } else {
+                            try {
+                                auto res = future.get();
+                                if (res->success) {
+                                    RCLCPP_INFO(this->get_logger(),
+                                        "耳机测量: 角度=%.1f° 深度=%.1fmm 置信度=%.2f 路径=%s",
+                                        res->angle_deg, res->depth_mm, res->confidence, res->saved_path.c_str());
+                                } else {
+                                    RCLCPP_WARN(this->get_logger(), "耳机测量失败: %s", res->message.c_str());
+                                }
+                                // Always send result via feedback (soft-fail)
+                                std::ostringstream oss;
+                                oss << "VISION_RESULT:"
+                                    << res->angle_deg << "," << res->depth_mm << ","
+                                    << res->confidence << "," << res->saved_path;
+                                feedback->current_step_index = step_index;
+                                feedback->current_status = oss.str();
+                                if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
+                            } catch (const std::exception& e) {
+                                RCLCPP_ERROR(this->get_logger(), "MeasureEarphone exception: %s", e.what());
+                                feedback->current_step_index = step_index;
+                                feedback->current_status = "VISION_RESULT:0,0,0,";
+                                if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
+                            }
+                        }
+                    }
+                    // vision_measure is soft-fail — never abort the task
+                    step_success = true;
                 } else {
                     RCLCPP_WARN(this->get_logger(), "Unknown step type: %s", step.type.c_str());
                 }
@@ -488,7 +591,7 @@ private:
                 if (step.delay_ms > 0) {
                     RCLCPP_INFO(this->get_logger(), "Delaying for %d ms", step.delay_ms);
                     feedback->current_status = "Delaying " + std::to_string(step.delay_ms) + " ms";
-                    goal_handle->publish_feedback(feedback);
+                    if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
                     
                     auto start_time = std::chrono::steady_clock::now();
                     while (rclcpp::ok()) {
@@ -507,13 +610,13 @@ private:
                         
                         if (is_paused_) {
                             feedback->current_status = pause_reason_.empty() ? "Paused" : pause_reason_;
-                            goal_handle->publish_feedback(feedback);
+                            if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
                             std::unique_lock<std::mutex> lock(pause_mutex_);
                             pause_cv_.wait(lock, [this, &goal_handle]{ return !is_paused_ || goal_handle->is_canceling(); });
                             // Resume the delay
                             start_time = std::chrono::steady_clock::now() - std::chrono::milliseconds(elapsed);
                             feedback->current_status = "Delaying " + std::to_string(step.delay_ms) + " ms";
-                            goal_handle->publish_feedback(feedback);
+                            if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
                         }
                         
                         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -530,31 +633,63 @@ private:
     }
 
     bool execute_arm_step(const common_msgs::msg::TaskStep& step, std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
-        // Convert step.arm_pos to Duco command
         auto request = std::make_shared<duco_msg::srv::RobotMove::Request>();
-        
-        request->command = "movej";
-        
-        // Convert double (TaskStep) to float (RobotMove)
-        for (double val : step.arm_pos) {
-            request->q.push_back(static_cast<float>(val));
+
+        std::string cmd = step.arm_command.empty() ? "movej" : step.arm_command;
+
+        if (cmd == "movel") {
+            request->command = "movel";
+            // arm_cart_pos: [X,Y,Z (mm), RX,RY,RZ (deg)] → Duco: [X,Y,Z (m), RX,RY,RZ (rad)]
+            request->p.clear();
+            for (int i = 0; i < static_cast<int>(step.arm_cart_pos.size()) && i < 6; ++i) {
+                float val = static_cast<float>(step.arm_cart_pos[i]);
+                if (i < 3) val = val / 1000.0f;                              // mm → m
+                else       val = val * static_cast<float>(M_PI) / 180.0f;   // deg → rad
+                request->p.push_back(val);
+            }
+            // movel requires q (q_near) for IK reference — use current joint positions
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                for (int i = 0; i < 7; ++i) {
+                    request->q.push_back(static_cast<float>(current_state_.joint_actual_position[i]));
+                }
+            }
+            // MoveL: v in m/s [0.01, 5], a in m/s²
+            double vel_mms = step.arm_velocity > 0 ? step.arm_velocity : 100.0;
+            double acc_mms = step.arm_accel   > 0 ? step.arm_accel   : 500.0;
+            request->v = static_cast<float>(std::max(0.01, std::min(5.0, vel_mms / 1000.0)));
+            request->a = static_cast<float>(std::max(0.01, acc_mms / 1000.0));
+            request->tool = "default";
+            request->wobj = "default";
+        } else {
+            // MoveJ: try movej2 first (v in rad/s), fallback to movej (v in %) if rejected
+            request->command = "movej2";
+            request->q.clear();
+            for (double val : step.arm_pos) {
+                request->q.push_back(static_cast<float>(val * M_PI / 180.0));
+            }
+            // Do NOT pad to 7 DOF — send exactly 6 joints for 6-axis robot
+            // deg/s → rad/s; clamp to movej2 valid range
+            double vel_degs = step.arm_velocity > 0 ? step.arm_velocity : 30.0;
+            double acc_degs = step.arm_accel    > 0 ? step.arm_accel    : 60.0;
+            const double v_min = 0.01 * M_PI / 180.0;
+            const double v_max = 1.25 * M_PI;
+            request->v = static_cast<float>(std::max(v_min, std::min(v_max, vel_degs * M_PI / 180.0)));
+            request->a = static_cast<float>(std::max(v_min, acc_degs * M_PI / 180.0));
         }
-        
-        // Default parameters (can be tuned or added to TaskStep)
-        request->v = 20.0; // % velocity? or rad/s? Duco usually uses % or specific units. RosNode used 20.0
-        request->a = 100.0; // % accel?
-        request->r = 0.0; // blend radius
+
+        request->r = 0.0;
         request->arm_num = 0;
-        request->block = true; // Wait for completion
+        request->block = true;
 
         auto future = client_move_->async_send_request(request);
-        
+
         while (rclcpp::ok()) {
              auto status = future.wait_for(100ms);
              if (status == std::future_status::ready) {
                  break;
              }
-             
+
              if (goal_handle->is_canceling()) {
                  RCLCPP_WARN(this->get_logger(), "Task canceled during arm move");
                  return false;
@@ -563,10 +698,51 @@ private:
 
         try {
             auto response = future.get();
-            // Check response->response string? 
-            // "OK" or similar?
-            RCLCPP_INFO(this->get_logger(), "Arm move result: %s", response->response.c_str());
-            return true; 
+            int result_code = 0;
+            try { result_code = std::stoi(response->response); } catch (...) {}
+            RCLCPP_INFO(this->get_logger(), "Arm move result: %d", result_code);
+            // ST_Finished=4, ST_Interrupt=5 → success; ST_Illegal=7 → error
+            if (result_code == 7 && current_state_.robot_state == STATE_ENABLE
+                && request->command == "movej2") {
+                // movej2 rejected — fallback to movej (v in % instead of rad/s)
+                // Convert rad/s velocity to percentage: max movej2 speed = 1.25*PI rad/s ≈ 225°/s
+                double v_pct = (request->v / (1.25 * M_PI)) * 100.0;
+                v_pct = std::max(1.0, std::min(100.0, v_pct));
+                double a_pct = (request->a / (12.5 * M_PI)) * 100.0;
+                a_pct = std::max(1.0, std::min(100.0, a_pct));
+
+                RCLCPP_WARN(this->get_logger(),
+                    "movej2 ST_Illegal(7) — falling back to movej with v=%.1f%%, a=%.1f%%",
+                    v_pct, a_pct);
+
+                auto req2 = std::make_shared<duco_msg::srv::RobotMove::Request>();
+                req2->command = "movej";
+                req2->q = request->q;
+                req2->v = static_cast<float>(v_pct);
+                req2->a = static_cast<float>(a_pct);
+                req2->r = 0.0;
+                req2->arm_num = 0;
+                req2->block = true;
+
+                auto future2 = client_move_->async_send_request(req2);
+                while (rclcpp::ok()) {
+                    if (future2.wait_for(100ms) == std::future_status::ready) break;
+                    if (goal_handle->is_canceling()) return false;
+                }
+                auto res2 = future2.get();
+                int rc2 = 0;
+                try { rc2 = std::stoi(res2->response); } catch (...) {}
+                RCLCPP_INFO(this->get_logger(), "Arm move (movej fallback) result: %d", rc2);
+                if (rc2 == 4 || rc2 == 5) return true;
+                RCLCPP_ERROR(this->get_logger(), "movej fallback also failed: %d", rc2);
+                return false;
+            }
+            if (result_code == 7) {
+                RCLCPP_ERROR(this->get_logger(), "Arm move ST_Illegal(7): robot may not be enabled. Current robot_state=%d",
+                             current_state_.robot_state);
+                return false;
+            }
+            return true;
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Arm move exception: %s", e.what());
             return false;
@@ -649,7 +825,8 @@ private:
                              std::shared_ptr<GoalHandleExecuteTask> goal_handle,
                              const std::string& task_name,
                              const std::string& run_time,
-                             int round_index) {
+                             int round_index,
+                             int step_index) {
         auto client_primary = this->create_client<vision_server::srv::SaveImage>("/image_saver/save_image");
         auto client_fallback = this->create_client<vision_server::srv::SaveImage>("save_image");
         rclcpp::Client<vision_server::srv::SaveImage>::SharedPtr client;
@@ -712,25 +889,25 @@ private:
         std::string round_tag = "round_" + std::to_string(round_index + 1);
         std::string base_tag = task_tag + "/" + run_time + "/" + round_tag + "/" + user_tag;
 
-        auto call_save = [&](std::string topic, std::string tag) {
+        auto call_save = [&](std::string topic, std::string tag) -> std::string {
             auto request = std::make_shared<vision_server::srv::SaveImage::Request>();
             request->topic_name = topic;
             request->file_tag = base_tag + "/" + tag;
-            
+
             auto future = client->async_send_request(request);
             auto start_time = std::chrono::steady_clock::now();
             while (rclcpp::ok()) {
                 auto status = future.wait_for(100ms);
                 if (status == std::future_status::ready) break;
-                
+
                 if (goal_handle->is_canceling()) {
                     RCLCPP_WARN(this->get_logger(), "Task canceled during camera capture");
-                    return false;
+                    return {};
                 }
-                
+
                 if (std::chrono::steady_clock::now() - start_time > 5s) {
                     RCLCPP_ERROR(this->get_logger(), "Vision service timeout for %s", tag.c_str());
-                    return false;
+                    return {};
                 }
             }
 
@@ -738,31 +915,37 @@ private:
                 auto response = future.get();
                 if (!response->success) {
                     RCLCPP_WARN(this->get_logger(), "Vision service failed for %s: %s", tag.c_str(), response->message.c_str());
-                    return false;
+                    return {};
                 }
+                // Send saved file path via feedback
+                std::string saved_path = response->message;
+                auto fb = std::make_shared<ExecuteTask::Feedback>();
+                fb->current_step_index = step_index;
+                fb->current_status = "SAVED_FILE:" + saved_path;
+                if (!goal_handle->is_canceling()) goal_handle->publish_feedback(fb);
+                return saved_path;
             } catch (const std::exception& e) {
                 RCLCPP_ERROR(this->get_logger(), "Vision service exception: %s", e.what());
-                return false;
+                return {};
             }
-            return true;
         };
 
         bool success = true;
         std::string step_tag = sanitize_component(step.name);
         if (step.camera_type.empty()) {
-            if (!call_save(color_topic, step_tag + "_Color")) success = false;
-            if (!call_save(depth_topic, step_tag + "_Depth")) success = false;
+            if (call_save(color_topic, step_tag + "_Color").empty()) success = false;
+            if (call_save(depth_topic, step_tag + "_Depth").empty()) success = false;
         } else {
             for (const auto& type : step.camera_type) {
                 if (type == "color") {
-                    if (!call_save(color_topic, step_tag + "_Color")) success = false;
+                    if (call_save(color_topic, step_tag + "_Color").empty()) success = false;
                 } else if (type == "depth") {
-                    if (!call_save(depth_topic, step_tag + "_Depth")) success = false;
+                    if (call_save(depth_topic, step_tag + "_Depth").empty()) success = false;
                 } else if (type == "ir" || type == "ir_left") {
-                     if (!call_save(ir_topic, step_tag + "_IRLeft")) success = false;
+                     if (call_save(ir_topic, step_tag + "_IRLeft").empty()) success = false;
                 } else if (type == "ir_right") {
                      std::string right_ir = cam_ns + "/right_ir/image_raw";
-                     if (!call_save(right_ir, step_tag + "_IRRight")) success = false;
+                     if (call_save(right_ir, step_tag + "_IRRight").empty()) success = false;
                 } else if (type == "depth_measure") {
                      // Snapshot depth measurement and save
                      if (!client_depth_measure_->wait_for_service(2s)) {
@@ -974,6 +1157,119 @@ private:
 
         // Direct commands (enable/disable/get_position)
         return call_lift_service(cmd, speed, goal_handle);
+    }
+
+    bool execute_control_step(const common_msgs::msg::TaskStep& step,
+                              std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
+        const std::string& target = step.control_target;
+        const std::string& cmd    = step.control_command;
+
+        RCLCPP_INFO(this->get_logger(), "Control Step: %s target=%s cmd=%s",
+                    step.name.c_str(), target.c_str(), cmd.c_str());
+
+        // ── Arm (Duco) ──
+        if (target == "arm") {
+            if (!client_control_->wait_for_service(2s)) {
+                RCLCPP_ERROR(this->get_logger(), "RobotControl service not available");
+                return false;
+            }
+            auto req = std::make_shared<duco_msg::srv::RobotControl::Request>();
+            req->arm_num = 0;
+            req->block   = true;
+            if (cmd == "poweron")       req->command = "poweron";
+            else if (cmd == "enable")   req->command = "enable";
+            else if (cmd == "disable")  req->command = "disable";
+            else if (cmd == "poweroff") req->command = "poweroff";
+            else {
+                RCLCPP_WARN(this->get_logger(), "Unknown arm control command: %s", cmd.c_str());
+                return false;
+            }
+            auto future = client_control_->async_send_request(req);
+            while (rclcpp::ok()) {
+                if (future.wait_for(100ms) == std::future_status::ready) break;
+                if (goal_handle->is_canceling()) return false;
+            }
+            try {
+                auto res = future.get();
+                RCLCPP_INFO(this->get_logger(), "Arm control result: %s", res->response.c_str());
+                if (cmd == "enable") std::this_thread::sleep_for(2000ms);
+                return true;
+            } catch (const std::exception& e) {
+                RCLCPP_ERROR(this->get_logger(), "Arm control exception: %s", e.what());
+                return false;
+            }
+        }
+
+        // ── Hand (LHand / RHand) ──
+        if (target == "lhand" || target == "rhand") {
+            std::string ns = (target == "lhand") ? "/lhandpro_service" : "/rhandpro_service";
+
+            if (cmd == "enable" || cmd == "disable") {
+                auto client = this->create_client<lhandpro_interfaces::srv::SetEnable>(ns + "/set_enable");
+                if (!client->wait_for_service(2s)) {
+                    RCLCPP_ERROR(this->get_logger(), "Hand set_enable service not available: %s", ns.c_str());
+                    return false;
+                }
+                auto req = std::make_shared<lhandpro_interfaces::srv::SetEnable::Request>();
+                req->joint_id = 0;
+                req->enable   = (cmd == "enable");
+                auto future = client->async_send_request(req);
+                while (rclcpp::ok()) {
+                    if (future.wait_for(100ms) == std::future_status::ready) break;
+                    if (goal_handle->is_canceling()) return false;
+                }
+                try {
+                    auto res = future.get();
+                    RCLCPP_INFO(this->get_logger(), "Hand enable result: %d", res->result);
+                    return (res->result == 0);
+                } catch (const std::exception& e) {
+                    RCLCPP_ERROR(this->get_logger(), "Hand enable exception: %s", e.what());
+                    return false;
+                }
+            }
+
+            if (cmd == "home") {
+                auto client = this->create_client<lhandpro_interfaces::srv::HomeMotors>(ns + "/home_motors");
+                if (!client->wait_for_service(2s)) {
+                    RCLCPP_ERROR(this->get_logger(), "Hand home_motors service not available: %s", ns.c_str());
+                    return false;
+                }
+                auto req = std::make_shared<lhandpro_interfaces::srv::HomeMotors::Request>();
+                req->joint_id = 0;
+                auto future = client->async_send_request(req);
+                const auto t0 = std::chrono::steady_clock::now();
+                while (rclcpp::ok()) {
+                    if (future.wait_for(100ms) == std::future_status::ready) break;
+                    if (goal_handle->is_canceling()) return false;
+                    if (std::chrono::steady_clock::now() - t0 > 30s) {
+                        RCLCPP_ERROR(this->get_logger(), "Hand home_motors timeout");
+                        return false;
+                    }
+                }
+                try {
+                    auto res = future.get();
+                    RCLCPP_INFO(this->get_logger(), "Hand home result: %d", res->result);
+                    return (res->result == 0);
+                } catch (const std::exception& e) {
+                    RCLCPP_ERROR(this->get_logger(), "Hand home exception: %s", e.what());
+                    return false;
+                }
+            }
+
+            RCLCPP_WARN(this->get_logger(), "Unknown hand control command: %s", cmd.c_str());
+            return false;
+        }
+
+        // ── Lift ──
+        if (target == "lift") {
+            if (cmd == "enable")  return call_lift_service("enable",  1000, goal_handle);
+            if (cmd == "disable") return call_lift_service("disable", 0,    goal_handle);
+            RCLCPP_WARN(this->get_logger(), "Unknown lift control command: %s", cmd.c_str());
+            return false;
+        }
+
+        RCLCPP_WARN(this->get_logger(), "Unknown control target: %s", target.c_str());
+        return false;
     }
 
     void handle_move_request(const std::shared_ptr<duco_msg::srv::RobotMove::Request> request,

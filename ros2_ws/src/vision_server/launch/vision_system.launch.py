@@ -79,8 +79,20 @@ def _camera_profile(cam_info):
     return 'default'
 
 
+def _sn_to_ns(serial_number, usb_port=''):
+    """Return a valid ROS 2 namespace for a camera.
+    Valid SNs (start with letter) are used as-is.
+    Invalid SNs (start with digit) fall back to a port-based name like port_2_2.
+    """
+    if serial_number and not serial_number[0].isdigit():
+        return serial_number
+    if usb_port:
+        return 'port_' + usb_port.replace('-', '_')
+    return 'camera_unknown'
+
+
 def make_camera_node(ns, serial_number, device_num=1, usb_port='', connection_delay=100,
-                     camera_profile='default'):
+                     camera_profile='default', enable_depth=True):
     """Create a ComposableNodeContainer for one Orbbec camera.
 
     ns: the ROS namespace AND camera_name — equals the SN when known.
@@ -122,7 +134,7 @@ def make_camera_node(ns, serial_number, device_num=1, usb_port='', connection_de
             'enable_frame_sync': True,
             'sync_mode': 'standalone',
             'enable_color': True,
-            'enable_depth': True,
+            'enable_depth': enable_depth,
             'enable_ir': False,
             'enable_accel': False,
             'enable_gyro': False,
@@ -280,22 +292,23 @@ def generate_actions(context):
 
     # --- Launch cameras with staggered delays (following Orbbec multi_camera pattern) ---
     # Each camera needs ~5s to fully initialize and release the device lock.
-    ns1 = camera1_sn if camera1_sn else 'camera'
+    ns1 = _sn_to_ns(camera1_sn, port_map.get(camera1_sn, '')) if camera1_sn else 'camera'
     cam1_profile = _camera_profile(info_map.get(camera1_sn, {})) if camera1_sn else 'default'
     if camera2_sn:
-        ns2 = camera2_sn
+        ns2 = _sn_to_ns(camera2_sn, port_map.get(camera2_sn, ''))
         cam2_profile = _camera_profile(info_map.get(camera2_sn, {}))
         actions.append(TimerAction(
             period=0.0,
             actions=[GroupAction([make_camera_node(ns1, camera1_sn, device_num=cam_count,
                                       usb_port=port_map.get(camera1_sn, ''),
-                                      connection_delay=100, camera_profile=cam1_profile)])],
+                                      connection_delay=500, camera_profile=cam1_profile)])],
         ))
         actions.append(TimerAction(
-            period=6.0,
+            period=8.0,
             actions=[GroupAction([make_camera_node(ns2, camera2_sn, device_num=cam_count,
                                       usb_port=port_map.get(camera2_sn, ''),
-                                      connection_delay=100, camera_profile=cam2_profile)])],
+                                      connection_delay=500, camera_profile=cam2_profile,
+                                      enable_depth=False)])],
         ))
     else:
         actions.append(make_camera_node(ns1, camera1_sn, device_num=cam_count,
@@ -305,14 +318,14 @@ def generate_actions(context):
     # --- Launch depth camera (3rd camera, e.g. Gemini 215) ---
     depth_ns = ''
     if depth_cam_sn:
-        depth_ns = depth_cam_sn
+        depth_ns = _sn_to_ns(depth_cam_sn, port_map.get(depth_cam_sn, ''))
         depth_profile = _camera_profile(info_map.get(depth_cam_sn, {}))
-        delay = 12.0 if camera2_sn else 6.0
+        delay = 16.0 if camera2_sn else 8.0
         actions.append(TimerAction(
             period=delay,
             actions=[GroupAction([make_camera_node(depth_ns, depth_cam_sn, device_num=cam_count,
                                       usb_port=port_map.get(depth_cam_sn, ''),
-                                      connection_delay=100, camera_profile=depth_profile)])],
+                                      connection_delay=500, camera_profile=depth_profile)])],
         ))
 
     # image_saver_node

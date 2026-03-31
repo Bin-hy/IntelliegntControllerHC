@@ -24,6 +24,7 @@
 #include <QDialogButtonBox>
 #include <QDirIterator>
 #include <QPixmap>
+#include <QRegularExpression>
 #include <iostream>
 #include "common_msgs/msg/task_config.hpp"
 // #include "ament_index_cpp/get_package_share_directory.hpp"
@@ -71,6 +72,7 @@ TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, const QString& username, U
 
 void TaskWidget::onAddTask() {
     TaskConfigDialog dlg(node_, this);
+    dlg.setAllTasks(tasks_);
     if (dlg.exec() == QDialog::Accepted) {
         tasks_.push_back(dlg.getTask());
         updateTaskList();
@@ -82,6 +84,7 @@ void TaskWidget::onEditTask() {
     int row = task_list_->currentRow();
     if (row >= 0 && row < (int)tasks_.size()) {
         TaskConfigDialog dlg(node_, this);
+        dlg.setAllTasks(tasks_);
         dlg.setTask(tasks_[row]);
         if (dlg.exec() == QDialog::Accepted) {
             tasks_[row] = dlg.getTask();
@@ -162,7 +165,14 @@ void TaskWidget::saveTasks() {
             QJsonArray armPos;
             for (double p : step.arm_pos) armPos.append(p);
             stepObj["arm_pos"] = armPos;
-            
+
+            stepObj["arm_command"] = QString::fromStdString(step.arm_command);
+            QJsonArray armCartPos;
+            for (double p : step.arm_cart_pos) armCartPos.append(p);
+            stepObj["arm_cart_pos"] = armCartPos;
+            stepObj["arm_velocity"] = step.arm_velocity;
+            stepObj["arm_accel"] = step.arm_accel;
+
             QJsonArray handPos;
             for (int p : step.hand_pos) handPos.append(p);
             stepObj["hand_pos"] = handPos;
@@ -179,6 +189,9 @@ void TaskWidget::saveTasks() {
             stepObj["lift_target_pulses"] = step.lift_target_pulses;
             stepObj["lift_accel_ms"] = step.lift_accel_ms;
             stepObj["lift_decel_ms"] = step.lift_decel_ms;
+            stepObj["delay_ms"] = step.delay_ms;
+            stepObj["control_target"]  = QString::fromStdString(step.control_target);
+            stepObj["control_command"] = QString::fromStdString(step.control_command);
 
             steps.append(stepObj);
         }
@@ -238,7 +251,13 @@ void TaskWidget::loadTasks() {
             
             QJsonArray armPos = sObj["arm_pos"].toArray();
             for (const auto& p : armPos) step.arm_pos.push_back(p.toDouble());
-            
+
+            step.arm_command = sObj["arm_command"].toString().toStdString();
+            QJsonArray armCartPos = sObj["arm_cart_pos"].toArray();
+            for (const auto& p : armCartPos) step.arm_cart_pos.push_back(p.toDouble());
+            step.arm_velocity = sObj["arm_velocity"].toDouble(0);
+            step.arm_accel = sObj["arm_accel"].toDouble(0);
+
             QJsonArray handPos = sObj["hand_pos"].toArray();
             for (const auto& p : handPos) step.hand_pos.push_back(p.toInt());
             
@@ -258,6 +277,9 @@ void TaskWidget::loadTasks() {
             step.lift_target_pulses = sObj["lift_target_pulses"].toInt(0);
             step.lift_accel_ms = sObj["lift_accel_ms"].toInt(0);
             step.lift_decel_ms = sObj["lift_decel_ms"].toInt(0);
+            step.delay_ms = sObj["delay_ms"].toInt(0);
+            step.control_target  = sObj["control_target"].toString().toStdString();
+            step.control_command = sObj["control_command"].toString().toStdString();
 
             task.task_seqs.push_back(step);
         }
@@ -274,12 +296,16 @@ void TaskWidget::onShowHistory() {
 
     QDialog dlg(this);
     dlg.setWindowTitle(tr_ui("任务执行历史", "Task Execution History"));
-    dlg.resize(700, 400);
-    auto * layout = new QVBoxLayout(&dlg);
+    dlg.resize(1100, 600);
+    auto * layout = new QHBoxLayout(&dlg);
+
+    // --- Left: task list ---
+    auto * left = new QVBoxLayout();
+    left->addWidget(new QLabel(tr_ui("任务列表", "Task List")));
 
     auto * table = new QTableWidget();
-    table->setColumnCount(5);
-    table->setHorizontalHeaderLabels({tr_ui("任务名称", "Task Name"), tr_ui("开始时间", "Start Time"), tr_ui("结束时间", "End Time"), tr_ui("结果", "Result"), tr_ui("错误信息", "Error Msg")});
+    table->setColumnCount(4);
+    table->setHorizontalHeaderLabels({tr_ui("任务名称", "Task Name"), tr_ui("开始时间", "Start Time"), tr_ui("结果", "Result"), tr_ui("错误信息", "Error Msg")});
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -289,18 +315,109 @@ void TaskWidget::onShowHistory() {
         const auto& r = records[i];
         table->setItem(i, 0, new QTableWidgetItem(r.task_name));
         table->setItem(i, 1, new QTableWidgetItem(r.start_time.toLocalTime().toString("yyyy-MM-dd HH:mm:ss")));
-        table->setItem(i, 2, new QTableWidgetItem(r.end_time.toLocalTime().toString("yyyy-MM-dd HH:mm:ss")));
         auto * result_item = new QTableWidgetItem(r.success ? tr_ui("成功", "Success") : tr_ui("失败", "Failure"));
         result_item->setForeground(r.success ? Qt::darkGreen : Qt::red);
-        table->setItem(i, 3, result_item);
-        table->setItem(i, 4, new QTableWidgetItem(r.error_msg));
+        table->setItem(i, 2, result_item);
+        table->setItem(i, 3, new QTableWidgetItem(r.error_msg));
     }
+    left->addWidget(table);
+    layout->addLayout(left, 1);
 
-    layout->addWidget(table);
+    // --- Right: step details + photo preview ---
+    auto * right = new QVBoxLayout();
+    right->addWidget(new QLabel(tr_ui("步骤详情", "Step Details")));
+
+    auto * step_table = new QTableWidget();
+    step_table->setColumnCount(6);
+    step_table->setHorizontalHeaderLabels({tr_ui("步骤", "Step"), tr_ui("类型", "Type"), tr_ui("结果", "Result"),
+                                            tr_ui("耳机角度", "Angle"), tr_ui("耳机深度", "Depth"), tr_ui("置信度", "Conf")});
+    step_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    step_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    step_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    right->addWidget(step_table);
+
+    right->addWidget(new QLabel(tr_ui("拍摄照片", "Captured Photos")));
+    auto * photo_list = new QListWidget();
+    right->addWidget(photo_list);
+
+    auto * preview = new QLabel();
+    preview->setMinimumSize(320, 240);
+    preview->setAlignment(Qt::AlignCenter);
+    right->addWidget(preview, 1);
+
+    layout->addLayout(right, 2);
+
+    // When task row changes, update step details
+    QObject::connect(table, &QTableWidget::itemSelectionChanged, &dlg, [&]() {
+        step_table->setRowCount(0);
+        photo_list->clear();
+        preview->clear();
+        int row = table->currentRow();
+        if (row < 0 || row >= records.size()) return;
+        const auto& rec = records[row];
+
+        step_table->setRowCount(rec.steps.size());
+        for (int i = 0; i < rec.steps.size(); ++i) {
+            const auto& s = rec.steps[i];
+            step_table->setItem(i, 0, new QTableWidgetItem(s.name));
+            step_table->setItem(i, 1, new QTableWidgetItem(s.type));
+            auto * si = new QTableWidgetItem(s.success ? tr_ui("成功", "OK") : tr_ui("失败", "Fail"));
+            si->setForeground(s.success ? Qt::darkGreen : Qt::red);
+            step_table->setItem(i, 2, si);
+            if (s.vision_data.has_data) {
+                step_table->setItem(i, 3, new QTableWidgetItem(QString::number(s.vision_data.angle_deg, 'f', 1) + QString::fromUtf8("°")));
+                step_table->setItem(i, 4, new QTableWidgetItem(QString::number(s.vision_data.depth_mm, 'f', 1) + " mm"));
+                step_table->setItem(i, 5, new QTableWidgetItem(QString::number(s.vision_data.confidence, 'f', 2)));
+            } else {
+                step_table->setItem(i, 3, new QTableWidgetItem("-"));
+                step_table->setItem(i, 4, new QTableWidgetItem("-"));
+                step_table->setItem(i, 5, new QTableWidgetItem("-"));
+            }
+        }
+
+        // Collect all captured files from all steps + scan task_photos directory
+        QStringList all_files;
+        for (const auto& s : rec.steps) {
+            all_files.append(s.captured_files);
+        }
+        // Also scan the task_photos directory for matching files
+        QString base_dir = QDir::homePath() + "/.ros/task_photos";
+        QDir photos_dir(base_dir);
+        if (photos_dir.exists()) {
+            QString task_tag = rec.task_name;
+            task_tag.replace(QRegularExpression("[^a-zA-Z0-9_-]"), "_");
+            QDirIterator dit(base_dir, QStringList() << "*.png", QDir::Files, QDirIterator::Subdirectories);
+            while (dit.hasNext()) {
+                QString path = dit.next();
+                if (path.contains(task_tag) && !all_files.contains(path)) {
+                    all_files.append(path);
+                }
+            }
+        }
+        for (const auto& f : all_files) {
+            photo_list->addItem(f);
+        }
+    });
+
+    // When photo is selected, show preview
+    QObject::connect(photo_list, &QListWidget::currentItemChanged, &dlg, [preview](QListWidgetItem* item) {
+        if (!item) { preview->clear(); return; }
+        QPixmap pix(item->text());
+        if (!pix.isNull()) {
+            preview->setPixmap(pix.scaled(preview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        } else {
+            preview->setText(tr_ui("无法加载图片", "Cannot load image"));
+        }
+    });
 
     auto * buttons = new QDialogButtonBox(QDialogButtonBox::Close);
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    layout->addWidget(buttons);
+    // Add to the right side
+    right->addWidget(buttons);
+
+    if (records.size() > 0) {
+        table->selectRow(0);
+    }
 
     dlg.exec();
 }

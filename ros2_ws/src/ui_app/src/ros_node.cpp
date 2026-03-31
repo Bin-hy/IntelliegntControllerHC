@@ -773,22 +773,25 @@ void RosNode::call_lhand_move(int joint_id) {
         });
 }
 
-void RosNode::call_lhand_home(int joint_id) {
+void RosNode::call_lhand_home(int joint_id, std::function<void(int)> callback) {
     if (!client_lhand_home_->wait_for_service(std::chrono::seconds(1))) {
         RCLCPP_WARN(get_logger(), "LHand Home service not available");
+        if (callback) callback(-1);
         return;
     }
     auto request = std::make_shared<lhandpro_interfaces::srv::HomeMotors::Request>();
     request->joint_id = joint_id;
-    
+
     using ServiceT = lhandpro_interfaces::srv::HomeMotors;
-    client_lhand_home_->async_send_request(request, 
-        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+    client_lhand_home_->async_send_request(request,
+        [this, callback](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
                 RCLCPP_INFO(get_logger(), "LHand Home result: %d", response->result);
+                if (callback) callback(response->result);
             } catch (const std::exception &e) {
                 RCLCPP_ERROR(get_logger(), "LHand Home failed: %s", e.what());
+                if (callback) callback(-1);
             }
         });
 }
@@ -835,10 +838,10 @@ void RosNode::call_robot_move(const std::string& command,
     request->tool = tool;
     request->wobj = wobj;
     request->arm_num = 0;
-    request->block = false;
+    request->block = true;
 
     using ServiceT = duco_msg::srv::RobotMove;
-    client_move_->async_send_request(request, 
+    client_move_->async_send_request(request,
         [this](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();

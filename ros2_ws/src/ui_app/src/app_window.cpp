@@ -2,6 +2,7 @@
 #include "ui_app/point_cloud_widget.hpp"
 #include "ui_app/i18n_manager.hpp"
 #include "UDEServer.h"
+#include <cmath>
 #include <QProcess>
 #include <QApplication>
 #include <QVBoxLayout>
@@ -604,10 +605,12 @@ QWidget* AppWindow::createMoveTab() {
       auto * layout_joint = new QGridLayout();
 
       for(int i=0; i<7; ++i) {
-          layout_joint->addWidget(new QLabel(QString("J%1 (rad):").arg(i+1)), 0, i);
+          layout_joint->addWidget(new QLabel(QString::fromUtf8("J%1 (°):").arg(i+1)), 0, i);
           spin_joints_[i] = new QDoubleSpinBox();
-          spin_joints_[i]->setRange(-6.28, 6.28);
-          spin_joints_[i]->setSingleStep(0.1);
+          spin_joints_[i]->setRange(-360.0, 360.0);
+          spin_joints_[i]->setDecimals(3);
+          spin_joints_[i]->setSingleStep(1.0);
+          spin_joints_[i]->setSuffix(QString::fromUtf8(" °"));
           layout_joint->addWidget(spin_joints_[i], 1, i);
       }
       
@@ -621,12 +624,21 @@ QWidget* AppWindow::createMoveTab() {
       // --- Cartesian Move ---
       auto * group_cart = new QGroupBox(tr_ui("笛卡尔运动 (MoveL)", "Cartesian Movement (MoveL)"));
       auto * layout_cart = new QGridLayout();
-      QStringList labels = {"X", "Y", "Z", "RX", "RY", "RZ"};
+      QStringList labels = {"X (mm)", "Y (mm)", "Z (mm)", QString::fromUtf8("RX (°)"), QString::fromUtf8("RY (°)"), QString::fromUtf8("RZ (°)")};
       for(int i=0; i<6; ++i) {
-          layout_cart->addWidget(new QLabel(labels[i] + " (m/rad):"), 0, i);
+          layout_cart->addWidget(new QLabel(labels[i] + ":"), 0, i);
           spin_cart_[i] = new QDoubleSpinBox();
-          spin_cart_[i]->setRange(-2.0, 2.0); // Meters
-          spin_cart_[i]->setSingleStep(0.01);
+          if (i < 3) {
+              spin_cart_[i]->setRange(-3000.0, 3000.0);
+              spin_cart_[i]->setDecimals(3);
+              spin_cart_[i]->setSingleStep(1.0);
+              spin_cart_[i]->setSuffix(" mm");
+          } else {
+              spin_cart_[i]->setRange(-360.0, 360.0);
+              spin_cart_[i]->setDecimals(3);
+              spin_cart_[i]->setSingleStep(1.0);
+              spin_cart_[i]->setSuffix(QString::fromUtf8(" °"));
+          }
           layout_cart->addWidget(spin_cart_[i], 1, i);
       }
       auto * btn_movel = new QPushButton(tr_ui("执行 MoveL", "Execute MoveL"));
@@ -660,7 +672,7 @@ QWidget* AppWindow::createMoveTab() {
           const int n = static_cast<int>(node_->current_joints_.size());
           const int to_copy = std::min(n, 7);
           for(int i = 0; i < to_copy; ++i) {
-              spin_joints_[i]->setValue(node_->current_joints_[i]);
+              spin_joints_[i]->setValue(node_->current_joints_[i] * 180.0 / M_PI);
           }
       });
 
@@ -672,9 +684,8 @@ QWidget* AppWindow::createMoveTab() {
               return;
           }
           std::vector<float> q;
-          for(int i=0; i<7; ++i) q.push_back((float)spin_joints_[i]->value());
-          std::vector<float> p; // Empty for MoveJ
-          // Use movej2 for rad/s units
+          for(int i=0; i<7; ++i) q.push_back((float)(spin_joints_[i]->value() * M_PI / 180.0));
+          std::vector<float> p;
           node_->call_robot_move("movej2", p, q, (float)spin_vel_->value(), (float)spin_acc_->value(), 0.0, "default", "default");
       });
 
@@ -686,8 +697,19 @@ QWidget* AppWindow::createMoveTab() {
               return;
           }
           std::vector<float> p;
-          for(int i=0; i<6; ++i) p.push_back((float)spin_cart_[i]->value());
-          std::vector<float> q; // Empty for MoveL
+          for(int i=0; i<6; ++i) {
+              float val = (float)spin_cart_[i]->value();
+              if (i < 3) val = val / 1000.0f;                    // mm → m
+              else       val = val * (float)M_PI / 180.0f;       // deg → rad
+              p.push_back(val);
+          }
+          // q_near for IK reference
+          std::vector<float> q;
+          {
+              std::lock_guard<std::mutex> lock(node_->data_mutex_);
+              for (size_t i = 0; i < node_->current_joints_.size() && i < 7; ++i)
+                  q.push_back((float)node_->current_joints_[i]);
+          }
           node_->call_robot_move("movel", p, q, (float)spin_vel_->value(), (float)spin_acc_->value(), 0.0, "default", "default");
       });
 
@@ -1787,7 +1809,19 @@ QWidget* AppWindow::createLHandTab() {
                                  tr_ui("当前用户无权执行灵巧手回零", "Insufficient permission for hand homing"));
             return;
         }
-        node_->call_lhand_home(0);
+        btn_lhand_home_->setEnabled(false);
+        btn_lhand_home_->setText(tr_ui("回零中...", "Homing..."));
+        AppWindow* self = this;
+        node_->call_lhand_home(0, [self](int result) {
+            QMetaObject::invokeMethod(self, [self, result]() {
+                self->btn_lhand_home_->setEnabled(true);
+                self->btn_lhand_home_->setText(tr_ui("全部回零", "Home All"));
+                if (result != 0) {
+                    QMessageBox::warning(self, tr_ui("回零失败", "Home Failed"),
+                        QString(tr_ui("回零失败，错误码：", "Homing failed, error: ")) + QString::number(result));
+                }
+            }, Qt::QueuedConnection);
+        });
     });
     
     connect(btn_lhand_set_vel_, &QPushButton::clicked, this, [this](){

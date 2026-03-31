@@ -6,12 +6,21 @@
 #include <QDateTime>
 #include <QJsonObject>
 
+struct StepVisionData {
+    double angle_deg = 0.0;
+    double depth_mm = 0.0;
+    double confidence = 0.0;
+    bool has_data = false;
+    QString message;
+};
+
 struct StepRecord {
     QString name;
     QString type;
     bool success;
     int duration_ms;
     QStringList captured_files;
+    StepVisionData vision_data;
 
     QJsonObject toJson() const;
     static StepRecord fromJson(const QJsonObject& obj);

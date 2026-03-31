@@ -15,6 +15,14 @@ QJsonObject StepRecord::toJson() const {
         files.append(f);
     }
     obj["captured_files"] = files;
+    if (vision_data.has_data) {
+        QJsonObject vd;
+        vd["angle_deg"] = vision_data.angle_deg;
+        vd["depth_mm"] = vision_data.depth_mm;
+        vd["confidence"] = vision_data.confidence;
+        vd["message"] = vision_data.message;
+        obj["vision_data"] = vd;
+    }
     return obj;
 }
 
@@ -27,6 +35,14 @@ StepRecord StepRecord::fromJson(const QJsonObject& obj) {
     QJsonArray files = obj["captured_files"].toArray();
     for (const auto& f : files) {
         r.captured_files.append(f.toString());
+    }
+    if (obj.contains("vision_data")) {
+        QJsonObject vd = obj["vision_data"].toObject();
+        r.vision_data.has_data = true;
+        r.vision_data.angle_deg = vd["angle_deg"].toDouble();
+        r.vision_data.depth_mm = vd["depth_mm"].toDouble();
+        r.vision_data.confidence = vd["confidence"].toDouble();
+        r.vision_data.message = vd["message"].toString();
     }
     return r;
 }

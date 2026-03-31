@@ -11,3 +11,5 @@ install/
 **/__pycache__/
 
 *.log
+
+ros2_ws/step/

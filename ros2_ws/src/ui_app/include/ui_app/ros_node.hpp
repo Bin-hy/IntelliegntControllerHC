@@ -78,7 +78,7 @@ public:
                          int target_pulses = 0, int accel_ms = 0, int decel_ms = 0);
 
   void call_lhand_enable(bool enable); // Use global enable for now, or default joint_id if needed
-  void call_lhand_home(int joint_id);
+  void call_lhand_home(int joint_id, std::function<void(int)> callback = nullptr);
   void call_lhand_set_position(int joint_id, int position);
   void call_lhand_set_all_position(const std::array<int, 6>& positions);
   void call_lhand_set_velocity(int joint_id, int velocity);

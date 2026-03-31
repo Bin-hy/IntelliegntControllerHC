@@ -54,6 +54,8 @@ public:
 private slots:
     void onTypeChanged(const QString& type);
     void onCaptureCurrent();
+    void onArmCommandChanged(const QString& cmd);
+    void onControlTargetChanged(const QString& target);
 
 private:
     std::shared_ptr<RosNode> node_;
@@ -76,7 +78,13 @@ private:
     QSpinBox* spin_lift_decel_ms_;
 
     // Arm UI
-    QDoubleSpinBox* spin_arm_pos_[6];
+    QComboBox* combo_arm_command_;       // "movej" / "movel"
+    QWidget* widget_arm_movej_;          // joint angle inputs
+    QWidget* widget_arm_movel_;          // cartesian inputs
+    QDoubleSpinBox* spin_arm_pos_[6];    // joint angles in degrees (MoveJ)
+    QDoubleSpinBox* spin_arm_cart_[6];   // cartesian [X,Y,Z,RX,RY,RZ] (MoveL)
+    QDoubleSpinBox* spin_arm_velocity_;  // MoveJ: deg/s, MoveL: mm/s
+    QDoubleSpinBox* spin_arm_accel_;     // accel
 
     // Hand UI
     QSpinBox* spin_hand_pos_[6];
@@ -89,6 +97,11 @@ private:
     QComboBox* combo_io_port_;    // Port within group
     QComboBox* combo_io_value_;   // HIGH / LOW
     void onIOGroupChanged(int index);
+
+    // Control UI (type=control)
+    QWidget*   widget_control_;
+    QComboBox* combo_control_target_;   // arm / lhand / rhand / lift
+    QComboBox* combo_control_command_;  // poweron/enable/disable/poweroff/home
 
     // Delay UI
     QSpinBox* spin_delay_ms_;
@@ -103,6 +116,7 @@ public:
     explicit TaskConfigDialog(std::shared_ptr<RosNode> node, QWidget *parent = nullptr);
     void setTask(const common_msgs::msg::TaskConfig& task);
     common_msgs::msg::TaskConfig getTask() const;
+    void setAllTasks(const std::vector<common_msgs::msg::TaskConfig>& tasks);
 
 private slots:
     void onAddDevice();
@@ -110,16 +124,22 @@ private slots:
     void onAddStep();
     void onEditStep();
     void onDeleteStep();
+    void onImportSteps();
+    void onExportSteps();
+    void onImportFromFile();
 
 private:
+    static QJsonObject stepToJson(const common_msgs::msg::TaskStep& step);
+    static common_msgs::msg::TaskStep stepFromJson(const QJsonObject& obj);
     std::shared_ptr<RosNode> node_;
     QLineEdit* edit_name_;
     QSpinBox* spin_rounds_;
     QTableWidget* table_devices_;
     QListWidget* list_steps_;
-    
+
     std::vector<common_msgs::msg::TaskDeviceCheck> devices_;
     std::vector<common_msgs::msg::TaskStep> steps_;
+    std::vector<common_msgs::msg::TaskConfig> all_tasks_;
 
     void updateDeviceTable();
     void updateStepList();

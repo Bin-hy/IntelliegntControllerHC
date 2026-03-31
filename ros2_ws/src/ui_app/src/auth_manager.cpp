@@ -103,7 +103,7 @@ void AuthManager::load() {
         InternalUser admin;
         admin.username = "admin";
         QByteArray salt = generateSalt();
-        QString default_password = generateRandomPassword();
+        QString default_password = "admin@123";
         admin.salt = salt;
         admin.password_hash = hashPassword(default_password, salt);
         std::cout << "========================================" << std::endl;
