@@ -65,7 +65,7 @@ ros2 service call /earphone_inspector/measure vision_server/srv/MeasureEarphone 
 ```
 使用DIO数字接口，发送true为启动设备，发送false为停止设备
 DO1:启停清洗机     DO2:启停左侧吹风机    DO3:启停右侧烘干机      DO4:升降平台解除抱闸
-DO5:黄灯   DO6:绿灯     DO7:红灯   DO8:蜂鸣器
+DO5:黄灯   DO6:绿灯     DO7:红灯   DO8:蜂鸣器 DIO9：点胶机启停 DIO10：升降平台初始化
 ```
 
 ```
@@ -408,4 +408,16 @@ ros2 service call /lift_server/lift_control lift_server/srv/LiftControl "{comman
 我不小心误删了代码，求求你修复一下你的所有修改。特别是关于耳机角度，耳机深度的记录，对应的任务，以及任
   务执行历史中可以查看步骤详情：耳机角度，耳机深度，拍摄中的照片预览等。
 
-  点击停止出现闪退
+  任务执行中途，点击停止出现闪退。
+
+task任务失败应当提示错误原因，例如：机械臂位置错误，机械臂速度错误，机械臂加速度错误，相机深度信息获取失败请检查xx，之类的等。
+
+
+
+
+
+sudo cp ~/IntelliegntControllerHC/ros2_ws/install/orbbec_camera/share/orbbec_camera/udev/99-obsensor-libusb.rules /etc/udev/rules.d/                                                                                                       
+sudo udevadm control --reload-rules                                                                                      
+sudo udevadm trigger
+
+1. 

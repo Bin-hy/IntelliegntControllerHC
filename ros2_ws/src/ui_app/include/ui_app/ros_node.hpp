@@ -73,7 +73,7 @@ public:
 
   // LHand Control
   // Lift platform control
-  void call_lift_control(const std::string& command, int speed_rpm = 1000,
+  void call_lift_control(const std::string& command, int speed_rpm = 100,
                          std::function<void(bool, const std::string&, int)> callback = nullptr,
                          int target_pulses = 0, int accel_ms = 0, int decel_ms = 0);
 

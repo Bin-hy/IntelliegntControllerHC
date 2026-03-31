@@ -48,6 +48,7 @@ void PermissionManager::loadPolicy(const QString& policy_path) {
     maintainer_actions.insert(ActionType::ModifyParam);
     maintainer_actions.insert(ActionType::CalibrateSystem);
     maintainer_actions.insert(ActionType::ViewAuthLog);
+    maintainer_actions.insert(ActionType::ManageTask);
 
     admin_actions = maintainer_actions;
     admin_actions.insert(ActionType::DeleteAuthLog);
@@ -56,6 +57,7 @@ void PermissionManager::loadPolicy(const QString& policy_path) {
     admin_actions.insert(ActionType::DeleteUser);
     admin_actions.insert(ActionType::ResetUserPassword);
     admin_actions.insert(ActionType::LockUnlockUser);
+    admin_actions.insert(ActionType::DeletePhoto);
 
     QFile file(policy_path);
     if (file.exists() && file.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -122,6 +124,10 @@ void PermissionManager::loadPolicy(const QString& policy_path) {
                     target->insert(ActionType::ResetUserPassword);
                 } else if (aa == "lockunlockuser") {
                     target->insert(ActionType::LockUnlockUser);
+                } else if (aa == "managetask") {
+                    target->insert(ActionType::ManageTask);
+                } else if (aa == "deletephoto") {
+                    target->insert(ActionType::DeletePhoto);
                 }
             }
         }

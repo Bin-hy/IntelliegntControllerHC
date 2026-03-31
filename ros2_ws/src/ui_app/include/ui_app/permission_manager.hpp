@@ -20,7 +20,9 @@ enum class ActionType {
     ModifyUser,
     DeleteUser,
     ResetUserPassword,
-    LockUnlockUser
+    LockUnlockUser,
+    ManageTask,
+    DeletePhoto
 };
 
 inline uint qHash(ActionType key, uint seed = 0) noexcept {

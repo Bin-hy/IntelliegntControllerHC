@@ -247,8 +247,8 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     widget_io_ = new QWidget();
     auto * io_layout = new QFormLayout(widget_io_);
     combo_io_group_ = new QComboBox();
-    combo_io_group_->addItem(tr_ui("标准 DIO (1-8)", "Standard DIO (1-8)"), 0);   // type=0, base=1
-    combo_io_group_->addItem(tr_ui("标准 DIO (9-16)", "Standard DIO (9-16)"), 1);  // type=0, base=9
+    combo_io_group_->addItem(tr_ui("标准 DIO (1-10)", "Standard DIO (1-10)"), 0);   // type=0, base=1
+    combo_io_group_->addItem(tr_ui("标准 DIO (11-16)", "Standard DIO 11-16)"), 1);  // type=0, base=9
     combo_io_group_->addItem(tr_ui("工具 IO (1-2)", "Tool IO (1-2)"), 2);    // type=1, base=1
     io_layout->addRow(tr_ui("IO 分组:", "IO Group:"), combo_io_group_);
 
@@ -267,31 +267,24 @@ StepAddDialog::StepAddDialog(std::shared_ptr<RosNode> node, const std::vector<co
     widget_lift_ = new QWidget();
     auto * lift_layout = new QFormLayout(widget_lift_);
     combo_lift_command_ = new QComboBox();
-    combo_lift_command_->addItem(tr_ui("上升 (move_up)", "Up (move_up)"), "move_up");
-    combo_lift_command_->addItem(tr_ui("下降 (move_down)", "Down (move_down)"), "move_down");
-    combo_lift_command_->addItem(tr_ui("停止 (stop)", "Stop (stop)"), "stop");
-    combo_lift_command_->addItem(tr_ui("定位移动 (position_move)", "Position Move"), "position_move");
-    combo_lift_command_->addItem(tr_ui("回原点 (position_next)", "Home (position_next)"), "position_next");
-    combo_lift_command_->addItem(tr_ui("定位停止 (position_stop)", "Position Stop"), "position_stop");
+    combo_lift_command_->addItem(tr_ui("使能/回原点 (enable)", "Enable/Home"), "enable");
+    combo_lift_command_->addItem(tr_ui("移动到目标 (move_to_target)", "Move to Target"), "move_to_target");
+    combo_lift_command_->addItem(tr_ui("回原点 (return_home)", "Return Home"), "return_home");
+    combo_lift_command_->addItem(tr_ui("触发下一段 (trigger_step)", "Trigger Step"), "trigger_step");
+    combo_lift_command_->addItem(tr_ui("停止/断使能 (disable)", "Disable/Stop"), "disable");
     lift_layout->addRow(tr_ui("升降命令:", "Lift Command:"), combo_lift_command_);
     spin_lift_speed_rpm_ = new QSpinBox();
     spin_lift_speed_rpm_->setRange(1, 65535);
     spin_lift_speed_rpm_->setValue(1000);
     spin_lift_speed_rpm_->setSingleStep(100);
-    lift_layout->addRow(tr_ui("速度:", "Speed:"), spin_lift_speed_rpm_);
-    spin_lift_target_pulses_ = new QSpinBox();
-    spin_lift_target_pulses_->setRange(-99999999, 99999999);
-    spin_lift_target_pulses_->setValue(10000);
-    spin_lift_target_pulses_->setSingleStep(1000);
-    lift_layout->addRow(tr_ui("目标脉冲:", "Target Pulses:"), spin_lift_target_pulses_);
-    spin_lift_accel_ms_ = new QSpinBox();
-    spin_lift_accel_ms_->setRange(0, 65535);
-    spin_lift_accel_ms_->setValue(1000);
-    lift_layout->addRow(tr_ui("加速时间(ms):", "Accel Time(ms):"), spin_lift_accel_ms_);
-    spin_lift_decel_ms_ = new QSpinBox();
-    spin_lift_decel_ms_->setRange(0, 65535);
-    spin_lift_decel_ms_->setValue(1000);
-    lift_layout->addRow(tr_ui("减速时间(ms):", "Decel Time(ms):"), spin_lift_decel_ms_);
+    lift_layout->addRow(tr_ui("速度(RPM):", "Speed(RPM):"), spin_lift_speed_rpm_);
+    spin_lift_target_cm_ = new QDoubleSpinBox();
+    spin_lift_target_cm_->setRange(0.0, 32.0);
+    spin_lift_target_cm_->setValue(1.0);
+    spin_lift_target_cm_->setDecimals(1);
+    spin_lift_target_cm_->setSingleStep(0.5);
+    spin_lift_target_cm_->setSuffix(" cm");
+    lift_layout->addRow(tr_ui("目标位置(cm):", "Target(cm):"), spin_lift_target_cm_);
 
     stack->addWidget(widget_arm_);
     stack->addWidget(widget_hand_);
@@ -388,13 +381,14 @@ void StepAddDialog::onIOGroupChanged(int index) {
         tr_ui("右侧烘干机", "Right Dryer"), tr_ui("升降平台解锁", "Lift Unlock"),
         tr_ui("黄灯", "Yellow Light"), tr_ui("绿灯", "Green Light"),
         tr_ui("红灯", "Red Light"), tr_ui("蜂鸣器", "Buzzer"),
+        tr_ui("点胶机","Point Glue"), tr_ui("升降平台回原点","Lift Plantform"),
     };
-    if (index == 0) { // Standard 1-8
-        for (int i = 0; i < 8; ++i)
+    if (index == 0) { // Standard 1-10
+        for (int i = 0; i < 10; ++i)
             combo_io_port_->addItem(QString("%1 - %2").arg(i + 1).arg(std_names[i]), i + 1);
     } else if (index == 1) { // Standard 9-16
-        for (int i = 0; i < 8; ++i)
-            combo_io_port_->addItem(QString("DIO %1").arg(i + 9), i + 9);
+        for (int i = 0; i < 6; ++i)
+            combo_io_port_->addItem(QString("DIO %1").arg(i + 10), i + 10);
     } else if (index == 2) { // Tool 1-2
         combo_io_port_->addItem(QString::fromUtf8("Tool IO 1"), 1);
         combo_io_port_->addItem(QString::fromUtf8("Tool IO 2"), 2);
@@ -529,9 +523,9 @@ void StepAddDialog::setStep(const common_msgs::msg::TaskStep& step) {
             }
         }
         spin_lift_speed_rpm_->setValue(step.lift_speed_rpm > 0 ? step.lift_speed_rpm : 1000);
-        spin_lift_target_pulses_->setValue(step.lift_target_pulses);
-        spin_lift_accel_ms_->setValue(step.lift_accel_ms > 0 ? step.lift_accel_ms : 1000);
-        spin_lift_decel_ms_->setValue(step.lift_decel_ms > 0 ? step.lift_decel_ms : 1000);
+        // Convert pulses to cm for display (1cm = 10000 pulses)
+        double cm = step.lift_target_pulses / 10000.0;
+        spin_lift_target_cm_->setValue(cm);
     } else if (step.type == "control") {
         for (int i = 0; i < combo_control_target_->count(); ++i) {
             if (combo_control_target_->itemData(i).toString().toStdString() == step.control_target) {
@@ -583,9 +577,8 @@ common_msgs::msg::TaskStep StepAddDialog::getStep() const {
     } else if (step.type == "lift") {
         step.lift_command = combo_lift_command_->currentData().toString().toStdString();
         step.lift_speed_rpm = spin_lift_speed_rpm_->value();
-        step.lift_target_pulses = spin_lift_target_pulses_->value();
-        step.lift_accel_ms = spin_lift_accel_ms_->value();
-        step.lift_decel_ms = spin_lift_decel_ms_->value();
+        // Convert cm to pulses (1cm = 10000 pulses)
+        step.lift_target_pulses = static_cast<int32_t>(spin_lift_target_cm_->value() * 10000.0);
     } else if (step.type == "control") {
         step.control_target  = combo_control_target_->currentData().toString().toStdString();
         step.control_command = combo_control_command_->currentData().toString().toStdString();
@@ -952,6 +945,129 @@ void TaskConfigDialog::onImportFromFile() {
     }
 }
 
+// Map structured error codes from system_controller to user-friendly messages
+static QString friendlyStepError(const QString& error_code) {
+    // ── ARM ──
+    if (error_code.startsWith("ARM_NOT_ENABLED"))
+        return tr_ui("机械臂未使能，请先上电并使能机械臂",
+                      "Arm not enabled. Please power on and enable the arm first.");
+    if (error_code.startsWith("ARM_MOVE_REJECTED"))
+        return tr_ui("机械臂运动被拒绝，请检查目标位置或速度/加速度参数是否合法",
+                      "Arm move rejected. Check target position and velocity/accel parameters.");
+    if (error_code.startsWith("ARM_EXCEPTION"))
+        return tr_ui("机械臂通信异常: ", "Arm communication error: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+
+    // ── HAND ──
+    if (error_code.startsWith("HAND_SERVICE_UNAVAILABLE") || error_code.startsWith("HAND_MOVE_UNAVAILABLE"))
+        return tr_ui("灵巧手服务不可用，请检查灵巧手连接和EtherCAT状态",
+                      "Hand service unavailable. Check hand connection and EtherCAT status.");
+    if (error_code.startsWith("HAND_POS_MISMATCH"))
+        return tr_ui("灵巧手位置参数错误，需要6个手指位置",
+                      "Hand position error: 6 finger positions required.");
+    if (error_code.startsWith("HAND_SET_ERROR") || error_code.startsWith("HAND_MOVE_ERROR"))
+        return tr_ui("灵巧手运动失败: ", "Hand move failed: ") + error_code;
+    if (error_code.startsWith("HAND_EXCEPTION") || error_code.startsWith("HAND_MOVE_EXCEPTION"))
+        return tr_ui("灵巧手通信异常: ", "Hand communication error: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+
+    // ── CAMERA ──
+    if (error_code.startsWith("CAMERA_SERVICE_UNAVAILABLE"))
+        return tr_ui("相机服务不可用，请检查相机连接和 vision_server 节点",
+                      "Camera service unavailable. Check camera connection and vision_server node.");
+    if (error_code.startsWith("CAMERA_NS_MISSING"))
+        return tr_ui("未找到相机设备，请检查相机SN码或连接状态",
+                      "Camera not found. Check camera SN or connection status.");
+    if (error_code.startsWith("CAMERA_TIMEOUT"))
+        return tr_ui("相机拍照超时，请检查相机是否正常工作",
+                      "Camera capture timeout. Check if camera is working properly.");
+    if (error_code.startsWith("CAMERA_SAVE_FAILED"))
+        return tr_ui("相机图像保存失败: ", "Camera image save failed: ")
+               + error_code.mid(error_code.lastIndexOf(':') + 1);
+    if (error_code.startsWith("CAMERA_EXCEPTION"))
+        return tr_ui("相机通信异常: ", "Camera error: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+
+    // ── DEPTH ──
+    if (error_code.startsWith("DEPTH_SERVICE_UNAVAILABLE"))
+        return tr_ui("深度测量服务不可用，请检查深度相机连接",
+                      "Depth measure service unavailable. Check depth camera connection.");
+    if (error_code.startsWith("DEPTH_MEASURE_TIMEOUT"))
+        return tr_ui("深度测量超时，请检查深度相机数据流",
+                      "Depth measure timeout. Check depth camera data stream.");
+    if (error_code.startsWith("DEPTH_MEASURE_FAILED"))
+        return tr_ui("深度测量失败: ", "Depth measure failed: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+    if (error_code.startsWith("DEPTH_EXCEPTION"))
+        return tr_ui("深度测量异常: ", "Depth measure error: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+
+    // ── IO ──
+    if (error_code.startsWith("IO_SERVICE_UNAVAILABLE"))
+        return tr_ui("IO 控制服务不可用，请检查机械臂连接",
+                      "IO service unavailable. Check arm connection.");
+    if (error_code.startsWith("IO_EXCEPTION"))
+        return tr_ui("IO 控制异常: ", "IO control error: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+
+    // ── LIFT ──
+    if (error_code.startsWith("LIFT_SERVICE_UNAVAILABLE"))
+        return tr_ui("升降台服务不可用，请检查升降台连接",
+                      "Lift service unavailable. Check lift connection.");
+    if (error_code.startsWith("LIFT_BRAKE"))
+        return tr_ui("升降台制动器释放失败，请检查 IO 连接",
+                      "Lift brake release failed. Check IO connection.");
+    if (error_code.startsWith("LIFT_SERVO"))
+        return tr_ui("升降台伺服使能失败",
+                      "Lift servo enable failed.");
+    if (error_code.startsWith("LIFT_MOVE_FAILED"))
+        return tr_ui("升降台运动失败: ", "Lift move failed: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+    if (error_code.startsWith("LIFT_EXCEPTION"))
+        return tr_ui("升降台通信异常: ", "Lift error: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+
+    // ── CONTROL ──
+    if (error_code.startsWith("CTRL_ARM_SERVICE_UNAVAILABLE"))
+        return tr_ui("机械臂控制服务不可用，请检查机械臂连接",
+                      "Arm control service unavailable. Check arm connection.");
+    if (error_code.startsWith("CTRL_UNKNOWN_CMD"))
+        return tr_ui("未知的控制指令: ", "Unknown control command: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+    if (error_code.startsWith("CTRL_ARM_EXCEPTION"))
+        return tr_ui("机械臂控制异常: ", "Arm control error: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+    if (error_code.startsWith("CTRL_HAND_SERVICE_UNAVAILABLE") || error_code.startsWith("CTRL_HAND_HOME_UNAVAILABLE"))
+        return tr_ui("灵巧手控制服务不可用，请检查灵巧手连接",
+                      "Hand control service unavailable. Check hand connection.");
+    if (error_code.startsWith("CTRL_HAND_ENABLE_ERROR"))
+        return tr_ui("灵巧手使能失败: ", "Hand enable failed: ") + error_code;
+    if (error_code.startsWith("CTRL_HAND_HOME_TIMEOUT"))
+        return tr_ui("灵巧手回零超时", "Hand homing timeout.");
+    if (error_code.startsWith("CTRL_HAND_HOME_ERROR"))
+        return tr_ui("灵巧手回零失败: ", "Hand homing failed: ") + error_code;
+    if (error_code.startsWith("CTRL_HAND"))
+        return tr_ui("灵巧手控制异常: ", "Hand control error: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+    if (error_code.startsWith("CTRL_UNKNOWN"))
+        return tr_ui("未知的控制目标或指令: ", "Unknown control target/command: ") + error_code;
+
+    // ── BASELINE ──
+    if (error_code.startsWith("BASELINE_SERVICE_UNAVAILABLE"))
+        return tr_ui("视觉基准服务不可用", "Vision baseline service unavailable.");
+    if (error_code.startsWith("BASELINE_TIMEOUT"))
+        return tr_ui("视觉基准采集超时", "Vision baseline capture timeout.");
+    if (error_code.startsWith("BASELINE_FAILED"))
+        return tr_ui("视觉基准采集失败: ", "Vision baseline failed: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+    if (error_code.startsWith("BASELINE_EXCEPTION"))
+        return tr_ui("视觉基准异常: ", "Vision baseline error: ")
+               + error_code.mid(error_code.indexOf(':') + 1);
+
+    // ── Fallback ──
+    return tr_ui("步骤执行失败: ", "Step execution failed: ") + error_code;
+}
+
 TaskRunDialog::TaskRunDialog(std::shared_ptr<RosNode> node, const common_msgs::msg::TaskConfig& task, std::shared_ptr<TaskRecordManager> record_manager, QWidget *parent)
     : QDialog(parent), node_(node), record_manager_(record_manager), task_(task), devices_ready_(false) {
     setWindowTitle(tr_ui("运行任务", "Run Task"));
@@ -1026,6 +1142,7 @@ void TaskRunDialog::onStart() {
     btn_start_->setEnabled(false);
     btn_pause_->setEnabled(true);
     label_status_->setText(tr_ui("运行中...", "Running..."));
+    last_error_detail_.clear();
 
     current_record_ = TaskExecutionRecord();
     current_record_.task_name = QString::fromStdString(task_.task_name);
@@ -1066,9 +1183,13 @@ void TaskRunDialog::onTaskResult(const rclcpp_action::ClientGoalHandle<common_ms
         current_record_.success = true;
         current_record_.error_msg.clear();
     } else if (result.result) {
-        label_status_->setText(tr_ui("任务失败: ", "Task Failed: ") + QString::fromStdString(result.result->message));
+        QString raw_msg = QString::fromStdString(result.result->message);
+        label_status_->setText(tr_ui("任务失败: ", "Task Failed: ") + raw_msg);
         current_record_.success = false;
-        current_record_.error_msg = QString::fromStdString(result.result->message);
+        current_record_.error_msg = raw_msg;
+        // Show detailed error dialog
+        QString detail = last_error_detail_.isEmpty() ? raw_msg : last_error_detail_;
+        QMessageBox::warning(this, tr_ui("任务失败", "Task Failed"), detail);
     } else {
         label_status_->setText(tr_ui("任务结束(无结果)", "Task Finished with no result"));
         current_record_.success = false;
@@ -1101,8 +1222,21 @@ void TaskRunDialog::onTaskFeedback(const std::shared_ptr<const common_msgs::acti
     const std::string saved_prefix = "SAVED_FILE:";
     const std::string vision_prefix = "VISION_RESULT:";
     const std::string baseline_prefix = "VISION_BASELINE_OK:";
+    const std::string error_prefix = "STEP_ERROR:";
 
-    if (status.rfind(saved_prefix, 0) == 0) {
+    if (status.rfind(error_prefix, 0) == 0) {
+        // STEP_ERROR:<step_name>:<step_type>:<error_code>
+        std::string payload = status.substr(error_prefix.size());
+        // Find the third colon to extract error_code
+        size_t p1 = payload.find(':');
+        size_t p2 = (p1 != std::string::npos) ? payload.find(':', p1 + 1) : std::string::npos;
+        QString step_name = QString::fromStdString(p1 != std::string::npos ? payload.substr(0, p1) : payload);
+        QString step_type = QString::fromStdString((p1 != std::string::npos && p2 != std::string::npos) ? payload.substr(p1 + 1, p2 - p1 - 1) : "");
+        QString error_code = QString::fromStdString(p2 != std::string::npos ? payload.substr(p2 + 1) : "");
+        last_error_detail_ = tr_ui("步骤 \"%1\" (%2) 失败:\n%3",
+                                    "Step \"%1\" (%2) failed:\n%3")
+                                 .arg(step_name, step_type, friendlyStepError(error_code));
+    } else if (status.rfind(saved_prefix, 0) == 0) {
         // SAVED_FILE:/path/to/file.png
         std::string path = status.substr(saved_prefix.size());
         if (idx >= 0 && idx < current_record_.steps.size()) {
@@ -1136,8 +1270,13 @@ void TaskRunDialog::onTaskFeedback(const std::shared_ptr<const common_msgs::acti
 
     progress_steps_->setValue(idx + 1);
     // Show user-friendly status (strip structured prefixes)
-    if (status.rfind("SAVED_FILE:", 0) == 0 || status.rfind("VISION_RESULT:", 0) == 0 || status.rfind("VISION_BASELINE_OK:", 0) == 0) {
-        label_status_->setText(tr_ui("执行中...", "Running..."));
+    if (status.rfind("SAVED_FILE:", 0) == 0 || status.rfind("VISION_RESULT:", 0) == 0
+        || status.rfind("VISION_BASELINE_OK:", 0) == 0 || status.rfind("STEP_ERROR:", 0) == 0) {
+        if (status.rfind("STEP_ERROR:", 0) == 0) {
+            label_status_->setText(last_error_detail_);
+        } else {
+            label_status_->setText(tr_ui("执行中...", "Running..."));
+        }
     } else {
         label_status_->setText(QString::fromStdString(status));
     }

@@ -126,6 +126,7 @@ private:
     std::condition_variable pause_cv_;
     std::mutex pause_mutex_;
     std::string pause_reason_;
+    std::string last_step_error_;   // Detailed error reason from the last failed step
     duco_msg::msg::DucoRobotState current_state_;
     std::map<std::string, common_msgs::msg::DeviceStatus> connected_devices_; // Key: Device SN or Type+ID
     std::mutex state_mutex_;
@@ -467,6 +468,7 @@ private:
 
                 RCLCPP_INFO(this->get_logger(), "Executing Step %d: Name: %s, Type %s (Round %d/%d)", step_index, step.name.c_str(), step.type.c_str(), round + 1, rounds);
 
+                last_step_error_.clear();
                 bool step_success = true;
                 if (step.type == "arm") {
                     step_success = execute_arm_step(step, goal_handle);
@@ -484,6 +486,7 @@ private:
                     // Capture depth baseline for earphone inspection
                     if (!client_vision_baseline_->wait_for_service(2s)) {
                         RCLCPP_ERROR(this->get_logger(), "CaptureBaseline service not available");
+                        last_step_error_ = "BASELINE_SERVICE_UNAVAILABLE";
                         step_success = false;
                     } else {
                         auto req = std::make_shared<vision_server::srv::CaptureBaseline::Request>();
@@ -494,6 +497,7 @@ private:
                             if (goal_handle->is_canceling()) { step_success = false; break; }
                             if (std::chrono::steady_clock::now() - t0 > 5s) {
                                 RCLCPP_ERROR(this->get_logger(), "CaptureBaseline timeout");
+                                last_step_error_ = "BASELINE_TIMEOUT";
                                 step_success = false;
                                 break;
                             }
@@ -509,9 +513,11 @@ private:
                                     if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
                                 } else {
                                     RCLCPP_WARN(this->get_logger(), "Baseline failed: %s", res->message.c_str());
+                                    last_step_error_ = "BASELINE_FAILED:" + res->message;
                                 }
                             } catch (const std::exception& e) {
                                 RCLCPP_ERROR(this->get_logger(), "Baseline exception: %s", e.what());
+                                last_step_error_ = "BASELINE_EXCEPTION:" + std::string(e.what());
                                 step_success = false;
                             }
                         }
@@ -582,8 +588,14 @@ private:
                 }
 
                 if (!step_success) {
+                    if (last_step_error_.empty()) last_step_error_ = "UNKNOWN_ERROR";
+                    // Send error detail via feedback before aborting
+                    feedback->current_step_index = step_index;
+                    feedback->current_status = "STEP_ERROR:" + step.name + ":" + step.type + ":" + last_step_error_;
+                    if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
+
                     result->success = false;
-                    result->message = "Step " + std::to_string(step_index) + " failed";
+                    result->message = "Step " + std::to_string(step_index) + " [" + step.name + "] (" + step.type + ") failed: " + last_step_error_;
                     goal_handle->abort(result);
                     return;
                 }
@@ -735,16 +747,19 @@ private:
                 RCLCPP_INFO(this->get_logger(), "Arm move (movej fallback) result: %d", rc2);
                 if (rc2 == 4 || rc2 == 5) return true;
                 RCLCPP_ERROR(this->get_logger(), "movej fallback also failed: %d", rc2);
+                last_step_error_ = "ARM_MOVE_REJECTED:fallback_code=" + std::to_string(rc2);
                 return false;
             }
             if (result_code == 7) {
                 RCLCPP_ERROR(this->get_logger(), "Arm move ST_Illegal(7): robot may not be enabled. Current robot_state=%d",
                              current_state_.robot_state);
+                last_step_error_ = "ARM_NOT_ENABLED:robot_state=" + std::to_string(current_state_.robot_state);
                 return false;
             }
             return true;
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Arm move exception: %s", e.what());
+            last_step_error_ = "ARM_EXCEPTION:" + std::string(e.what());
             return false;
         }
     }
@@ -760,6 +775,7 @@ private:
         auto client_setpos = this->create_client<lhandpro_interfaces::srv::SetAllPosition>(setpos_srv);
         if (!client_setpos->wait_for_service(2s)) {
              RCLCPP_ERROR(this->get_logger(), "Hand service not available: %s", setpos_srv.c_str());
+             last_step_error_ = "HAND_SERVICE_UNAVAILABLE:" + setpos_srv;
              return false;
         }
 
@@ -768,6 +784,7 @@ private:
             for(int i=0; i<6; ++i) request->positions[i] = step.hand_pos[i];
         } else {
             RCLCPP_ERROR(this->get_logger(), "Hand positions size mismatch (expected 6, got %zu)", step.hand_pos.size());
+            last_step_error_ = "HAND_POS_MISMATCH:expected=6,got=" + std::to_string(step.hand_pos.size());
             return false;
         }
 
@@ -785,16 +802,19 @@ private:
             auto response = future.get();
             if (response->result != 0) {
                  RCLCPP_ERROR(this->get_logger(), "Hand service returned error code: %d", response->result);
+                 last_step_error_ = "HAND_SET_ERROR:code=" + std::to_string(response->result);
                  return false;
             }
         } catch (const std::exception& e) {
              RCLCPP_ERROR(this->get_logger(), "Hand service failed: %s", e.what());
+             last_step_error_ = "HAND_EXCEPTION:" + std::string(e.what());
              return false;
         }
 
         auto client_move = this->create_client<lhandpro_interfaces::srv::MoveMotors>(movem_srv);
         if (!client_move->wait_for_service(2s)) {
              RCLCPP_ERROR(this->get_logger(), "Hand move service not available: %s", movem_srv.c_str());
+             last_step_error_ = "HAND_MOVE_UNAVAILABLE:" + movem_srv;
              return false;
         }
         auto move_req = std::make_shared<lhandpro_interfaces::srv::MoveMotors::Request>();
@@ -811,10 +831,12 @@ private:
             auto move_res = move_future.get();
             if (move_res->result != 0) {
                 RCLCPP_ERROR(this->get_logger(), "Move motors returned error code: %d", move_res->result);
+                last_step_error_ = "HAND_MOVE_ERROR:code=" + std::to_string(move_res->result);
                 return false;
             }
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Move motors call failed: %s", e.what());
+            last_step_error_ = "HAND_MOVE_EXCEPTION:" + std::string(e.what());
             return false;
         }
 
@@ -836,6 +858,7 @@ private:
             client = client_fallback;
         } else {
             RCLCPP_ERROR(this->get_logger(), "Vision service not available (/image_saver/save_image or save_image)");
+            last_step_error_ = "CAMERA_SERVICE_UNAVAILABLE";
             return false;
         }
 
@@ -874,6 +897,7 @@ private:
         }
         if (cam_ns.empty()) {
             RCLCPP_ERROR(this->get_logger(), "No camera namespace available for capture");
+            last_step_error_ = "CAMERA_NS_MISSING:sn=" + step.device_sn;
             return false;
         }
         if (cam_ns.front() != '/') {
@@ -907,6 +931,7 @@ private:
 
                 if (std::chrono::steady_clock::now() - start_time > 5s) {
                     RCLCPP_ERROR(this->get_logger(), "Vision service timeout for %s", tag.c_str());
+                    last_step_error_ = "CAMERA_TIMEOUT:" + tag;
                     return {};
                 }
             }
@@ -915,6 +940,7 @@ private:
                 auto response = future.get();
                 if (!response->success) {
                     RCLCPP_WARN(this->get_logger(), "Vision service failed for %s: %s", tag.c_str(), response->message.c_str());
+                    last_step_error_ = "CAMERA_SAVE_FAILED:" + tag + ":" + response->message;
                     return {};
                 }
                 // Send saved file path via feedback
@@ -926,6 +952,7 @@ private:
                 return saved_path;
             } catch (const std::exception& e) {
                 RCLCPP_ERROR(this->get_logger(), "Vision service exception: %s", e.what());
+                last_step_error_ = "CAMERA_EXCEPTION:" + std::string(e.what());
                 return {};
             }
         };
@@ -950,6 +977,7 @@ private:
                      // Snapshot depth measurement and save
                      if (!client_depth_measure_->wait_for_service(2s)) {
                          RCLCPP_ERROR(this->get_logger(), "MeasureDepth service not available");
+                         last_step_error_ = "DEPTH_SERVICE_UNAVAILABLE";
                          success = false;
                      } else {
                          auto dm_req = std::make_shared<vision_server::srv::MeasureDepth::Request>();
@@ -962,6 +990,7 @@ private:
                              if (goal_handle->is_canceling()) { success = false; break; }
                              if (std::chrono::steady_clock::now() - dm_start > 5s) {
                                  RCLCPP_ERROR(this->get_logger(), "MeasureDepth timeout");
+                                 last_step_error_ = "DEPTH_MEASURE_TIMEOUT";
                                  success = false;
                                  break;
                              }
@@ -976,10 +1005,12 @@ private:
                                          dm_res->message.c_str());
                                  } else {
                                      RCLCPP_WARN(this->get_logger(), "DepthMeasure failed: %s", dm_res->message.c_str());
+                                     last_step_error_ = "DEPTH_MEASURE_FAILED:" + dm_res->message;
                                      success = false;
                                  }
                              } catch (const std::exception& e) {
                                  RCLCPP_ERROR(this->get_logger(), "DepthMeasure exception: %s", e.what());
+                                 last_step_error_ = "DEPTH_EXCEPTION:" + std::string(e.what());
                                  success = false;
                              }
                          }
@@ -994,6 +1025,7 @@ private:
     bool execute_io_step(const common_msgs::msg::TaskStep& step, std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
         if (!client_io_->wait_for_service(2s)) {
             RCLCPP_ERROR(this->get_logger(), "IO service not available");
+            last_step_error_ = "IO_SERVICE_UNAVAILABLE";
             return false;
         }
 
@@ -1026,6 +1058,7 @@ private:
             return true;
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "IO step exception: %s", e.what());
+            last_step_error_ = "IO_EXCEPTION:" + std::string(e.what());
             return false;
         }
     }
@@ -1035,6 +1068,7 @@ private:
                            int target_pulses = 0, int accel_ms = 0, int decel_ms = 0) {
         if (!client_lift_->wait_for_service(2s)) {
             RCLCPP_ERROR(this->get_logger(), "Lift service not available");
+            last_step_error_ = "LIFT_SERVICE_UNAVAILABLE";
             return false;
         }
         auto request = std::make_shared<lift_server::srv::LiftControl::Request>();
@@ -1059,6 +1093,7 @@ private:
             return response->success;
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Lift service exception: %s", e.what());
+            last_step_error_ = "LIFT_EXCEPTION:" + std::string(e.what());
             return false;
         }
     }
@@ -1067,6 +1102,7 @@ private:
                       std::shared_ptr<GoalHandleExecuteTask> goal_handle) {
         if (!client_io_->wait_for_service(2s)) {
             RCLCPP_ERROR(this->get_logger(), "IO service not available for brake control");
+            last_step_error_ = "LIFT_BRAKE_IO_UNAVAILABLE";
             return false;
         }
         auto request = std::make_shared<duco_msg::srv::RobotIoControl::Request>();
@@ -1088,6 +1124,7 @@ private:
             return true;
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "IO call failed: %s", e.what());
+            last_step_error_ = "LIFT_BRAKE_IO_EXCEPTION:" + std::string(e.what());
             return false;
         }
     }
@@ -1100,62 +1137,57 @@ private:
         RCLCPP_INFO(this->get_logger(), "Lift Step: %s cmd=%s speed=%d",
                     step.name.c_str(), cmd.c_str(), speed);
 
-        if (cmd == "stop") {
-            // Stop servo, then re-engage brake (DO4=LOW)
-            bool ok = call_lift_service("stop", 0, goal_handle);
+        if (cmd == "disable") {
+            // Disable servo, deactivate DIO 10, then re-engage brake (DO4=LOW)
+            bool ok = call_lift_service("disable", 0, goal_handle);
+            call_io_sync(0, 10, false, goal_handle);  // DIO 10 LOW
             std::this_thread::sleep_for(200ms);
             call_io_sync(0, 4, false, goal_handle);  // DO4 LOW = engage brake
             return ok;
         }
 
-        // For move commands: release brake first (DO4=HIGH), then enable + move
-        if (cmd == "move_up" || cmd == "move_down") {
-            // Step 1: Release brake (DO4=HIGH)
+        if (cmd == "enable") {
+            // Release brake (DO4=HIGH), then enable (triggers SI3 homing)
             if (!call_io_sync(0, 4, true, goal_handle)) {
                 RCLCPP_ERROR(this->get_logger(), "Failed to release brake (DO4)");
+                last_step_error_ = "LIFT_BRAKE_RELEASE_FAILED";
                 return false;
             }
-            std::this_thread::sleep_for(200ms);  // Wait for brake to release
-
-            // Step 2: Enable servo
+            std::this_thread::sleep_for(200ms);
             if (!call_lift_service("enable", speed, goal_handle)) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to enable lift servo");
-                call_io_sync(0, 4, false, goal_handle);  // Re-engage brake on failure
+                last_step_error_ = "LIFT_SERVO_ENABLE_FAILED";
                 return false;
             }
-
-            // Step 3: Move in direction
-            if (!call_lift_service(cmd, speed, goal_handle)) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to execute lift %s", cmd.c_str());
-                call_lift_service("stop", 0, goal_handle);
-                call_io_sync(0, 4, false, goal_handle);
-                return false;
-            }
+            // Wait 1s then activate DIO 10
+            std::this_thread::sleep_for(1000ms);
+            call_io_sync(0, 10, true, goal_handle);
             return true;
         }
 
-        // Position mode commands
-        if (cmd == "position_move") {
-            // Release brake first
-            if (!call_io_sync(0, 4, true, goal_handle)) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to release brake for position move");
-                return false;
-            }
-            std::this_thread::sleep_for(200ms);
-            return call_lift_service(cmd, speed, goal_handle,
-                                     step.lift_target_pulses, step.lift_accel_ms, step.lift_decel_ms);
-        }
-        if (cmd == "position_next") {
-            return call_lift_service(cmd, 0, goal_handle);
-        }
-        if (cmd == "position_stop") {
-            bool ok = call_lift_service(cmd, 0, goal_handle);
-            std::this_thread::sleep_for(200ms);
-            call_io_sync(0, 4, false, goal_handle);  // Re-engage brake
-            return ok;
+        if (cmd == "set_target") {
+            return call_lift_service("set_target", 0, goal_handle,
+                                     step.lift_target_pulses);
         }
 
-        // Direct commands (enable/disable/get_position)
+        if (cmd == "trigger_step") {
+            return call_lift_service("trigger_step", 0, goal_handle);
+        }
+
+        // Convenience: combined set_target + trigger_step
+        if (cmd == "move_to_target") {
+            if (!call_lift_service("set_target", 0, goal_handle, step.lift_target_pulses)) {
+                last_step_error_ = "LIFT_SET_TARGET_FAILED";
+                return false;
+            }
+            return call_lift_service("trigger_step", 0, goal_handle);
+        }
+
+        // Convenience: trigger_step for return to origin
+        if (cmd == "return_home") {
+            return call_lift_service("trigger_step", 0, goal_handle);
+        }
+
+        // Direct passthrough for get_position/status
         return call_lift_service(cmd, speed, goal_handle);
     }
 
@@ -1171,6 +1203,7 @@ private:
         if (target == "arm") {
             if (!client_control_->wait_for_service(2s)) {
                 RCLCPP_ERROR(this->get_logger(), "RobotControl service not available");
+                last_step_error_ = "CTRL_ARM_SERVICE_UNAVAILABLE";
                 return false;
             }
             auto req = std::make_shared<duco_msg::srv::RobotControl::Request>();
@@ -1182,6 +1215,7 @@ private:
             else if (cmd == "poweroff") req->command = "poweroff";
             else {
                 RCLCPP_WARN(this->get_logger(), "Unknown arm control command: %s", cmd.c_str());
+                last_step_error_ = "CTRL_UNKNOWN_CMD:" + cmd;
                 return false;
             }
             auto future = client_control_->async_send_request(req);
@@ -1196,6 +1230,7 @@ private:
                 return true;
             } catch (const std::exception& e) {
                 RCLCPP_ERROR(this->get_logger(), "Arm control exception: %s", e.what());
+                last_step_error_ = "CTRL_ARM_EXCEPTION:" + std::string(e.what());
                 return false;
             }
         }
@@ -1208,6 +1243,7 @@ private:
                 auto client = this->create_client<lhandpro_interfaces::srv::SetEnable>(ns + "/set_enable");
                 if (!client->wait_for_service(2s)) {
                     RCLCPP_ERROR(this->get_logger(), "Hand set_enable service not available: %s", ns.c_str());
+                    last_step_error_ = "CTRL_HAND_SERVICE_UNAVAILABLE:" + ns;
                     return false;
                 }
                 auto req = std::make_shared<lhandpro_interfaces::srv::SetEnable::Request>();
@@ -1221,9 +1257,11 @@ private:
                 try {
                     auto res = future.get();
                     RCLCPP_INFO(this->get_logger(), "Hand enable result: %d", res->result);
+                    if (res->result != 0) last_step_error_ = "CTRL_HAND_ENABLE_ERROR:code=" + std::to_string(res->result);
                     return (res->result == 0);
                 } catch (const std::exception& e) {
                     RCLCPP_ERROR(this->get_logger(), "Hand enable exception: %s", e.what());
+                    last_step_error_ = "CTRL_HAND_EXCEPTION:" + std::string(e.what());
                     return false;
                 }
             }
@@ -1232,6 +1270,7 @@ private:
                 auto client = this->create_client<lhandpro_interfaces::srv::HomeMotors>(ns + "/home_motors");
                 if (!client->wait_for_service(2s)) {
                     RCLCPP_ERROR(this->get_logger(), "Hand home_motors service not available: %s", ns.c_str());
+                    last_step_error_ = "CTRL_HAND_HOME_UNAVAILABLE:" + ns;
                     return false;
                 }
                 auto req = std::make_shared<lhandpro_interfaces::srv::HomeMotors::Request>();
@@ -1243,20 +1282,24 @@ private:
                     if (goal_handle->is_canceling()) return false;
                     if (std::chrono::steady_clock::now() - t0 > 30s) {
                         RCLCPP_ERROR(this->get_logger(), "Hand home_motors timeout");
+                        last_step_error_ = "CTRL_HAND_HOME_TIMEOUT";
                         return false;
                     }
                 }
                 try {
                     auto res = future.get();
                     RCLCPP_INFO(this->get_logger(), "Hand home result: %d", res->result);
+                    if (res->result != 0) last_step_error_ = "CTRL_HAND_HOME_ERROR:code=" + std::to_string(res->result);
                     return (res->result == 0);
                 } catch (const std::exception& e) {
                     RCLCPP_ERROR(this->get_logger(), "Hand home exception: %s", e.what());
+                    last_step_error_ = "CTRL_HAND_HOME_EXCEPTION:" + std::string(e.what());
                     return false;
                 }
             }
 
             RCLCPP_WARN(this->get_logger(), "Unknown hand control command: %s", cmd.c_str());
+            last_step_error_ = "CTRL_UNKNOWN_HAND_CMD:" + cmd;
             return false;
         }
 
@@ -1265,10 +1308,12 @@ private:
             if (cmd == "enable")  return call_lift_service("enable",  1000, goal_handle);
             if (cmd == "disable") return call_lift_service("disable", 0,    goal_handle);
             RCLCPP_WARN(this->get_logger(), "Unknown lift control command: %s", cmd.c_str());
+            last_step_error_ = "CTRL_UNKNOWN_LIFT_CMD:" + cmd;
             return false;
         }
 
         RCLCPP_WARN(this->get_logger(), "Unknown control target: %s", target.c_str());
+        last_step_error_ = "CTRL_UNKNOWN_TARGET:" + target;
         return false;
     }
 

@@ -73,9 +73,7 @@ private:
     QWidget* widget_lift_;
     QComboBox* combo_lift_command_;
     QSpinBox* spin_lift_speed_rpm_;
-    QSpinBox* spin_lift_target_pulses_;
-    QSpinBox* spin_lift_accel_ms_;
-    QSpinBox* spin_lift_decel_ms_;
+    QDoubleSpinBox* spin_lift_target_cm_;
 
     // Arm UI
     QComboBox* combo_arm_command_;       // "movej" / "movel"
@@ -182,6 +180,7 @@ private:
 
     void checkDevices();
     bool devices_ready_;
+    QString last_error_detail_;   // Friendly error from STEP_ERROR feedback
 };
 
 #endif // TASK_DIALOGS_HPP

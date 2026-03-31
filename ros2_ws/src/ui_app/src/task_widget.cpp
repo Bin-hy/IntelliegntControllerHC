@@ -29,8 +29,10 @@
 #include "common_msgs/msg/task_config.hpp"
 // #include "ament_index_cpp/get_package_share_directory.hpp"
 
-TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, const QString& username, UserRole role, QWidget *parent)
-    : QWidget(parent), node_(node), current_user_(username), current_role_(role) {
+TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, const QString& username, UserRole role,
+                       PermissionManager* permission_manager, QWidget *parent)
+    : QWidget(parent), node_(node), current_user_(username), current_role_(role),
+      permission_manager_(permission_manager) {
     // Initialize record manager
     QDir records_dir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation));
     record_manager_ = std::make_shared<TaskRecordManager>(records_dir.filePath("task_records"));
@@ -71,6 +73,12 @@ TaskWidget::TaskWidget(std::shared_ptr<RosNode> node, const QString& username, U
 }
 
 void TaskWidget::onAddTask() {
+    if (permission_manager_ &&
+        !permission_manager_->hasPermission(current_role_, ActionType::ManageTask)) {
+        QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                             tr_ui("当前用户无权创建任务", "Insufficient permission to create tasks"));
+        return;
+    }
     TaskConfigDialog dlg(node_, this);
     dlg.setAllTasks(tasks_);
     if (dlg.exec() == QDialog::Accepted) {
@@ -81,6 +89,12 @@ void TaskWidget::onAddTask() {
 }
 
 void TaskWidget::onEditTask() {
+    if (permission_manager_ &&
+        !permission_manager_->hasPermission(current_role_, ActionType::ManageTask)) {
+        QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                             tr_ui("当前用户无权编辑任务", "Insufficient permission to edit tasks"));
+        return;
+    }
     int row = task_list_->currentRow();
     if (row >= 0 && row < (int)tasks_.size()) {
         TaskConfigDialog dlg(node_, this);
@@ -95,6 +109,12 @@ void TaskWidget::onEditTask() {
 }
 
 void TaskWidget::onDeleteTask() {
+    if (permission_manager_ &&
+        !permission_manager_->hasPermission(current_role_, ActionType::ManageTask)) {
+        QMessageBox::warning(this, tr_ui("权限不足", "Insufficient Permission"),
+                             tr_ui("当前用户无权删除任务", "Insufficient permission to delete tasks"));
+        return;
+    }
     int row = task_list_->currentRow();
     if (row >= 0 && row < (int)tasks_.size()) {
         if (QMessageBox::question(this, tr_ui("删除任务", "Delete Task"), tr_ui("确认删除此任务？", "Are you sure you want to delete this task?"), QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
@@ -491,7 +511,8 @@ void TaskWidget::onShowPhotos() {
     right->addWidget(preview, 1);
 
     auto * btn_delete = new QPushButton(tr_ui("删除照片", "Delete Photo"));
-    bool can_delete = current_role_ == UserRole::Admin || current_role_ == UserRole::Operator;
+    bool can_delete = permission_manager_ &&
+                      permission_manager_->hasPermission(current_role_, ActionType::DeletePhoto);
     btn_delete->setEnabled(can_delete);
     right->addWidget(btn_delete);
 
@@ -517,7 +538,8 @@ void TaskWidget::onShowPhotos() {
     connect(btn_delete, &QPushButton::clicked, &dlg, [this, table, &items]() {
         int row = table->currentRow();
         if (row < 0 || row >= items.size()) return;
-        if (current_role_ == UserRole::Maintainer) return;
+        if (!permission_manager_ ||
+            !permission_manager_->hasPermission(current_role_, ActionType::DeletePhoto)) return;
         QString path = items[row].path;
         if (QMessageBox::question(this, tr_ui("删除照片", "Delete Photo"), tr_ui("确认删除所选照片？", "Are you sure to delete selected photo?"), QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
             return;

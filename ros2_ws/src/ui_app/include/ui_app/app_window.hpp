@@ -109,20 +109,10 @@ private:
   QLabel* io_name_labels_[IO_MAX_PORTS];
   int io_visible_count_ = 0;
 
-  // Lift Platform Control - Speed Mode
-  QSpinBox* spin_lift_speed_ = nullptr;
-  QPushButton* btn_lift_up_ = nullptr;
-  QPushButton* btn_lift_down_ = nullptr;
-  QPushButton* btn_lift_stop_ = nullptr;
-  QLabel* label_lift_status_ = nullptr;
-
-  // Lift Platform Control - Position Mode
-  QSpinBox* spin_lift_pos_target_ = nullptr;
+  // Lift Platform Control - Position Mode Only
+  QDoubleSpinBox* spin_lift_pos_target_ = nullptr;  // cm
   QSpinBox* spin_lift_pos_speed_ = nullptr;
-  QSpinBox* spin_lift_pos_accel_ = nullptr;
-  QSpinBox* spin_lift_pos_decel_ = nullptr;
-  QPushButton* btn_lift_pos_move_ = nullptr;
-  QPushButton* btn_lift_pos_home_ = nullptr;
+  QPushButton* btn_lift_enable_ = nullptr;
   QPushButton* btn_lift_pos_stop_ = nullptr;
   QLabel* label_lift_pos_status_ = nullptr;
 
@@ -131,8 +121,11 @@ private:
   int lift_poll_last_pos_ = INT_MIN;
   int lift_poll_stable_count_ = 0;
   int lift_poll_elapsed_ = 0;
-  void startLiftPositionPoll();
+  int lift_poll_target_pulses_ = 0;
+  int lift_op_seq_ = 0;  // 操作序号，Stop时递增使挂起操作失效
+  void startLiftPositionPoll(int target_pulses);
   void stopLiftPositionPoll(const QString& final_status);
+  void liftAutoStop();
 
   void rebuildIORows(int group_index);
   void refreshIOGroup();

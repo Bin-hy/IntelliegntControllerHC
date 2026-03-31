@@ -124,123 +124,67 @@ private:
     }
 };
 
-// ==================== Lift Controller ====================
+// ==================== Lift Controller (Position Mode Only) ====================
+// 位置模式参数(P001=5, P403, P404等)已在伺服面板预设
+// 程序只需控制: P520(使能), P535(换步), P411/P410(目标脉冲), P412/P419(速度)
+// 脉冲计算: total = P411*10000 + P410  (1cm = 10000脉冲)
+//
+// 工艺流程:
+//   enable → 设置速度 + P520使能(触发SI3回原点)
+//   set_target → 设置P410/P411目标脉冲
+//   trigger_step → P535上升沿触发下一段(移动到目标 或 回原点)
+//   disable → P520=0 断使能
+
 class LiftController {
 public:
     explicit LiftController(ModbusRTU& bus) : bus_(bus) {}
 
-    // 甲方确认的报文序列
-    // 关键: 内部速度模式下, SPD-A/SPD-B 信号选择速度段:
-    //   SPD-A=0, SPD-B=0 → 0速(不动!)
-    //   SPD-A=0, SPD-B=1 → SPEED1 (P305)
-    //   SPD-A=1, SPD-B=0 → SPEED2 (P306)
-    //   SPD-A=1, SPD-B=1 → SPEED3 (P307)
-    // 所以必须设置 P529(/SPD-B)=0x0010(常有效) 来选择 SPEED1
-
-    bool move_up(uint16_t rpm) {
-        // 1. 选择速度模式 P001=3
-        static const uint8_t CMD_SPEED_MODE[] = {0x01,0x06,0x00,0x01,0x00,0x03,0x98,0x0B};
-        if (!bus_.send_frame(CMD_SPEED_MODE)) return false;
-        // 2. 设置内部速度1 P305=RPM
-        if (!bus_.write_register(0x0305, rpm)) return false;
-        // 3. 正转 P527(/SPD-D)=0x0000
-        static const uint8_t CMD_FORWARD[] = {0x01,0x06,0x05,0x1B,0x00,0x00,0xF9,0x01};
-        if (!bus_.send_frame(CMD_FORWARD)) return false;
-        // 4. 选择速度段1: P529(/SPD-B)=0x0010(常有效), SPD-A保持0 → SPEED1
-        if (!bus_.write_register(0x051D, 0x0010)) return false;
-        // 5. 先关闭使能(确保上升沿) P520=0x0000
-        if (!bus_.write_register(0x0514, 0x0000)) return false;
-        usleep(50000); // 50ms
-        // 6. 使能 P520=0x0010
-        static const uint8_t CMD_ENABLE[] = {0x01,0x06,0x05,0x14,0x00,0x10,0xC8,0xCE};
-        if (!bus_.send_frame(CMD_ENABLE)) return false;
-        return true;
-    }
-
-    bool move_down(uint16_t rpm) {
-        // 1. 速度模式
-        static const uint8_t CMD_SPEED_MODE[] = {0x01,0x06,0x00,0x01,0x00,0x03,0x98,0x0B};
-        if (!bus_.send_frame(CMD_SPEED_MODE)) return false;
-        // 2. 设置速度
-        if (!bus_.write_register(0x0305, rpm)) return false;
-        // 3. 反转 P527(/SPD-D)=0x0010
-        if (!bus_.write_register(0x051B, 0x0010)) return false;
-        // 4. 选择速度段1: P529(/SPD-B)=0x0010
-        if (!bus_.write_register(0x051D, 0x0010)) return false;
-        // 5. 先关闭使能(确保上升沿)
-        if (!bus_.write_register(0x0514, 0x0000)) return false;
-        usleep(50000);
-        // 6. 使能
-        static const uint8_t CMD_ENABLE[] = {0x01,0x06,0x05,0x14,0x00,0x10,0xC8,0xCE};
-        if (!bus_.send_frame(CMD_ENABLE)) return false;
-        return true;
-    }
-
-    bool stop() {
-        // 速度段归零: P529(/SPD-B)=0x0000 → 选择0速
-        bus_.write_register(0x051D, 0x0000);
-        // 方向归零
-        static const uint8_t CMD_FWD_ZERO[] = {0x01,0x06,0x05,0x1B,0x00,0x00,0xF9,0x01};
-        bus_.send_frame(CMD_FWD_ZERO);
-        // 关闭使能 P520=0x0000
-        return bus_.write_register(0x0514, 0x0000);
-    }
-
-    // ======= Position Mode (内部位置模式 P001=5) =======
-    // P403=0x0011: 绝对定位, 上升沿换步
-    // P404=2: 2段(段1=目标, 段2=回原点)
-    // 脉冲计算: total = high*10000 + low
-    // P520=S-ON使能, P535=CHGSTP换步信号
-
-    bool position_move(int32_t target_pulses, uint16_t speed, uint16_t accel_ms, uint16_t decel_ms) {
+    // 初始化位置模式并使能(触发SI3回原点)
+    // 每次都重新写入关键配置，确保干净状态
+    bool enable(uint16_t speed) {
+        // 0. 清除换步信号 P535=0
+        bus_.write_register(0x0523, 0x0000);
         // 1. 位置模式 P001=5
         static const uint8_t CMD_POS_MODE[] = {0x01,0x06,0x00,0x01,0x00,0x05,0x18,0x09};
         if (!bus_.send_frame(CMD_POS_MODE)) return false;
         // 2. 绝对定位+上升沿换步 P403=0x0011
-        static const uint8_t CMD_ABS_RISING[] = {0x01,0x06,0x04,0x03,0x00,0x11,0xB8,0xF6};
-        if (!bus_.send_frame(CMD_ABS_RISING)) return false;
+        if (!bus_.write_register(0x0403, 0x0011)) return false;
         // 3. 有效段数=2 P404=2
         if (!bus_.write_register(0x0404, 2)) return false;
-
-        // 4. 第一段: 目标位置
-        int16_t pulse_high = (int16_t)(target_pulses / 10000);
-        int16_t pulse_low  = (int16_t)(target_pulses % 10000);
-        if (!bus_.write_register(0x040A, (uint16_t)pulse_low))  return false;  // P4-10 脉冲低位
-        if (!bus_.write_register(0x040B, (uint16_t)pulse_high)) return false;  // P4-11 脉冲高位
-        if (!bus_.write_register(0x040C, speed))    return false;  // P4-12 转速
-        if (!bus_.write_register(0x040D, accel_ms)) return false;  // P4-13 加速时间
-        if (!bus_.write_register(0x040E, decel_ms)) return false;  // P4-14 减速时间
-
-        // 5. 第二段: 回原点(位置0)
-        if (!bus_.write_register(0x0411, 0))        return false;  // P4-17 脉冲低位
-        if (!bus_.write_register(0x0412, 0))        return false;  // P4-18 脉冲高位
-        if (!bus_.write_register(0x0413, speed))    return false;  // P4-19 转速
-        if (!bus_.write_register(0x0414, accel_ms)) return false;  // P4-20 加速时间
-        if (!bus_.write_register(0x0415, decel_ms)) return false;  // P4-21 减速时间
-
-        // 6. 使能伺服 P520: 0→0x0010 (上升沿)
+        // 4. 段1速度 P412(0x040C)
+        if (!bus_.write_register(0x040C, speed)) return false;
+        // 5. 段2速度 P419(0x0413)
+        if (!bus_.write_register(0x0413, speed)) return false;
+        // 6. 段2目标=0(回原点) P417(0x0411)=0, P418(0x0412)=0
+        if (!bus_.write_register(0x0411, 0)) return false;
+        if (!bus_.write_register(0x0412, 0)) return false;
+        // 7. 使能 P520: 0→0x0010 (上升沿, 触发SI3回原点)
         if (!bus_.write_register(0x0514, 0x0000)) return false;
-        usleep(50000);
+        usleep(100000); // 100ms
         if (!bus_.write_register(0x0514, 0x0010)) return false;
-
-        // 7. 触发换步 P535(CHGSTP): 0→0x0010 (上升沿触发第一段)
-        if (!bus_.write_register(0x0523, 0x0000)) return false;
-        usleep(50000);
-        if (!bus_.write_register(0x0523, 0x0010)) return false;
-
         return true;
     }
 
-    bool position_next() {
-        // 触发下一段: CHGSTP上升沿
+    // 设置段1目标脉冲 (P411高位先写, P410低位后写, 与厂商一致)
+    bool set_target(int32_t target_pulses) {
+        uint16_t pulse_high = (uint16_t)(target_pulses / 10000);
+        uint16_t pulse_low  = (uint16_t)(target_pulses % 10000);
+        if (!bus_.write_register(0x040B, pulse_high)) return false;  // P411 高位
+        if (!bus_.write_register(0x040A, pulse_low))  return false;  // P410 低位
+        return true;
+    }
+
+    // 触发换步 P535(CHGSTP): 0→0x0010 上升沿
+    bool trigger_step() {
         if (!bus_.write_register(0x0523, 0x0000)) return false;
         usleep(50000);
         return bus_.write_register(0x0523, 0x0010);
     }
 
-    bool position_stop() {
+    // 断使能 P520=0x0000
+    bool disable() {
         bus_.write_register(0x0523, 0x0000);  // 复位CHGSTP
-        return bus_.write_register(0x0514, 0x0000);  // 关闭使能
+        return bus_.write_register(0x0514, 0x0000);
     }
 
 private:
@@ -284,23 +228,17 @@ private:
 
         bool ok = false;
         if (cmd == "enable") {
-            static const uint8_t CMD_SPEED_MODE[] = {0x01,0x06,0x00,0x01,0x00,0x03,0x98,0x0B};
-            ok = bus_.send_frame(CMD_SPEED_MODE);
+            uint16_t speed = rpm;
+            RCLCPP_INFO(get_logger(), "enable: speed=%d", speed);
+            ok = lift_.enable(speed);
         }
-        else if (cmd == "move_up")   ok = lift_.move_up(rpm);
-        else if (cmd == "move_down") ok = lift_.move_down(rpm);
-        else if (cmd == "stop")      ok = lift_.stop();
-        else if (cmd == "position_move") {
+        else if (cmd == "set_target") {
             int32_t pulses = req->target_pulses;
-            uint16_t speed = req->speed_rpm > 0 ? req->speed_rpm : 1000;
-            uint16_t acc = req->accel_ms > 0 ? req->accel_ms : 1000;
-            uint16_t dec = req->decel_ms > 0 ? req->decel_ms : 1000;
-            RCLCPP_INFO(get_logger(), "position_move: pulses=%d speed=%d acc=%d dec=%d",
-                        pulses, speed, acc, dec);
-            ok = lift_.position_move(pulses, speed, acc, dec);
+            RCLCPP_INFO(get_logger(), "set_target: pulses=%d", pulses);
+            ok = lift_.set_target(pulses);
         }
-        else if (cmd == "position_next") ok = lift_.position_next();
-        else if (cmd == "position_stop") ok = lift_.position_stop();
+        else if (cmd == "trigger_step") ok = lift_.trigger_step();
+        else if (cmd == "disable") ok = lift_.disable();
         else if (cmd == "get_position") {
             // Read encoder position: 0x1038 (high) + 0x1039 (low) → 32-bit
             uint16_t hi = 0, lo = 0;
