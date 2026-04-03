@@ -1,6 +1,7 @@
-string command       # enable/move_up/move_down/stop/status/position_move/position_next/position_stop
-int32 speed_rpm      # Speed in RPM (speed mode) or 0.1rpm (position mode)
-int32 target_pulses  # Target position in pulses for position mode
+string command       # enable / set_target / step_up / step_down / disable / get_position / status
+int32 speed_rpm      # Speed in RPM (default 500), used by enable and set_target
+int32 target_pulses  # Target position in pulses (1cm = 10000 pulses)
+int32 wait_time_ms   # Wait time in ms between step_up and step_down (e.g. wash/dry time)
 int32 accel_ms       # Acceleration time ms (default 1000)
 int32 decel_ms       # Deceleration time ms (default 1000)
 ---

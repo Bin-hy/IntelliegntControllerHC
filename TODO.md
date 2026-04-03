@@ -420,4 +420,15 @@ sudo cp ~/IntelliegntControllerHC/ros2_ws/install/orbbec_camera/share/orbbec_cam
 sudo udevadm control --reload-rules                                                                                      
 sudo udevadm trigger
 
-1. 
+
+
+# earphone_inspector
+  # 调整噪声阈值倍数（默认2.5，降低=更灵敏但更多噪声）
+  ros2 param set /earphone_inspector/earphone_inspector_node noise_sigma_scale 2.0
+
+  # 关闭多次验证（加快速度）
+  ros2 param set /earphone_inspector/earphone_inspector_node enable_multi_trial false
+
+  # 查看当前所有参数
+  ros2 param list /earphone_inspector/earphone_inspector_node
+  ros2 param dump /earphone_inspector/earphone_inspector_node

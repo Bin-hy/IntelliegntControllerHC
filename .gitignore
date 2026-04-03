@@ -13,3 +13,5 @@ install/
 *.log
 
 ros2_ws/step/
+
+*.local.*

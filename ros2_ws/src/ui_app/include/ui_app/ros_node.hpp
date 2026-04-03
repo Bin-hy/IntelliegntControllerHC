@@ -67,6 +67,7 @@ public:
   void call_robot_io(const std::string& command, int type, int port, bool value,
                      std::function<void(const std::string&)> callback = nullptr);
   void call_pause_task(bool pause);
+  void set_collision_camera(const std::string& camera_ns);
   void set_user_context(const std::string& username, const std::string& role, const std::string& session_id);
   // void save_image(); // Deprecated in favor of multi-camera
   void save_snapshot(const std::string& camera_ns, bool color, bool depth, bool ir_left, bool ir_right, bool point_cloud, std::function<void(bool, std::string)> callback = nullptr);
@@ -164,6 +165,7 @@ private:
   rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedPtr client_io_;
   rclcpp::Client<duco_msg::srv::RobotMove>::SharedPtr client_move_;
   rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr client_pause_task_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_collision_topic_;
   rclcpp::Client<common_msgs::srv::SetCurrentUser>::SharedPtr client_set_user_;
 
   // URDF Paths

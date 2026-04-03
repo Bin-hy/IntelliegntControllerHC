@@ -64,6 +64,7 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     client_io_ = create_client<duco_msg::srv::RobotIoControl>("/duco_robot/robot_io_control");
     client_move_ = create_client<duco_msg::srv::RobotMove>("/ui/request_move");
     client_pause_task_ = create_client<std_srvs::srv::SetBool>("/system/pause_task");
+    pub_collision_topic_ = create_publisher<std_msgs::msg::String>("/collision_detector/set_topic", 10);
     client_set_user_ = create_client<common_msgs::srv::SetCurrentUser>("/system/set_current_user");
     // New Save Image Service (Vision Server)
     client_save_image_ = create_client<vision_server::srv::SaveImage>("/image_saver/save_image");
@@ -637,6 +638,26 @@ void RosNode::call_pause_task(bool pause) {
             RCLCPP_ERROR(this->get_logger(), "Pause Task Service call failed: %s", e.what());
         }
     });
+}
+
+void RosNode::set_collision_camera(const std::string& camera_ns) {
+    if (camera_ns.empty()) return;
+
+    // Resolve point cloud topic from camera namespace
+    auto caps = get_camera_capabilities(camera_ns);
+    std::string pc_topic;
+    if (!caps.point_cloud_topic.empty()) {
+        pc_topic = caps.point_cloud_topic;
+    } else {
+        // Fallback: construct from namespace
+        pc_topic = camera_ns + "/depth/points";
+    }
+
+    auto msg = std_msgs::msg::String();
+    msg.data = pc_topic;
+    pub_collision_topic_->publish(msg);
+    RCLCPP_INFO(this->get_logger(), "Collision camera set to: %s (topic: %s)",
+                camera_ns.c_str(), pc_topic.c_str());
 }
 
 void RosNode::set_user_context(const std::string& username,

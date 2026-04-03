@@ -27,6 +27,7 @@
 #include <QTimer>
 #include <QScrollArea>
 #include <QMessageBox>
+#include <QSettings>
 #include <QLineEdit>
 #include <QDateTimeEdit>
 #include <QSizePolicy>
@@ -759,6 +760,20 @@ QWidget* AppWindow::createCameraTab() {
     layout_config->addWidget(btn_scan_, 0, 2);
     layout_config->addWidget(label_pc, 1, 0);
     layout_config->addWidget(combo_pc_topic_, 1, 1, 1, 2);
+
+    // --- Collision Detection Camera ---
+    auto * label_collision = new QLabel(tr_ui("碰撞检测相机:", "Collision Camera:"));
+    combo_collision_camera_ = new QComboBox();
+    combo_collision_camera_->setEditable(true);
+    combo_collision_camera_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    combo_collision_camera_->setMinimumWidth(140);
+    combo_collision_camera_->setToolTip(tr_ui(
+        "选择用于碰撞检测的深度相机。\n设置后将自动通知碰撞检测节点切换点云来源。\n选择保存后下次启动自动生效。",
+        "Select the depth camera for collision detection.\nThe collision detector node will switch its point cloud source.\nSelection is saved and restored on next launch."));
+
+    layout_config->addWidget(label_collision, 2, 0);
+    layout_config->addWidget(combo_collision_camera_, 2, 1, 1, 2);
+
     group_config->setLayout(layout_config);
     layout->addWidget(group_config);
 
@@ -849,7 +864,7 @@ QWidget* AppWindow::createCameraTab() {
 
     // --- Connections ---
     connect(btn_scan_, &QPushButton::clicked, this, &AppWindow::refreshCameraList);
-    
+
     auto update_config = [this]() { onCameraConfigChanged(); };
     connect(combo_camera_, &QComboBox::currentTextChanged, this, update_config);
     connect(combo_pc_topic_, &QComboBox::currentTextChanged, this, update_config);
@@ -858,6 +873,10 @@ QWidget* AppWindow::createCameraTab() {
     connect(check_point_cloud_, &QCheckBox::stateChanged, this, update_config);
     connect(check_ir_left_, &QCheckBox::stateChanged, this, update_config);
     connect(check_ir_right_, &QCheckBox::stateChanged, this, update_config);
+
+    // Collision camera: notify collision_detector node when changed, and persist
+    connect(combo_collision_camera_, &QComboBox::currentTextChanged,
+            this, &AppWindow::onCollisionCameraChanged);
 
     // Initial sync (only if a camera is already selected)
     if (combo_camera_->count() > 0) {
@@ -940,8 +959,33 @@ void AppWindow::refreshCameraList() {
     for(const auto& topic : pc_topics) {
         combo_pc_topic_->addItem(QString::fromStdString(topic));
     }
-    
     combo_pc_topic_->blockSignals(false);
+
+    // Sync collision camera dropdown with same camera list
+    if (combo_collision_camera_) {
+        combo_collision_camera_->blockSignals(true);
+        combo_collision_camera_->clear();
+        for (const auto& cam : cameras) {
+            combo_collision_camera_->addItem(QString::fromStdString(cam));
+        }
+        // Restore saved collision camera selection from QSettings
+        QSettings settings("RobotApp", "UI");
+        QString saved_collision_cam = settings.value("collision_camera_ns").toString();
+        if (!saved_collision_cam.isEmpty()) {
+            int idx = combo_collision_camera_->findText(saved_collision_cam);
+            if (idx >= 0) {
+                combo_collision_camera_->setCurrentIndex(idx);
+            } else {
+                // Saved camera not found in scan — add it as editable entry
+                combo_collision_camera_->addItem(saved_collision_cam);
+                combo_collision_camera_->setCurrentIndex(combo_collision_camera_->count() - 1);
+            }
+        }
+        combo_collision_camera_->blockSignals(false);
+
+        // Notify collision_detector of the restored selection
+        onCollisionCameraChanged();
+    }
 
     // After scan, restore Color+Depth defaults and trigger subscription update
     if (combo_camera_->count() > 0) {
@@ -1032,6 +1076,19 @@ void AppWindow::onCameraConfigChanged() {
             gb->setTitle(tr_ui("红外左流", "IR Left Stream"));
         }
     }
+}
+
+void AppWindow::onCollisionCameraChanged() {
+    if (!combo_collision_camera_) return;
+    QString ns = combo_collision_camera_->currentText().trimmed();
+    if (ns.isEmpty()) return;
+
+    // Persist to QSettings so it survives restart
+    QSettings settings("RobotApp", "UI");
+    settings.setValue("collision_camera_ns", ns);
+
+    // Notify collision_detector node to switch its point cloud source
+    node_->set_collision_camera(ns.toStdString());
 }
 
 void AppWindow::rebuildAdminTab() {
@@ -1298,52 +1355,44 @@ QWidget* AppWindow::createIOTab() {
     };
 
     // Enable/Home: brake release → P520 enable(home) → DIO 10 → wait for home → set_target → trigger_step
-    // 每步检查 seq == lift_op_seq_，Stop 会递增 lift_op_seq_ 使挂起操作失效
     connect(btn_lift_enable_, &QPushButton::clicked, this, [this, check_lift]() {
         if (!check_lift()) return;
-        int seq = ++lift_op_seq_;
         int speed = spin_lift_pos_speed_->value();
         double cm = spin_lift_pos_target_->value();
         int pulses = static_cast<int>(cm * 10000.0);
         label_lift_pos_status_->setText(tr_ui("解锁抱闸...", "Releasing brake..."));
-        node_->call_robot_io("setIo", 0, 4, true, [this, seq, speed, pulses](const std::string& result) {
-            QMetaObject::invokeMethod(this, [this, seq, speed, pulses, result]() {
-                if (seq != lift_op_seq_) return;
+        node_->call_robot_io("setIo", 0, 4, true, [this, speed, pulses](const std::string& result) {
+            QMetaObject::invokeMethod(this, [this, speed, pulses, result]() {
                 if (result == "error" || result == "Service unavailable") {
                     label_lift_pos_status_->setText(tr_ui("抱闸解锁失败", "Brake release failed"));
                     return;
                 }
                 label_lift_pos_status_->setText(tr_ui("使能中...", "Enabling..."));
-                QTimer::singleShot(200, this, [this, seq, speed, pulses]() {
-                    if (seq != lift_op_seq_) return;
+                QTimer::singleShot(200, this, [this, speed, pulses]() {
                     node_->call_lift_control("enable", speed,
-                        [this, seq, pulses](bool ok, const std::string& msg, int) {
-                            QMetaObject::invokeMethod(this, [this, seq, ok, msg, pulses]() {
-                                if (seq != lift_op_seq_) return;
+                        [this, pulses](bool ok, const std::string& msg, int) {
+                            QMetaObject::invokeMethod(this, [this, ok, msg, pulses]() {
                                 if (!ok) {
                                     label_lift_pos_status_->setText(QString::fromStdString(msg));
                                     return;
                                 }
                                 label_lift_pos_status_->setText(tr_ui("回原点中...", "Homing..."));
-                                QTimer::singleShot(1000, this, [this, seq, pulses]() {
-                                    if (seq != lift_op_seq_) return;
+                                // Wait 1s → DIO 10 → wait 3s for home complete → set target → trigger
+                                QTimer::singleShot(1000, this, [this, pulses]() {
                                     node_->call_robot_io("setIo", 0, 10, true);
-                                    QTimer::singleShot(3000, this, [this, seq, pulses]() {
-                                        if (seq != lift_op_seq_) return;
+                                    QTimer::singleShot(3000, this, [this, pulses]() {
                                         label_lift_pos_status_->setText(tr_ui("设置目标...", "Setting target..."));
                                         node_->call_lift_control("set_target", 0,
-                                            [this, seq, pulses](bool ok2, const std::string& msg2, int) {
-                                                QMetaObject::invokeMethod(this, [this, seq, ok2, msg2, pulses]() {
-                                                    if (seq != lift_op_seq_) return;
+                                            [this, pulses](bool ok2, const std::string& msg2, int) {
+                                                QMetaObject::invokeMethod(this, [this, ok2, msg2, pulses]() {
                                                     if (!ok2) {
                                                         label_lift_pos_status_->setText(QString::fromStdString(msg2));
                                                         return;
                                                     }
                                                     label_lift_pos_status_->setText(tr_ui("移动中...", "Moving..."));
                                                     node_->call_lift_control("trigger_step", 0,
-                                                        [this, seq, pulses](bool ok3, const std::string& msg3, int) {
-                                                            QMetaObject::invokeMethod(this, [this, seq, ok3, msg3, pulses]() {
-                                                                if (seq != lift_op_seq_) return;
+                                                        [this, pulses](bool ok3, const std::string& msg3, int) {
+                                                            QMetaObject::invokeMethod(this, [this, ok3, msg3, pulses]() {
                                                                 if (ok3) {
                                                                     startLiftPositionPoll(pulses);
                                                                 } else {
@@ -1362,15 +1411,15 @@ QWidget* AppWindow::createIOTab() {
         });
     });
 
-    // Stop/Disable: 递增序号使挂起操作失效，然后停机
+    // Stop/Disable: disable servo + DIO 10 LOW + re-engage brake
     connect(btn_lift_pos_stop_, &QPushButton::clicked, this, [this, check_lift]() {
         if (!check_lift()) return;
-        ++lift_op_seq_;  // 使所有挂起的 Enable 链操作失效
         stopLiftPositionPoll("");
         label_lift_pos_status_->setText(tr_ui("停止中...", "Stopping..."));
         node_->call_lift_control("disable", 0, [this](bool ok, const std::string& msg, int) {
             QMetaObject::invokeMethod(this, [this, ok, msg]() {
                 if (ok) {
+                    // Deactivate DIO 10, then re-engage brake (DO4=LOW)
                     node_->call_robot_io("setIo", 0, 10, false);
                     QTimer::singleShot(200, this, [this]() {
                         node_->call_robot_io("setIo", 0, 4, false, [this](const std::string&) {

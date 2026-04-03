@@ -55,6 +55,7 @@ private:
   QWidget* createVideoWidget(const QString& title, QLabel*& label_ptr, std::function<void()> save_callback);
   void refreshCameraList();
   void onCameraConfigChanged();
+  void onCollisionCameraChanged();
 
   void updateUI();
   void rebuildAdminTab();
@@ -135,6 +136,7 @@ private:
 
   QComboBox* combo_camera_;
   QComboBox* combo_pc_topic_;
+  QComboBox* combo_collision_camera_ = nullptr;
   QPushButton* btn_scan_;
   
   QCheckBox* check_color_;

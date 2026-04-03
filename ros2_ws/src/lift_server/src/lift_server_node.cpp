@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <lift_server/srv/lift_control.hpp>
+#include <duco_msg/srv/robot_io_control.hpp>
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -125,70 +126,168 @@ private:
 };
 
 // ==================== Lift Controller (Position Mode Only) ====================
-// 位置模式参数(P001=5, P403, P404等)已在伺服面板预设
+// 位置模式参数(P001=5, P403, P404等)已在伺服面板预设，程序不再重复写入
 // 程序只需控制: P520(使能), P535(换步), P411/P410(目标脉冲), P412/P419(速度)
 // 脉冲计算: total = P411*10000 + P410  (1cm = 10000脉冲)
 //
-// 工艺流程:
-//   enable → 设置速度 + P520使能(触发SI3回原点)
-//   set_target → 设置P410/P411目标脉冲
-//   trigger_step → P535上升沿触发下一段(移动到目标 或 回原点)
-//   disable → P520=0 断使能
+// 工艺流程 (5步):
+//   第1步 enable  → 断使能→写速度→DIO4打开抱闸→使能电机→DIO10触发回零
+//   第2步 set_target → 断使能→写速度+目标脉冲→使能电机
+//   第3步 step_up  → P535上升沿触发上升动作
+//   (等待洗手/烘干时间)
+//   第4步 step_down → P535上升沿触发下降动作
+//   第5步 disable  → 断使能→DIO4关闭抱闸
 
 class LiftController {
 public:
     explicit LiftController(ModbusRTU& bus) : bus_(bus) {}
 
-    // 初始化位置模式并使能(触发SI3回原点)
-    // 每次都重新写入关键配置，确保干净状态
+    // ===== 第1步: 初始化并回零 =====
+    // 前端QT输入: 速度RPM + 回原点按钮, 只执行一次
     bool enable(uint16_t speed) {
-        // 0. 清除换步信号 P535=0
+        // 0. 清除换步信号 P535=0 (电平归零)
         bus_.write_register(0x0523, 0x0000);
-        // 1. 位置模式 P001=5
-        static const uint8_t CMD_POS_MODE[] = {0x01,0x06,0x00,0x01,0x00,0x05,0x18,0x09};
-        if (!bus_.send_frame(CMD_POS_MODE)) return false;
-        // 2. 绝对定位+上升沿换步 P403=0x0011
-        if (!bus_.write_register(0x0403, 0x0011)) return false;
-        // 3. 有效段数=2 P404=2
-        if (!bus_.write_register(0x0404, 2)) return false;
-        // 4. 段1速度 P412(0x040C)
-        if (!bus_.write_register(0x040C, speed)) return false;
-        // 5. 段2速度 P419(0x0413)
-        if (!bus_.write_register(0x0413, speed)) return false;
-        // 6. 段2目标=0(回原点) P417(0x0411)=0, P418(0x0412)=0
-        if (!bus_.write_register(0x0411, 0)) return false;
-        if (!bus_.write_register(0x0412, 0)) return false;
-        // 7. 使能 P520: 0→0x0010 (上升沿, 触发SI3回原点)
+
+        // 1. 先断使能, 才能写入速度参数
         if (!bus_.write_register(0x0514, 0x0000)) return false;
-        usleep(100000); // 100ms
+
+        // (P001=5模式, P403=0x0011定位方式, P404=2段数 已由硬件预设, 不再写入)
+
+        // 2. 段1上升速度 P412(0x040C), 默认500RPM, 页面输入框可调
+        if (!bus_.write_register(0x040C, speed)) return false;
+
+        // 3. 段2下降速度 P419(0x0413), 与上升速度一致, 可调
+        if (!bus_.write_register(0x0413, speed)) return false;
+
+        // (段2目标P417/P418=0 已由硬件预设, 不再写入)
+
+        // 4. 使能电机 P520: 写0x0010 (上升沿, 触发SI3回原点)
+        usleep(100000); // 延时100ms
         if (!bus_.write_register(0x0514, 0x0010)) return false;
+
         return true;
     }
 
-    // 设置段1目标脉冲 (P411高位先写, P410低位后写, 与厂商一致)
-    bool set_target(int32_t target_pulses) {
+    // ===== 第2步: 设置目标位置 =====
+    // 前端QT输入: 速度RPM + 位移cm + 位置模式按钮
+    // 第2、3、4步可封装为一个大流程, 在总测试中调用3次
+    bool set_target(int32_t target_pulses, uint16_t speed) {
+        // 1. 先断使能, 才能写入位置脉冲值和速度参数
+        if (!bus_.write_register(0x0514, 0x0000)) return false;
+
+        // 2. 段1上升速度 P412(0x040C), 默认500RPM, 页面输入框可调
+        if (!bus_.write_register(0x040C, speed)) return false;
+
+        // 3. 段2下降速度 P419(0x0413), 与上升速度一致
+        if (!bus_.write_register(0x0413, speed)) return false;
+
+        // 4. 设置段1目标脉冲 (脉冲值来源于前端输入, 1cm=10000脉冲)
+        //    P411高位先写, P410低位后写, 与厂商一致
         uint16_t pulse_high = (uint16_t)(target_pulses / 10000);
         uint16_t pulse_low  = (uint16_t)(target_pulses % 10000);
         if (!bus_.write_register(0x040B, pulse_high)) return false;  // P411 高位
         if (!bus_.write_register(0x040A, pulse_low))  return false;  // P410 低位
+
+        // 5. 重新使能电机
+        usleep(100000); // 延时100ms
+        if (!bus_.write_register(0x0514, 0x0010)) return false;
+
         return true;
     }
 
-    // 触发换步 P535(CHGSTP): 0→0x0010 上升沿
-    bool trigger_step() {
+    // ===== 第3步: 触发上升动作 =====
+    // P535(CHGSTP): 0→0x0010 上升沿执行上升动作
+    bool step_up() {
         if (!bus_.write_register(0x0523, 0x0000)) return false;
-        usleep(50000);
+        usleep(1000000); // 等待1s
         return bus_.write_register(0x0523, 0x0010);
     }
 
-    // 断使能 P520=0x0000
+    // ===== 第4步: 触发下降动作 =====
+    // P535(CHGSTP): 0→0x0010 上升沿执行下降动作
+    bool step_down() {
+        if (!bus_.write_register(0x0523, 0x0000)) return false;
+        usleep(1000000); // 等待1s
+        return bus_.write_register(0x0523, 0x0010);
+    }
+
+    // ===== 第5步: 断使能 =====
     bool disable() {
-        bus_.write_register(0x0523, 0x0000);  // 复位CHGSTP
-        return bus_.write_register(0x0514, 0x0000);
+        bus_.write_register(0x0523, 0x0000);  // 复位换步信号
+        return bus_.write_register(0x0514, 0x0000); // 复位使能
     }
 
 private:
     ModbusRTU& bus_;
+};
+
+// ==================== DIO Helper ====================
+// 封装DUCO机械臂DIO控制, 用于抱闸(DIO4)和回零触发(DIO10)
+class DioHelper {
+public:
+    DioHelper(rclcpp::Node* node, rclcpp::CallbackGroup::SharedPtr cb_group)
+        : node_(node),
+          logger_(node->get_logger())
+    {
+        // 使用独立的 CallbackGroup, 避免在服务回调内同步调用时死锁
+        dio_client_ = node->create_client<duco_msg::srv::RobotIoControl>(
+            "/duco_robot/robot_io_control",
+            rclcpp::ServicesQoS(),
+            cb_group);
+    }
+
+    // 同步调用DIO设置, 超时2s
+    bool set_dio(int8_t port, bool value) {
+        if (!dio_client_->wait_for_service(std::chrono::seconds(2))) {
+            RCLCPP_ERROR(logger_, "DIO service not available (port=%d)", port);
+            return false;
+        }
+
+        auto request = std::make_shared<duco_msg::srv::RobotIoControl::Request>();
+        request->command = "setIo";
+        request->arm_num = 0;
+        request->type = 0;       // 0: Standard IO
+        request->port = port;
+        request->value = value;
+        request->block = true;
+
+        auto future = dio_client_->async_send_request(request);
+        if (future.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+            RCLCPP_ERROR(logger_, "DIO timeout (port=%d, value=%d)", port, value);
+            return false;
+        }
+
+        auto result = future.get();
+        RCLCPP_INFO(logger_, "DIO port=%d value=%d response=%s",
+                     port, value, result->response.c_str());
+        return true;
+    }
+
+    // 打开抱闸 (DIO4=true), 第1步使能前调用
+    bool brake_release() {
+        RCLCPP_INFO(logger_, "Releasing brake (DIO4=true)");
+        return set_dio(4, true);
+    }
+
+    // 关闭抱闸 (DIO4=false), 第5步断使能后调用
+    bool brake_engage() {
+        RCLCPP_INFO(logger_, "Engaging brake (DIO4=false)");
+        return set_dio(4, false);
+    }
+
+    // 触发回零信号 (DIO10: true→等1s→false)
+    bool trigger_homing() {
+        RCLCPP_INFO(logger_, "Triggering homing signal (DIO10)");
+        if (!set_dio(10, true)) return false;
+        usleep(1000000); // 等待1s
+        if (!set_dio(10, false)) return false;
+        return true;
+    }
+
+private:
+    rclcpp::Node* node_;
+    rclcpp::Logger logger_;
+    rclcpp::Client<duco_msg::srv::RobotIoControl>::SharedPtr dio_client_;
 };
 
 // ==================== ROS2 Node ====================
@@ -197,7 +296,9 @@ public:
     LiftServerNode() : Node("lift_server"),
         bus_(this->declare_parameter("serial_port", std::string("/dev/ttyUSB0")),
              this->declare_parameter("slave_id", 1)),
-        lift_(bus_)
+        lift_(bus_),
+        dio_cb_group_(this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive)),
+        dio_(this, dio_cb_group_)
     {
         if (!bus_.open_port())
             RCLCPP_ERROR(get_logger(), "Failed to open serial port");
@@ -213,6 +314,8 @@ public:
 private:
     ModbusRTU bus_;
     LiftController lift_;
+    rclcpp::CallbackGroup::SharedPtr dio_cb_group_;
+    DioHelper dio_;
     rclcpp::Service<lift_server::srv::LiftControl>::SharedPtr srv_;
     std::mutex mtx_;
 
@@ -222,23 +325,66 @@ private:
     {
         std::lock_guard<std::mutex> lk(mtx_);
         const auto& cmd = req->command;
-        int rpm = req->speed_rpm > 0 ? req->speed_rpm : 1000;
+        int rpm = req->speed_rpm > 0 ? req->speed_rpm : 500; // 默认500RPM
         RCLCPP_INFO(get_logger(), "CMD: %s rpm=%d", cmd.c_str(), rpm);
         bus_.clear_trace();
 
         bool ok = false;
+
+        // ===== 第1步: enable (回原点) =====
         if (cmd == "enable") {
             uint16_t speed = rpm;
             RCLCPP_INFO(get_logger(), "enable: speed=%d", speed);
+
+            // 1) DIO4=true 打开抱闸
+            if (!dio_.brake_release()) {
+                res->success = false;
+                res->message = "enable FAIL: brake_release DIO4 failed";
+                return;
+            }
+
+            // 2) 使能电机+写速度+回零
             ok = lift_.enable(speed);
+
+            // 3) DIO10触发回零信号 (true→1s→false)
+            if (ok) {
+                if (!dio_.trigger_homing()) {
+                    RCLCPP_WARN(get_logger(), "DIO10 homing trigger failed, motor enabled but homing may not start");
+                }
+            }
         }
+
+        // ===== 第2步: set_target (设置目标位置) =====
         else if (cmd == "set_target") {
             int32_t pulses = req->target_pulses;
-            RCLCPP_INFO(get_logger(), "set_target: pulses=%d", pulses);
-            ok = lift_.set_target(pulses);
+            uint16_t speed = rpm;
+            RCLCPP_INFO(get_logger(), "set_target: pulses=%d speed=%d", pulses, speed);
+            ok = lift_.set_target(pulses, speed);
         }
-        else if (cmd == "trigger_step") ok = lift_.trigger_step();
-        else if (cmd == "disable") ok = lift_.disable();
+
+        // ===== 第3步: step_up (触发上升) =====
+        else if (cmd == "step_up") {
+            RCLCPP_INFO(get_logger(), "step_up: triggering ascend");
+            ok = lift_.step_up();
+        }
+
+        // ===== 第4步: step_down (触发下降) =====
+        else if (cmd == "step_down") {
+            RCLCPP_INFO(get_logger(), "step_down: triggering descend");
+            ok = lift_.step_down();
+        }
+
+        // ===== 第5步: disable (断使能) =====
+        else if (cmd == "disable") {
+            ok = lift_.disable();
+
+            // 断使能后关闭抱闸 DIO4=false
+            if (!dio_.brake_engage()) {
+                RCLCPP_WARN(get_logger(), "DIO4 brake_engage failed after disable");
+            }
+        }
+
+        // ===== 读取编码器位置 =====
         else if (cmd == "get_position") {
             // Read encoder position: 0x1038 (high) + 0x1039 (low) → 32-bit
             uint16_t hi = 0, lo = 0;
@@ -255,8 +401,9 @@ private:
             RCLCPP_DEBUG(get_logger(), "ENCODER: hi=%d lo=%d pos=%d", hi, lo, res->encoder_position);
             return;
         }
+
+        // ===== 读取状态寄存器 =====
         else if (cmd == "status") {
-            // Read P520(enable), P527(dir), P305(speed), P001(mode) status
             std::string info;
             uint16_t val = 0;
             struct { uint16_t reg; const char* name; } regs[] = {
@@ -275,6 +422,13 @@ private:
             RCLCPP_INFO(get_logger(), "STATUS: %s", info.c_str());
             return;
         }
+
+        // ===== 兼容旧命令 trigger_step =====
+        else if (cmd == "trigger_step") {
+            RCLCPP_WARN(get_logger(), "trigger_step is deprecated, use step_up/step_down");
+            ok = lift_.step_up();
+        }
+
         else {
             res->success = false;
             res->message = "Unknown: " + cmd;
@@ -289,7 +443,11 @@ private:
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<LiftServerNode>());
+    auto node = std::make_shared<LiftServerNode>();
+    // 多线程执行器: 服务回调和DIO客户端在不同线程, 避免死锁
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(node);
+    executor.spin();
     rclcpp::shutdown();
     return 0;
 }

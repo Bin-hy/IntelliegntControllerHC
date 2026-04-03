@@ -70,9 +70,9 @@ def _detect_orbbec_cameras():
 def _camera_profile(cam_info):
     """Determine launch profile based on detected camera model name."""
     name = cam_info.get('name', '').lower()
-    # Gemini 215 / 210 series (PID 0x0808 / 0x0809) — use gemini210 launch profile
+    # Gemini 215 / 210 series (PID 0x0808 / 0x0809) — use gemini2.launch.py per vendor
     if any(tag in name for tag in ['215', '210']):
-        return 'gemini210'
+        return 'gemini2'
     # Gemini 2 / 2L / 2XL series (PID 0x0670 / 0x0673)
     if any(tag in name for tag in ['gemini 2', 'gemini2', '2l']):
         return 'gemini2l'
@@ -111,97 +111,44 @@ def make_camera_node(ns, serial_number, device_num=1, usb_port='', connection_de
                 'usb_port': usb_port or '',
                 'connection_delay': str(connection_delay),
                 'enable_point_cloud': 'true',
-                'enable_colored_point_cloud': 'false',
+                'enable_colored_point_cloud': 'true',
                 'enable_color': 'true',
                 'enable_depth': 'true',
-                'enable_ir': 'false',
+                'enable_ir': 'true',
                 'log_level': 'none',
             }.items()
         )
 
-    if camera_profile == 'gemini210':
-        # Gemini 210/215 (PID 0x0808/0x0809) — build ComposableNode directly
-        # so we can set enable_sync_host_time=false (timerSyncWithHost crashes in SDK)
-        params = {
-            'camera_name': ns,
-            'serial_number': serial_number,
-            'device_num': device_num,
-            'uvc_backend': 'libuvc',
-            'depth_registration': True,
-            'enable_point_cloud': True,
-            'enable_colored_point_cloud': False,
-            'enable_d2c_viewer': False,
-            'enable_frame_sync': True,
-            'sync_mode': 'standalone',
-            'enable_color': True,
-            'enable_depth': enable_depth,
-            'enable_ir': False,
-            'enable_accel': False,
-            'enable_gyro': False,
-            'connection_delay': connection_delay,
-            'log_level': 'none',
-            'color_width': 0,
-            'color_height': 0,
-            'color_fps': 0,
-            'color_format': 'ANY',
-            'depth_width': 0,
-            'depth_height': 0,
-            'depth_fps': 0,
-            'depth_format': 'ANY',
-            'ir_width': 0,
-            'ir_height': 0,
-            'ir_fps': 0,
-            'ir_format': 'ANY',
-            'disparity_to_depth_mode': 'SW',
-            'align_mode': 'HW',
-            'enable_depth_scale': True,
-            'enable_ldp': True,
-            'enable_heartbeat': False,
-            'enable_noise_removal_filter': True,
-            'noise_removal_filter_min_diff': 256,
-            'noise_removal_filter_max_size': 200,
-            'enable_spatial_filter': True,
-            'spatial_filter_magnitude': 2,
-            'spatial_filter_alpha': 0.5,
-            'spatial_filter_diff_threshold': 20,
-            'enable_temporal_filter': True,
-            'temporal_filter_diff_threshold': 20.0,
-            'temporal_filter_weight': 0.4,
-            'enable_threshold_filter': True,
-            'threshold_filter_min': 100,       # 100mm 最小深度
-            'threshold_filter_max': 5000,      # 5000mm 最大深度
-            'enable_sync_host_time': False,     # SDK timerSyncWithHost crashes for Gemini 215
-            'time_domain': 'global',
-        }
-        if usb_port:
-            params['usb_port'] = usb_port
+    if camera_profile in ('gemini2', 'gemini210'):
+        # Gemini 215/210 → gemini2.launch.py (per vendor recommendation)
+        orbbec_share = get_package_share_directory('orbbec_camera')
+        launch_file = os.path.join(orbbec_share, 'launch', 'gemini2.launch.py')
+        return IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(launch_file),
+            launch_arguments={
+                'camera_name': ns,
+                'serial_number': serial_number,
+                'device_num': str(device_num),
+                'usb_port': usb_port or '',
+                'connection_delay': str(connection_delay),
+                'enable_point_cloud': 'true',
+                'enable_colored_point_cloud': 'true',
+                'enable_color': 'true',
+                'enable_depth': str(enable_depth).lower(),
+                'enable_ir': 'True',
+                'log_level': 'debug',
+            }.items()
+        )
 
-        return GroupAction([
-            PushRosNamespace(ns),
-            ComposableNodeContainer(
-                name='camera_container',
-                namespace='',
-                package='rclcpp_components',
-                executable='component_container',
-                composable_node_descriptions=[
-                    ComposableNode(
-                        package='orbbec_camera',
-                        plugin='orbbec_camera::OBCameraNodeDriver',
-                        name=ns,
-                        parameters=[params],
-                    ),
-                ],
-                output='log',
-            )
-        ])
-
-    # Default (Gemini 330 series)
+    # Default (Gemini 330/335 series)
+    # NOTE: When IR is enabled, depth and IR MUST have the same resolution and fps.
+    # Using 640x400@30fps for depth+IR to avoid mismatch errors with SDK v2.7.6.
     params = {
         'camera_name': ns,
         'serial_number': serial_number,
         'device_num': device_num,
         'depth_registration': True,
-        'align_mode': 'SW',              # SW alignment — HW fails with auto-detect profiles
+        'align_mode': 'SW',
         'enable_point_cloud': True,
         'enable_colored_point_cloud': True,
         'enable_d2c_viewer': False,
@@ -209,8 +156,8 @@ def make_camera_node(ns, serial_number, device_num=1, usb_port='', connection_de
         'sync_mode': 'standalone',
         'enable_color': True,
         'enable_depth': True,
-        'enable_left_ir': False,
-        'enable_right_ir': False,
+        'enable_left_ir': True,
+        'enable_right_ir': True,
         'device_preset': 'Default',
         'connection_delay': connection_delay,
         'log_level': 'none',
@@ -218,14 +165,19 @@ def make_camera_node(ns, serial_number, device_num=1, usb_port='', connection_de
         'color_height': 0,
         'color_fps': 0,
         'color_format': 'ANY',
-        'depth_width': 0,
-        'depth_height': 0,
-        'depth_fps': 0,
+        # Depth and IR must match — explicitly set to 640x400@30fps
+        'depth_width': 640,
+        'depth_height': 400,
+        'depth_fps': 30,
         'depth_format': 'ANY',
-        'ir_width': 0,
-        'ir_height': 0,
-        'ir_fps': 0,
-        'ir_format': 'ANY',
+        'left_ir_width': 640,
+        'left_ir_height': 400,
+        'left_ir_fps': 30,
+        'left_ir_format': 'ANY',
+        'right_ir_width': 640,
+        'right_ir_height': 400,
+        'right_ir_fps': 30,
+        'right_ir_format': 'ANY',
     }
     if usb_port:
         params['usb_port'] = usb_port
@@ -250,83 +202,108 @@ def make_camera_node(ns, serial_number, device_num=1, usb_port='', connection_de
     ])
 
 
-def generate_actions(context):
-    camera1_sn = LaunchConfiguration('camera1_serial').perform(context)
-    camera2_sn = LaunchConfiguration('camera2_serial').perform(context)
-    depth_cam_sn = LaunchConfiguration('depth_camera_serial').perform(context)
+def _is_gemini_2xx(cam_info):
+    """Check if camera is a Gemini 210/215 series (dedicated depth camera)."""
+    name = cam_info.get('name', '').lower()
+    return any(tag in name for tag in ['215', '210'])
 
-    # Auto-detect camera serial numbers and USB ports when not explicitly provided
+
+def generate_actions(context):
+    """Launch all detected cameras dynamically — no fixed camera count assumption.
+
+    Strategy:
+      - Detect all connected Orbbec cameras
+      - Classify each: 210/215 → depth inspection, 330/335 → general purpose
+      - Launch ALL of them with staggered delays (8s apart)
+      - Pick the first 215/210 as the earphone inspection camera (depth_ns)
+      - Pick the first 330/335 as the main camera (main_ns)
+      - For numeric SNs (e.g. "01234567890"), use usb_port instead of SN
+    """
     detected = _detect_orbbec_cameras()
 
-    # Build lookup tables by serial number
+    if not detected:
+        import logging
+        logging.getLogger('vision_system.launch').warning('No Orbbec cameras detected!')
+
+    # Build lookup tables
     info_map = {d['serial']: d for d in detected}
     port_map = {d['serial']: d.get('usb_port', '') for d in detected}
 
-    # Assign explicitly-specified cameras first, collecting used SNs
-    used_sns = set()
+    def _effective_sn(sn):
+        """For numeric SNs, clear to force SDK to use usb_port."""
+        if sn and sn[0].isdigit():
+            return ''
+        return sn
 
-    if camera1_sn:
-        used_sns.add(camera1_sn)
-    if camera2_sn:
-        used_sns.add(camera2_sn)
-    if depth_cam_sn:
-        used_sns.add(depth_cam_sn)
+    # Classify cameras
+    depth_cameras = []   # 210/215 series
+    general_cameras = [] # 330/335/other series
+    for d in detected:
+        ns = _sn_to_ns(d['serial'], d.get('usb_port', ''))
+        profile = _camera_profile(d)
+        entry = {
+            'serial': d['serial'],
+            'usb_port': d.get('usb_port', ''),
+            'name': d.get('name', ''),
+            'ns': ns,
+            'profile': profile,
+        }
+        if _is_gemini_2xx(d):
+            depth_cameras.append(entry)
+        else:
+            general_cameras.append(entry)
 
-    # Auto-detect remaining cameras from unassigned detected devices
-    remaining = [d for d in detected if d['serial'] not in used_sns]
-
-    if not camera1_sn and remaining:
-        camera1_sn = remaining.pop(0)['serial']
-        used_sns.add(camera1_sn)
-
-    if not camera2_sn and remaining:
-        camera2_sn = remaining.pop(0)['serial']
-        used_sns.add(camera2_sn)
-
-    if not depth_cam_sn and remaining:
-        depth_cam_sn = remaining.pop(0)['serial']
+    # Log assignment
+    import logging
+    logger = logging.getLogger('vision_system.launch')
+    logger.info(f'Detected {len(detected)} cameras: '
+                f'{len(general_cameras)} general ({[c["ns"] for c in general_cameras]}), '
+                f'{len(depth_cameras)} depth ({[c["ns"] for c in depth_cameras]})')
 
     actions = []
-    # Total camera count for device_num hint
-    cam_count = sum(1 for sn in [camera1_sn, camera2_sn, depth_cam_sn] if sn)
+    cam_count = len(detected)
+    cam_index = 0  # for staggered delay
 
-    # --- Launch cameras with staggered delays (following Orbbec multi_camera pattern) ---
-    # Each camera needs ~5s to fully initialize and release the device lock.
-    ns1 = _sn_to_ns(camera1_sn, port_map.get(camera1_sn, '')) if camera1_sn else 'camera'
-    cam1_profile = _camera_profile(info_map.get(camera1_sn, {})) if camera1_sn else 'default'
-    if camera2_sn:
-        ns2 = _sn_to_ns(camera2_sn, port_map.get(camera2_sn, ''))
-        cam2_profile = _camera_profile(info_map.get(camera2_sn, {}))
-        actions.append(TimerAction(
-            period=0.0,
-            actions=[GroupAction([make_camera_node(ns1, camera1_sn, device_num=cam_count,
-                                      usb_port=port_map.get(camera1_sn, ''),
-                                      connection_delay=500, camera_profile=cam1_profile)])],
-        ))
-        actions.append(TimerAction(
-            period=8.0,
-            actions=[GroupAction([make_camera_node(ns2, camera2_sn, device_num=cam_count,
-                                      usb_port=port_map.get(camera2_sn, ''),
-                                      connection_delay=500, camera_profile=cam2_profile,
-                                      enable_depth=False)])],
-        ))
-    else:
-        actions.append(make_camera_node(ns1, camera1_sn, device_num=cam_count,
-                                        usb_port=port_map.get(camera1_sn, ''),
-                                        camera_profile=cam1_profile))
-
-    # --- Launch depth camera (3rd camera, e.g. Gemini 215) ---
-    depth_ns = ''
-    if depth_cam_sn:
-        depth_ns = _sn_to_ns(depth_cam_sn, port_map.get(depth_cam_sn, ''))
-        depth_profile = _camera_profile(info_map.get(depth_cam_sn, {}))
-        delay = 16.0 if camera2_sn else 8.0
+    # --- Launch all general cameras (330/335) ---
+    for cam in general_cameras:
+        delay = cam_index * 8.0
         actions.append(TimerAction(
             period=delay,
-            actions=[GroupAction([make_camera_node(depth_ns, depth_cam_sn, device_num=cam_count,
-                                      usb_port=port_map.get(depth_cam_sn, ''),
-                                      connection_delay=500, camera_profile=depth_profile)])],
+            actions=[GroupAction([make_camera_node(
+                ns=cam['ns'],
+                serial_number=_effective_sn(cam['serial']),
+                device_num=cam_count,
+                usb_port=cam['usb_port'],
+                connection_delay=500,
+                camera_profile=cam['profile'],
+                enable_depth=True,
+            )])],
         ))
+        cam_index += 1
+
+    # --- Launch all depth cameras (210/215) ---
+    for cam in depth_cameras:
+        delay = cam_index * 8.0
+        actions.append(TimerAction(
+            period=delay,
+            actions=[GroupAction([make_camera_node(
+                ns=cam['ns'],
+                serial_number=_effective_sn(cam['serial']),
+                device_num=cam_count,
+                usb_port=cam['usb_port'],
+                connection_delay=500,
+                camera_profile=cam['profile'],
+                enable_depth=True,
+            )])],
+        ))
+        cam_index += 1
+
+    # --- Determine namespaces for vision nodes ---
+    # depth_ns: prefer first 215/210 camera for earphone inspection
+    # main_ns: prefer first 330/335 camera for general use
+    depth_ns = depth_cameras[0]['ns'] if depth_cameras else ''
+    main_ns = general_cameras[0]['ns'] if general_cameras else ''
+    fallback_ns = depth_ns or main_ns or 'camera'
 
     # image_saver_node
     actions.append(Node(
@@ -338,8 +315,8 @@ def generate_actions(context):
         parameters=[{'save_dir': os.path.expanduser('~/.ros/task_photos')}]
     ))
 
-    # depth_measure_node — uses depth camera if available, else camera 1
-    depth_measure_ns = '/' + depth_ns if depth_ns else ('/' + ns1 if ns1 else '/camera')
+    # depth_measure_node — uses depth camera if available, else main camera
+    depth_measure_cam = '/' + (depth_ns or fallback_ns)
     actions.append(Node(
         package='vision_server',
         executable='depth_measure_node',
@@ -347,10 +324,10 @@ def generate_actions(context):
         namespace='depth_measure',
         output='screen',
         parameters=[{
-            'camera_ns': depth_measure_ns,
+            'camera_ns': depth_measure_cam,
             'roi_width': 200,
             'roi_height': 200,
-            'roi_center_u': -1,        # -1 = image center
+            'roi_center_u': -1,
             'roi_center_v': -1,
             'min_depth_mm': 100.0,
             'max_depth_mm': 5000.0,
@@ -360,8 +337,8 @@ def generate_actions(context):
         }]
     ))
 
-    # earphone_inspector_node — uses depth camera (215) if available, else camera 1
-    inspector_ns = '/' + depth_ns if depth_ns else ('/' + ns1 if ns1 else '/camera')
+    # earphone_inspector_node — uses depth camera (215) if available, else main
+    inspector_cam = '/' + (depth_ns or fallback_ns)
     actions.append(Node(
         package='vision_server',
         executable='earphone_inspector_node',
@@ -369,12 +346,23 @@ def generate_actions(context):
         namespace='earphone_inspector',
         output='screen',
         parameters=[{
-            'camera_ns': inspector_ns,
-            'min_diff_mm': 3.0,
-            'max_diff_mm': 80.0,
-            'min_area_pixels': 50,
-            'roi_width': 300,
-            'roi_height': 300,
+            'camera_ns': inspector_cam,
+            'avg_frames': 8,
+            'min_diff_mm': 2.0,
+            'max_diff_mm': 50.0,
+            'min_area_pixels': 30,
+            'roi_width': 250,
+            'roi_height': 250,
+            'plane_inlier_mm': 3.0,
+            'plane_ransac_iters': 50,
+            'plane_fg_min_mm': 2.0,
+            'plane_fg_max_mm': 50.0,
+            'pca_trim_pct': 0.10,
+            'noise_sigma_scale': 2.5,
+            'enable_aruco': True,
+            'aruco_marker_size_m': 0.03,
+            'enable_multi_trial': True,
+            'min_confidence': 0.35,
             'save_dir': os.path.expanduser('~/.ros/earphone_inspection'),
         }]
     ))
@@ -384,20 +372,5 @@ def generate_actions(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument(
-            'camera1_serial',
-            default_value='',
-            description='Serial number of camera 1 (e.g. CP0HC530000F). Empty = auto-detect.'
-        ),
-        DeclareLaunchArgument(
-            'camera2_serial',
-            default_value='',
-            description='Serial number of camera 2 (e.g. CV2R1610004H). Empty = auto-detect.'
-        ),
-        DeclareLaunchArgument(
-            'depth_camera_serial',
-            default_value='',
-            description='Serial number of depth measurement camera (e.g. AYZ8953002L / Gemini 215). Empty = auto-detect 3rd camera.'
-        ),
         OpaqueFunction(function=generate_actions),
     ])
