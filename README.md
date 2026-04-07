@@ -32,15 +32,7 @@ sudo systemctl status hdservice # 查看hd服务状态
 ```
 
 浏览器：访问http://localhost:8088/
-```
-hwtws@hwtws-O-E-M:~/IntelliegntControllerHC/ros2_ws$ ros2 service call /glove_hand_bridge/enable std_srvs/srv/SetBool "{data: true}"
-waiting for service to become available...
-requester: making request: std_srvs.srv.SetBool_Request(data=True)
 
-response:
-std_srvs.srv.SetBool_Response(success=True, message='Glove-hand bridge enabled')
-
-```
 
 ## lift平台任务队列设置
 运行运动到指定位置后停止
