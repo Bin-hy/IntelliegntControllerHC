@@ -14,12 +14,16 @@ public:
   {
     publisher_ = this->create_publisher<common_msgs::msg::GloveJoints>("glove/joints", 10);
     pub_device_status_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
-    
+
+    // 端口参数，默认 6321 (与 HandDriver 手套软件一致)
+    this->declare_parameter("udp_port", 6321);
+    int port = this->get_parameter("udp_port").as_int();
+
     // 初始化 SDK
-    sdk_.SetPortNum(5555);
+    sdk_.SetPortNum(port);
     sdk_.StartListening();
-    
-    RCLCPP_INFO(this->get_logger(), "Glove SDK started listening on port 5555");
+
+    RCLCPP_INFO(this->get_logger(), "Glove SDK started listening on port %d", port);
 
     timer_ = this->create_wall_timer(
       20ms, std::bind(&GloveNode::timer_callback, this)); // 50Hz
@@ -66,7 +70,7 @@ private:
     // Only process the first connected glove for now
     const auto& role = role_list[0];
     auto finger_data = sdk_.GetVecFingerData(role);
-    
+
     if (finger_data.empty()) return;
 
     auto msg = common_msgs::msg::GloveJoints();

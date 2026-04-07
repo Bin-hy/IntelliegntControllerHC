@@ -49,8 +49,12 @@ class LHandProStatePublisher(Node):
             prefix + 'finger52': (prefix + 'finger51', 1),
         }
 
+        # 订阅角度数据的话题名，默认为 /lhandpro_service/now_angles
+        self.declare_parameter('angles_topic', '/lhandpro_service/now_angles')
+        angles_topic = self.get_parameter('angles_topic').get_parameter_value().string_value
+
         self.now_angles_sub = self.create_subscription(
-            Float64MultiArray, '/lhandpro_service/now_angles', self.now_angles_callback, 10)
+            Float64MultiArray, angles_topic, self.now_angles_callback, 10)
 
         self.publish_timer = self.create_timer(0.1, self.publish_joint_state)
 

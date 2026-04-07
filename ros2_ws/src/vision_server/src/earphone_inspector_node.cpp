@@ -32,6 +32,8 @@
 #include <deque>
 #include <random>
 #include <numeric>
+#include <functional>
+#include <map>
 #include <filesystem>
 #include <fstream>
 #include <Eigen/Dense>
@@ -100,6 +102,13 @@ struct SingleMeasurement {
     std::vector<cv::Point> contour;
     DetectionChannelStats stats;
     std::string detail;
+    // Debug masks for diagnostics
+    cv::Mat debug_mask_diff;
+    cv::Mat debug_mask_diff_low;  // low-threshold diff (hysteresis candidates)
+    cv::Mat debug_mask_holes;
+    cv::Mat debug_mask_plane;
+    cv::Mat debug_candidates;
+    cv::Mat debug_combined;
 };
 
 // ============================================================================
@@ -440,9 +449,16 @@ private:
     // ========================================================================
 
     void handle_baseline(
-        const std::shared_ptr<vision_server::srv::CaptureBaseline::Request>,
+        const std::shared_ptr<vision_server::srv::CaptureBaseline::Request> req,
         std::shared_ptr<vision_server::srv::CaptureBaseline::Response> resp)
     {
+        // --- Load from file if load_path is provided ---
+        if (!req->load_path.empty()) {
+            load_baseline_from_dir(req->load_path, resp);
+            return;
+        }
+
+        // --- Live capture from camera ---
         std::deque<cv::Mat> buffer_copy;
         cv::Mat color;
         double fx, fy, cx, cy;
@@ -510,16 +526,208 @@ private:
         baseline_color_ = color;
         has_baseline_ = true;
 
+        // --- Save baseline data for future reuse ---
+        std::string saved_path = save_baseline_data(avg_noise);
+        resp->saved_baseline_path = saved_path;
+
         char buf[512];
         std::snprintf(buf, sizeof(buf),
             "Baseline captured: %dx%d | %d frames averaged | "
-            "ROI=(%d,%d,%dx%d) | avg_noise=%.1fmm",
+            "ROI=(%d,%d,%dx%d) | avg_noise=%.1fmm | saved=%s",
             baseline_avg_.cols, baseline_avg_.rows, n_use,
             ear_roi_.x, ear_roi_.y, ear_roi_.width, ear_roi_.height,
-            avg_noise);
+            avg_noise, saved_path.c_str());
         resp->success = true;
         resp->message = buf;
         RCLCPP_INFO(get_logger(), "%s", buf);
+    }
+
+    /// Save baseline data (depth median, noise map, plane, ROI, color) to disk
+    std::string save_baseline_data(double avg_noise) {
+        // Use a fixed "latest" directory + timestamped directory
+        fs::path base_dir = fs::path(save_dir_) / "_baselines";
+        auto stamp_str = std::to_string(this->now().nanoseconds());
+        fs::path dir = base_dir / stamp_str;
+        fs::path latest_link = base_dir / "latest";
+
+        try {
+            fs::create_directories(dir);
+
+            // Save depth median as 32-bit float EXR (lossless)
+            cv::imwrite((dir / "baseline_avg.exr").string(), baseline_avg_);
+
+            // Save noise map
+            cv::imwrite((dir / "noise_map.exr").string(), noise_map_);
+
+            // Save color
+            if (!baseline_color_.empty()) {
+                cv::imwrite((dir / "baseline_color.png").string(), baseline_color_);
+            }
+
+            // Save metadata (plane, ROI, intrinsics) as YAML
+            cv::FileStorage meta((dir / "meta.yaml").string(),
+                                  cv::FileStorage::WRITE);
+            meta << "roi_x" << ear_roi_.x;
+            meta << "roi_y" << ear_roi_.y;
+            meta << "roi_w" << ear_roi_.width;
+            meta << "roi_h" << ear_roi_.height;
+            meta << "plane_nx" << ear_plane_.normal.x();
+            meta << "plane_ny" << ear_plane_.normal.y();
+            meta << "plane_nz" << ear_plane_.normal.z();
+            meta << "plane_d" << ear_plane_.d;
+            meta << "avg_noise" << avg_noise;
+            meta << "fx" << fx_;
+            meta << "fy" << fy_;
+            meta << "cx" << cx_;
+            meta << "cy" << cy_;
+            meta.release();
+
+            // Update "latest" symlink
+            fs::remove(latest_link);
+            fs::create_directory_symlink(dir, latest_link);
+
+            RCLCPP_INFO(get_logger(), "Baseline saved to %s", dir.string().c_str());
+        } catch (const std::exception& e) {
+            RCLCPP_WARN(get_logger(), "Failed to save baseline: %s", e.what());
+            return "";
+        }
+        return dir.string();
+    }
+
+    /// Load baseline data from a previously saved directory
+    void load_baseline_from_dir(
+        const std::string& dir_path,
+        std::shared_ptr<vision_server::srv::CaptureBaseline::Response> resp)
+    {
+        fs::path dir(dir_path);
+
+        // Resolve "latest" symlink
+        if (dir.filename() == "latest" || dir_path == "latest") {
+            fs::path latest = fs::path(save_dir_) / "_baselines" / "latest";
+            if (fs::exists(latest)) {
+                dir = fs::canonical(latest);
+            } else {
+                resp->success = false;
+                resp->message = "No saved baseline found. Capture one first.";
+                return;
+            }
+        }
+
+        if (!fs::exists(dir)) {
+            resp->success = false;
+            resp->message = "Baseline directory does not exist: " + dir.string();
+            return;
+        }
+
+        try {
+            // Load depth median
+            fs::path avg_path = dir / "baseline_avg.exr";
+            if (!fs::exists(avg_path)) {
+                resp->success = false;
+                resp->message = "Missing baseline_avg.exr in " + dir.string();
+                return;
+            }
+            baseline_avg_ = cv::imread(avg_path.string(),
+                                        cv::IMREAD_ANYCOLOR | cv::IMREAD_ANYDEPTH);
+            if (baseline_avg_.empty()) {
+                resp->success = false;
+                resp->message = "Failed to read baseline_avg.exr";
+                return;
+            }
+            // Ensure CV_32FC1
+            if (baseline_avg_.type() != CV_32FC1) {
+                baseline_avg_.convertTo(baseline_avg_, CV_32FC1);
+            }
+
+            // Load noise map
+            fs::path noise_path = dir / "noise_map.exr";
+            if (fs::exists(noise_path)) {
+                noise_map_ = cv::imread(noise_path.string(),
+                                         cv::IMREAD_ANYCOLOR | cv::IMREAD_ANYDEPTH);
+                if (noise_map_.type() != CV_32FC1) {
+                    noise_map_.convertTo(noise_map_, CV_32FC1);
+                }
+            } else {
+                // Create default noise map (uniform 3mm)
+                noise_map_ = cv::Mat(baseline_avg_.size(), CV_32FC1, cv::Scalar(3.0f));
+            }
+
+            // Load color
+            fs::path color_path = dir / "baseline_color.png";
+            if (fs::exists(color_path)) {
+                baseline_color_ = cv::imread(color_path.string(), cv::IMREAD_COLOR);
+            }
+
+            // Load metadata
+            fs::path meta_path = dir / "meta.yaml";
+            if (fs::exists(meta_path)) {
+                cv::FileStorage meta(meta_path.string(), cv::FileStorage::READ);
+                int rx, ry, rw, rh;
+                meta["roi_x"] >> rx;
+                meta["roi_y"] >> ry;
+                meta["roi_w"] >> rw;
+                meta["roi_h"] >> rh;
+                ear_roi_ = cv::Rect(rx, ry, rw, rh);
+
+                double nx, ny, nz, pd;
+                meta["plane_nx"] >> nx;
+                meta["plane_ny"] >> ny;
+                meta["plane_nz"] >> nz;
+                meta["plane_d"] >> pd;
+                ear_plane_.normal = Eigen::Vector3d(nx, ny, nz);
+                ear_plane_.d = pd;
+
+                // Load camera intrinsics if available (for offline testing)
+                double lfx = 0, lfy = 0, lcx = 0, lcy = 0;
+                meta["fx"] >> lfx;
+                meta["fy"] >> lfy;
+                meta["cx"] >> lcx;
+                meta["cy"] >> lcy;
+                if (lfx > 0 && lfy > 0) {
+                    std::lock_guard<std::mutex> lk(mtx_);
+                    if (!has_info_) {
+                        fx_ = lfx; fy_ = lfy; cx_ = lcx; cy_ = lcy;
+                        has_info_ = true;
+                        RCLCPP_INFO(get_logger(),
+                            "Loaded camera intrinsics from baseline: "
+                            "fx=%.1f fy=%.1f cx=%.1f cy=%.1f",
+                            fx_, fy_, cx_, cy_);
+                    }
+                }
+
+                double avg_noise = 3.0;
+                meta["avg_noise"] >> avg_noise;
+                meta.release();
+
+                has_baseline_ = true;
+                resp->saved_baseline_path = dir.string();
+
+                char buf[512];
+                std::snprintf(buf, sizeof(buf),
+                    "Baseline loaded: %dx%d | ROI=(%d,%d,%dx%d) | "
+                    "avg_noise=%.1fmm | from=%s",
+                    baseline_avg_.cols, baseline_avg_.rows,
+                    ear_roi_.x, ear_roi_.y, ear_roi_.width, ear_roi_.height,
+                    avg_noise, dir.string().c_str());
+                resp->success = true;
+                resp->message = buf;
+                RCLCPP_INFO(get_logger(), "%s", buf);
+            } else {
+                // No metadata — recompute ROI and plane
+                std::lock_guard<std::mutex> lk(mtx_);
+                ear_roi_ = find_ear_roi(baseline_avg_);
+                ear_plane_ = fit_ear_plane(baseline_avg_, ear_roi_,
+                                            fx_, fy_, cx_, cy_);
+                has_baseline_ = true;
+                resp->saved_baseline_path = dir.string();
+                resp->success = true;
+                resp->message = "Baseline loaded (recomputed ROI/plane): "
+                                + dir.string();
+            }
+        } catch (const std::exception& e) {
+            resp->success = false;
+            resp->message = std::string("Failed to load baseline: ") + e.what();
+        }
     }
 
     // ========================================================================
@@ -687,14 +895,24 @@ private:
     // ========================================================================
 
     /// Select the best earphone cluster from a binary mask.
-    /// Returns refined mask (single cluster) and fills contour.
+    /// Returns refined mask (merged nearby clusters) and fills contour.
+    ///
+    /// Key insight: The earphone often appears as two separate blobs (tip absorbs
+    /// IR → depth hole, stem has depth diff) with a gap between them. We must:
+    ///   1. Use large morphological closing to bridge the gap
+    ///   2. Merge nearby connected components via proximity-based union-find
     cv::Mat select_earphone_cluster(const cv::Mat& combined_mask, const cv::Rect& roi,
                                      double& out_area, std::vector<cv::Point>& out_contour) {
-        // Light morphological cleanup (3x3 to preserve thin features)
+        // Step 1: Small open to remove isolated noise pixels
         cv::Mat cleaned;
-        cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
-        cv::morphologyEx(combined_mask, cleaned, cv::MORPH_OPEN, kernel);
-        cv::morphologyEx(cleaned, cleaned, cv::MORPH_CLOSE, kernel);
+        cv::Mat open_kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
+        cv::morphologyEx(combined_mask, cleaned, cv::MORPH_OPEN, open_kernel);
+
+        // Step 2: Large close to bridge gaps between nearby earphone regions.
+        // Black earphones produce scattered candidate blobs with 10-50px gaps.
+        // Use 41×41 closing (bridges up to ~40px gaps).
+        cv::Mat close_kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(41, 41));
+        cv::morphologyEx(cleaned, cleaned, cv::MORPH_CLOSE, close_kernel);
 
         // Connected components with statistics
         cv::Mat labels, stats, centroids_cc;
@@ -709,44 +927,153 @@ private:
         double ear_cu = roi.x + roi.width / 2.0;
         double ear_cv = roi.y + roi.height / 2.0;
 
-        // Score each cluster: prefer large area + close to ear center
-        int best_label = -1;
-        double best_score = -1;
+        // Collect valid clusters (use lower area threshold for merging candidates)
+        struct ClusterInfo {
+            int label;
+            int area;
+            cv::Rect bbox;
+            double cx, cy;
+        };
+        std::vector<ClusterInfo> clusters;
 
-        for (int i = 1; i < n_labels; ++i) {  // skip background=0
+        for (int i = 1; i < n_labels; ++i) {
             int area = stats.at<int>(i, cv::CC_STAT_AREA);
-            if (area < min_area_) continue;
-            if (area > 15000) continue;  // too large, probably not earphone
+            // Accept very small fragments for merging — even a 3px blob
+            // can bridge two larger clusters via proximity union-find
+            if (area < 3) continue;
+            // Dynamic max area: half the ROI area (prevents false rejection
+            // when 41×41 close merges a legitimate earphone cluster into a
+            // large blob). For ROI=250×250, max=31250.
+            int max_cluster_area = std::max(15000, roi.width * roi.height / 2);
+            if (area > max_cluster_area) continue;
 
-            double cx_cc = centroids_cc.at<double>(i, 0);
-            double cy_cc = centroids_cc.at<double>(i, 1);
-            double dist = std::sqrt((cx_cc - ear_cu) * (cx_cc - ear_cu) +
-                                    (cy_cc - ear_cv) * (cy_cc - ear_cv));
-
-            // Score: area / (1 + distance_penalty)
-            double score = static_cast<double>(area) / (1.0 + dist * 0.1);
-            if (score > best_score) {
-                best_score = score;
-                best_label = i;
-            }
+            ClusterInfo ci;
+            ci.label = i;
+            ci.area = area;
+            ci.bbox = cv::Rect(
+                stats.at<int>(i, cv::CC_STAT_LEFT),
+                stats.at<int>(i, cv::CC_STAT_TOP),
+                stats.at<int>(i, cv::CC_STAT_WIDTH),
+                stats.at<int>(i, cv::CC_STAT_HEIGHT));
+            ci.cx = centroids_cc.at<double>(i, 0);
+            ci.cy = centroids_cc.at<double>(i, 1);
+            clusters.push_back(ci);
         }
 
-        if (best_label < 0) {
+        if (clusters.empty()) {
             out_area = 0;
             return cv::Mat::zeros(combined_mask.size(), CV_8UC1);
         }
 
-        // Create mask for best cluster
-        cv::Mat result;
-        cv::compare(labels, best_label, result, cv::CMP_EQ);
+        // --- Proximity-based cluster merging via Union-Find ---
+        // Even after the large closing, some gaps may remain. Merge clusters
+        // whose bounding boxes are within merge_dist pixels of each other.
+        const int merge_dist = 60;
 
-        out_area = static_cast<double>(stats.at<int>(best_label, cv::CC_STAT_AREA));
+        // Simple union-find
+        std::vector<int> parent(clusters.size());
+        std::iota(parent.begin(), parent.end(), 0);
+
+        std::function<int(int)> uf_find = [&](int x) -> int {
+            return parent[x] == x ? x : parent[x] = uf_find(parent[x]);
+        };
+        auto uf_unite = [&](int a, int b) {
+            parent[uf_find(a)] = uf_find(b);
+        };
+
+        for (size_t i = 0; i < clusters.size(); ++i) {
+            for (size_t j = i + 1; j < clusters.size(); ++j) {
+                const auto& a = clusters[i].bbox;
+                const auto& b = clusters[j].bbox;
+                // Chebyshev distance between bounding boxes
+                int dx = std::max(0, std::max(a.x, b.x) -
+                                      std::min(a.x + a.width, b.x + b.width));
+                int dy = std::max(0, std::max(a.y, b.y) -
+                                      std::min(a.y + a.height, b.y + b.height));
+                int dist = static_cast<int>(std::sqrt(dx * dx + dy * dy));
+
+                if (dist <= merge_dist) {
+                    uf_unite(static_cast<int>(i), static_cast<int>(j));
+                }
+            }
+        }
+
+        // Group clusters by root
+        std::map<int, std::vector<size_t>> groups;
+        for (size_t i = 0; i < clusters.size(); ++i) {
+            groups[uf_find(static_cast<int>(i))].push_back(i);
+        }
+
+        // Score each merged group: prefer large total area + close to ear center
+        int best_root = -1;
+        double best_score = -1;
+
+        for (const auto& [root, members] : groups) {
+            int total_area = 0;
+            double sum_cx = 0, sum_cy = 0;
+            int min_bx = INT_MAX, min_by = INT_MAX, max_bx = 0, max_by = 0;
+            for (size_t idx : members) {
+                total_area += clusters[idx].area;
+                sum_cx += clusters[idx].cx * clusters[idx].area;
+                sum_cy += clusters[idx].cy * clusters[idx].area;
+                // Track merged group bounding box
+                min_bx = std::min(min_bx, clusters[idx].bbox.x);
+                min_by = std::min(min_by, clusters[idx].bbox.y);
+                max_bx = std::max(max_bx, clusters[idx].bbox.x + clusters[idx].bbox.width);
+                max_by = std::max(max_by, clusters[idx].bbox.y + clusters[idx].bbox.height);
+            }
+            if (total_area < min_area_) continue;
+
+            double group_cx = sum_cx / total_area;
+            double group_cy = sum_cy / total_area;
+            double dist = std::sqrt((group_cx - ear_cu) * (group_cx - ear_cu) +
+                                    (group_cy - ear_cv) * (group_cy - ear_cv));
+
+            // Shape scoring: earphones are elongated (aspect ratio > 2)
+            // Bonus for elongated clusters, slight penalty for round/compact
+            int bb_w = std::max(1, max_bx - min_bx);
+            int bb_h = std::max(1, max_by - min_by);
+            double aspect = static_cast<double>(std::max(bb_w, bb_h)) /
+                            static_cast<double>(std::min(bb_w, bb_h));
+            double shape_bonus = std::clamp(aspect / 2.5, 0.5, 1.5);
+
+            double score = static_cast<double>(total_area) * shape_bonus / (1.0 + dist * 0.1);
+            if (score > best_score) {
+                best_score = score;
+                best_root = root;
+            }
+        }
+
+        if (best_root < 0) {
+            out_area = 0;
+            return cv::Mat::zeros(combined_mask.size(), CV_8UC1);
+        }
+
+        // Create mask for best merged group (all member clusters)
+        cv::Mat result = cv::Mat::zeros(combined_mask.size(), CV_8UC1);
+        int total_area = 0;
+        for (size_t idx : groups[best_root]) {
+            cv::Mat cluster_mask;
+            cv::compare(labels, clusters[idx].label, cluster_mask, cv::CMP_EQ);
+            cv::bitwise_or(result, cluster_mask, result);
+            total_area += clusters[idx].area;
+        }
+
+        // If multiple clusters were merged, close the gap between them
+        if (groups[best_root].size() > 1) {
+            cv::Mat fill_kernel = cv::getStructuringElement(
+                cv::MORPH_ELLIPSE, cv::Size(15, 15));
+            cv::morphologyEx(result, result, cv::MORPH_CLOSE, fill_kernel);
+            // Recount after filling
+            total_area = cv::countNonZero(result);
+        }
+
+        out_area = static_cast<double>(total_area);
 
         // Extract contour for visualization
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(result.clone(), contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
         if (!contours.empty()) {
-            // Pick the largest contour (should be only one)
             size_t largest = 0;
             for (size_t i = 1; i < contours.size(); ++i) {
                 if (cv::contourArea(contours[i]) > cv::contourArea(contours[largest]))
@@ -975,7 +1302,6 @@ private:
     SingleMeasurement run_pipeline(const cv::Mat& current_avg, const cv::Mat& cur_color,
                                     double fx, double fy, double cx, double cy) {
         SingleMeasurement m;
-        int img_h = current_avg.rows, img_w = current_avg.cols;
 
         // Check size match
         if (baseline_avg_.size() != current_avg.size()) {
@@ -993,69 +1319,240 @@ private:
         // --- Channel D: Depth hole detection (IR absorption) ---
         cv::Mat mask_holes = detect_depth_holes(current_avg, ear_roi_, m.stats);
 
-        // --- Merge channels using iterative region growing ---
+        // --- Hysteresis: low-threshold depth diff for candidate expansion ---
+        // The high threshold (adaptive_min) captures reliable earphone pixels,
+        // but filters out 3-7mm edge pixels that ARE visible in depth_diff.png.
+        // Low threshold (sigma × 1.0) captures these edge pixels as CANDIDATES
+        // (not seeds), so region growing can reach them from high-threshold seeds.
+        cv::Mat mask_diff_low = cv::Mat::zeros(current_avg.rows, current_avg.cols, CV_8UC1);
+        int low_diff_count = 0;
+        for (int y = ear_roi_.y; y < ear_roi_.y + ear_roi_.height; ++y) {
+            const float* row_base = baseline_avg_.ptr<float>(y);
+            const float* row_cur  = current_avg.ptr<float>(y);
+            const float* row_noise = noise_map_.ptr<float>(y);
+            uint8_t* row_mask_low = mask_diff_low.ptr<uint8_t>(y);
+
+            for (int x = ear_roi_.x; x < ear_roi_.x + ear_roi_.width; ++x) {
+                float db = row_base[x];
+                float dc = row_cur[x];
+                if (db < 1.0f || dc < 1.0f) continue;
+
+                double diff = static_cast<double>(db) - static_cast<double>(dc);
+                float local_sigma = row_noise[x];
+                // Low threshold: max(1.5mm, sigma × 1.5)
+                // vs high threshold: max(2.0mm, sigma × 2.5)
+                // Floor raised to 1.5mm to avoid flooding in low-noise scenarios
+                float adaptive_low = std::max(
+                    static_cast<float>(min_diff_mm_) * 0.75f,
+                    local_sigma * 1.5f);
+
+                if (diff >= adaptive_low && diff <= max_diff_mm_) {
+                    row_mask_low[x] = 255;
+                    low_diff_count++;
+                }
+            }
+        }
+
+        RCLCPP_DEBUG(get_logger(),
+            "Hysteresis diff: high=%d low=%d (ratio=%.1fx)",
+            m.stats.diff_pixels, low_diff_count,
+            m.stats.diff_pixels > 0 ? static_cast<double>(low_diff_count) / m.stats.diff_pixels : 0.0);
+
+        // Store per-channel masks for debug
+        m.debug_mask_diff = mask_diff.clone();
+        m.debug_mask_diff_low = mask_diff_low.clone();
+        m.debug_mask_holes = mask_holes.clone();
+        m.debug_mask_plane = mask_plane.clone();
+
+        // --- Merge channels ---
         //
-        // Problem: diff pixels (reliable) are few and concentrated in one spot.
-        // Hole pixels (earphone IR absorption) are many but scattered, and mixed
-        // with ear canal noise holes. Single-pass dilation from diff can't reach
-        // all earphone holes, but large kernels connect ear canal noise.
+        // Strategy depends on signal quality:
+        //   - Enough diff seeds (>=50): region-grow from diff into candidates
+        //   - Hole-dominated (black earphone absorbs IR, few diff pixels):
+        //     use candidates directly with aggressive closing, then cluster
+        //   - Sparse diff (3..49): grow with larger kernel
+        //   - No signal: use all candidates
         //
-        // Solution: iterative region growing.
-        //   1. Start with diff pixels as seeds
-        //   2. Each iteration: dilate current region by small amount,
-        //      absorb any hole/plane pixels it touches → they become new seeds
-        //   3. Repeat until no new pixels absorbed (convergence)
-        //   This follows the earphone's shape through connected holes without
-        //   jumping to disconnected ear canal noise.
+        // Black earphones are the hard case: they absorb structured-light IR,
+        // producing large zero-depth "hole" regions and very few actual depth-
+        // diff pixels. Region growing from sparse diff seeds often fails
+        // because the gap between the earphone tip blob and the stem arc
+        // in the candidate mask is too wide for the seeds to bridge.
 
         cv::Mat combined;
         int diff_count = cv::countNonZero(mask_diff);
+        int hole_count = m.stats.hole_pixels;
 
-        // Merge hole + diff + plane into a single "candidate" mask
-        // (all pixels that COULD be earphone, before filtering)
+        // Merge hole + diff + plane into base candidate mask.
+        // NOTE: mask_diff_low is added ONLY in the region-growing path below,
+        // NOT here, because in hole-dominated scenarios (low noise + dense
+        // low-threshold pixels) it would flood the entire ROI.
         cv::Mat candidates;
         cv::bitwise_or(mask_diff, mask_holes, candidates);
         cv::bitwise_or(candidates, mask_plane, candidates);
 
-        if (diff_count >= 3) {
-            // --- Region growing from diff seeds into candidate pixels ---
-            combined = mask_diff.clone();  // start with diff as seeds
+        // Save base candidates for post-clustering rotated-rect recovery
+        cv::Mat candidates_for_fill = candidates.clone();
 
-            cv::Mat grow_kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(15, 15));
+        // Determine if this is a black-earphone detection where depth is unreliable.
+        // Black earphones absorb IR → massive zero-depth regions in ROI, very few
+        // actual depth-diff pixels.
+        //
+        // IMPORTANT: Only use blob-connect when diff seeds are TRULY sparse (< 50).
+        // Even with massive holes (1500+), if diff >= 50, region-growing from diff
+        // seeds is BETTER because it constrains the mask to earphone-adjacent pixels
+        // and avoids merging ear-canal holes with earphone holes.
+        // A ratio check (holes > diff*5) was tried but caused diff=173 to wrongly
+        // enter blob-connect, which merged the entire ear canal into the mask.
+        bool hole_dominated = (diff_count < 50 &&
+            (hole_count >= min_area_ ||
+             m.stats.zero_depth_in_roi > static_cast<int>(ear_roi_.width * ear_roi_.height * 0.05)));
+
+        if (hole_dominated) {
+            // --- Hole-dominated: connect nearby large candidate blobs ---
+            //
+            // For black earphones the candidate pixels (holes + plane) form
+            // several distinct blobs with 30-60px gaps.  Morphological closing
+            // alone can't bridge these gaps without a huge kernel that also
+            // connects noise.
+            //
+            // Better approach: "connect the dots"
+            //   1. Find connected components in the ROI candidates
+            //   2. For blobs with area >= blob_min, compute centroids
+            //   3. Draw thick lines between centroids within connect_dist
+            //   4. Moderate closing to smooth the joined shape
+            //   5. Cluster scoring rejects far-away noise
+
+            combined = cv::Mat::zeros(candidates.size(), CV_8UC1);
+            cv::Mat roi_cand = candidates(ear_roi_).clone();
+
+            // Find blobs in ROI
+            cv::Mat cc_labels, cc_stats, cc_cents;
+            int n_cc = cv::connectedComponentsWithStats(
+                roi_cand, cc_labels, cc_stats, cc_cents, 8);
+
+            struct CandBlob {
+                cv::Point2f center;
+                int area;
+            };
+            std::vector<CandBlob> blobs;
+            const int blob_min = 10;  // minimum pixels to be a "significant" blob
+
+            for (int i = 1; i < n_cc; ++i) {
+                int area = cc_stats.at<int>(i, cv::CC_STAT_AREA);
+                if (area >= blob_min) {
+                    blobs.push_back({
+                        cv::Point2f(
+                            static_cast<float>(cc_cents.at<double>(i, 0)),
+                            static_cast<float>(cc_cents.at<double>(i, 1))),
+                        area
+                    });
+                }
+            }
+
+            // Draw thick connecting lines between nearby blobs
+            const float connect_dist = 80.0f;
+            const int line_thickness = 12;
+            cv::Mat connected = roi_cand.clone();
+
+            for (size_t i = 0; i < blobs.size(); ++i) {
+                for (size_t j = i + 1; j < blobs.size(); ++j) {
+                    float dx = blobs[i].center.x - blobs[j].center.x;
+                    float dy = blobs[i].center.y - blobs[j].center.y;
+                    float dist = std::sqrt(dx * dx + dy * dy);
+                    if (dist <= connect_dist) {
+                        cv::line(connected,
+                            cv::Point(static_cast<int>(blobs[i].center.x),
+                                      static_cast<int>(blobs[i].center.y)),
+                            cv::Point(static_cast<int>(blobs[j].center.x),
+                                      static_cast<int>(blobs[j].center.y)),
+                            cv::Scalar(255), line_thickness);
+                    }
+                }
+            }
+
+            // Moderate closing to smooth the connected shape
+            cv::Mat smooth_k = cv::getStructuringElement(
+                cv::MORPH_ELLIPSE, cv::Size(21, 21));
+            cv::morphologyEx(connected, connected, cv::MORPH_CLOSE, smooth_k);
+
+            connected.copyTo(combined(ear_roi_));
+
+            RCLCPP_INFO(get_logger(),
+                "Hole-dominated blob connect: %zu blobs found (min_area=%d), "
+                "connect_dist=%.0f",
+                blobs.size(), blob_min, connect_dist);
+
+        } else if (diff_count >= 3) {
+            // --- Good diff signal: region-grow from diff seeds ---
+            // Add low-threshold diff to candidates HERE (safe because region
+            // growing is self-limiting — only reaches pixels connected to
+            // high-threshold seeds). This enriches connectivity between
+            // fragments without flooding the entire ROI.
+            cv::bitwise_or(candidates, mask_diff_low, candidates);
+
+            // Bridge gap between diff edges and hole centers.
+            // Black earphones have a "dead zone" between the diff edge pixels
+            // (where depth transitions from ear surface to earphone) and the
+            // hole center pixels (where IR is fully absorbed). This dead zone
+            // has valid depth with small differences (< threshold), so NO
+            // detection channel fires there. Region growing can't cross it.
+            //
+            // Fix: dilate both masks and take their overlap as bridge pixels.
+            // Only adds candidates in the narrow zone BETWEEN diff and holes,
+            // not everywhere.
+            if (hole_count >= min_area_) {
+                cv::Mat diff_exp, hole_exp, bridge;
+                cv::Mat bridge_k = cv::getStructuringElement(
+                    cv::MORPH_ELLIPSE, cv::Size(25, 25));
+                cv::dilate(mask_diff, diff_exp, bridge_k);
+                cv::dilate(mask_holes, hole_exp, bridge_k);
+                cv::bitwise_and(diff_exp, hole_exp, bridge);
+                cv::bitwise_or(candidates, bridge, candidates);
+
+                int bridge_px = cv::countNonZero(bridge);
+                RCLCPP_DEBUG(get_logger(),
+                    "Diff-hole bridge: %d pixels added to candidates", bridge_px);
+            }
+
+            // Close candidate gaps first
+            {
+                cv::Mat cand_close_k = cv::getStructuringElement(
+                    cv::MORPH_ELLIPSE, cv::Size(11, 11));
+                cv::morphologyEx(candidates, candidates, cv::MORPH_CLOSE, cand_close_k);
+            }
+
+            combined = mask_diff.clone();
+            cv::Mat grow_kernel = cv::getStructuringElement(
+                cv::MORPH_ELLIPSE, cv::Size(15, 15));
 
             for (int iter = 0; iter < 20; ++iter) {
-                // Dilate current region
                 cv::Mat grown;
                 cv::dilate(combined, grown, grow_kernel);
-
-                // Absorb candidate pixels that overlap with the grown region
                 cv::Mat new_region;
                 cv::bitwise_and(grown, candidates, new_region);
-
-                // Check convergence
                 int old_count = cv::countNonZero(combined);
                 cv::bitwise_or(combined, new_region, combined);
                 int new_count = cv::countNonZero(combined);
-
-                if (new_count == old_count) break;  // converged
+                if (new_count == old_count) break;
             }
-
-            // Final small closing to fill tiny internal gaps
-            cv::Mat close_kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(7, 7));
+            cv::Mat close_kernel = cv::getStructuringElement(
+                cv::MORPH_ELLIPSE, cv::Size(7, 7));
             cv::morphologyEx(combined, combined, cv::MORPH_CLOSE, close_kernel);
 
-        } else if (cv::countNonZero(mask_holes) >= min_area_) {
-            // --- No diff seeds: use holes directly, but filter with plane ---
-            // Region-grow from holes that overlap with plane detections
+        } else if (hole_count >= min_area_) {
+            // --- Some holes but not dominant: grow from plane-filtered holes ---
             cv::Mat hole_seeds;
             cv::Mat plane_dilated;
-            cv::Mat pl_k = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(15, 15));
+            cv::Mat pl_k = cv::getStructuringElement(
+                cv::MORPH_ELLIPSE, cv::Size(15, 15));
             cv::dilate(mask_plane, plane_dilated, pl_k);
             cv::bitwise_and(mask_holes, plane_dilated, hole_seeds);
 
             if (cv::countNonZero(hole_seeds) >= min_area_) {
                 combined = hole_seeds.clone();
-                cv::Mat grow_kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(11, 11));
+                cv::Mat grow_kernel = cv::getStructuringElement(
+                    cv::MORPH_ELLIPSE, cv::Size(11, 11));
                 for (int iter = 0; iter < 15; ++iter) {
                     cv::Mat grown;
                     cv::dilate(combined, grown, grow_kernel);
@@ -1066,15 +1563,17 @@ private:
                     if (cv::countNonZero(combined) == old_count) break;
                 }
             } else {
-                // Just use all candidates with small closing
                 combined = candidates.clone();
-                cv::Mat close_kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+                cv::Mat close_kernel = cv::getStructuringElement(
+                    cv::MORPH_ELLIPSE, cv::Size(21, 21));
                 cv::morphologyEx(combined, combined, cv::MORPH_CLOSE, close_kernel);
             }
         } else {
             // --- No signal at all: use all candidates ---
             combined = candidates.clone();
         }
+
+        m.debug_candidates = candidates.clone();
 
         // Compute avg noise for stats
         {
@@ -1132,8 +1631,67 @@ private:
         }
 
         // --- Clustering: select best earphone cluster ---
+        m.debug_combined = combined.clone();
         m.earphone_mask = select_earphone_cluster(
             combined, ear_roi_, m.area, m.contour);
+
+        // --- Rotated-rect candidate recovery ---
+        // After clustering selects the best earphone region, recover candidate
+        // pixels inside the cluster's oriented bounding box that were missed
+        // by region growing. This fills internal gaps without expanding beyond
+        // the earphone's spatial extent.
+        if (m.area >= min_area_ && m.contour.size() >= 5) {
+            cv::RotatedRect rrect = cv::minAreaRect(m.contour);
+
+            // Expand rect by 10px each side to catch edge pixels
+            rrect.size.width += 20.0f;
+            rrect.size.height += 20.0f;
+
+            // Create mask from expanded rotated rect
+            cv::Mat rrect_mask = cv::Mat::zeros(m.earphone_mask.size(), CV_8UC1);
+            cv::Point2f vertices[4];
+            rrect.points(vertices);
+            std::vector<cv::Point> rrect_pts;
+            for (int i = 0; i < 4; ++i) {
+                rrect_pts.emplace_back(
+                    static_cast<int>(vertices[i].x),
+                    static_cast<int>(vertices[i].y));
+            }
+            cv::fillConvexPoly(rrect_mask, rrect_pts, cv::Scalar(255));
+
+            // Accept candidate pixels within expanded rect
+            cv::Mat extra;
+            cv::bitwise_and(rrect_mask, candidates_for_fill, extra);
+
+            int old_area = static_cast<int>(m.area);
+            cv::bitwise_or(m.earphone_mask, extra, m.earphone_mask);
+
+            // Light cleanup: remove isolated noise pixels added by fill
+            cv::Mat clean_k = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
+            cv::morphologyEx(m.earphone_mask, m.earphone_mask, cv::MORPH_OPEN, clean_k);
+
+            m.area = cv::countNonZero(m.earphone_mask);
+
+            // Update contour if area increased
+            if (m.area > old_area) {
+                std::vector<std::vector<cv::Point>> new_contours;
+                cv::findContours(m.earphone_mask.clone(), new_contours,
+                                  cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+                if (!new_contours.empty()) {
+                    size_t largest = 0;
+                    for (size_t i = 1; i < new_contours.size(); ++i) {
+                        if (cv::contourArea(new_contours[i]) > cv::contourArea(new_contours[largest]))
+                            largest = i;
+                    }
+                    m.contour = new_contours[largest];
+                }
+
+                RCLCPP_INFO(get_logger(),
+                    "Rotated-rect fill: %d → %d pixels (+%d)",
+                    old_area, static_cast<int>(m.area),
+                    static_cast<int>(m.area) - old_area);
+            }
+        }
 
         if (m.area < min_area_) {
             m.detail = "No earphone cluster found: "
@@ -1142,6 +1700,8 @@ private:
                 " hole_px=" + std::to_string(m.stats.hole_pixels) +
                 " rgb_px=" + std::to_string(m.stats.rgb_pixels) +
                 " zero_px=" + std::to_string(m.stats.zero_depth_in_roi) +
+                " combined_px=" + std::to_string(combined_pixels) +
+                " hole_dom=" + std::string(hole_dominated ? "Y" : "N") +
                 " noise_sigma=" + std::to_string(m.stats.avg_noise_sigma);
             return m;
         }
@@ -1198,62 +1758,177 @@ private:
 
         bool is_sparse = static_cast<int>(points_3d.size()) < min_area_;
 
-        // --- Robust PCA ---
+        // --- Determine if depth data is unreliable for 3D PCA ---
+        //
+        // For black earphones, the vast majority of 3D points come from either:
+        //   (a) hole pixels projected at BASELINE depth → all share same Z
+        //   (b) plane pixels that are part of the ear surface → also flat
+        // In both cases, the 3D point cloud is degenerate (planar), and PCA
+        // finds the in-plane spread direction rather than the earphone's axis.
+        //
+        // Detection: use the hole_dominated flag from channel merging (which
+        // considers diff_count, hole_count, and zero_depth_in_roi), OR check
+        // if too many mask pixels have zero current depth.
+        bool mask_hole_dominated = hole_dominated ||
+            (n_zero_in_mask > static_cast<int>(points_3d.size()) / 3);
+
+        // --- Robust 3D PCA (always compute for centroid/stats) ---
         PCAResult pca = compute_robust_pca(points_3d);
         if (!pca.valid) {
             m.detail = "PCA failed";
             return m;
         }
 
-        // Check PCA stability (eigenvalue ratio)
         double ev_ratio = pca.eigenvalues(2) / std::max(pca.eigenvalues(1), 1e-12);
         bool pca_unstable = (ev_ratio < 1.5);
 
         Eigen::Vector3d effective_axis = pca.axis;
+        bool used_2d_pca = false;
 
-        if (pca_unstable) {
-            // Fallback: use depth gradient direction
-            cv::Mat diff_float = cv::Mat::zeros(img_h, img_w, CV_32FC1);
+        if (mask_hole_dominated || pca_unstable) {
+            // =========================================================
+            // 2D PCA path — replaces broken 3D PCA for black earphones
+            // =========================================================
+            //
+            // Problem: 3D PCA fails because hole pixels are projected at
+            // baseline depth → flat point cloud → PCA finds in-plane spread,
+            // not earphone axis. The old fallback (ear plane normal) always
+            // reports the same angle regardless of earphone orientation.
+            //
+            // Solution: 2D PCA on earphone mask pixels gives the earphone's
+            // shape direction in the image. Compare this to the ear canal's
+            // 2D projection to get the actual insertion tilt angle.
+
+            // --- Step 1: Trimmed 2D PCA on earphone mask ---
+            //
+            // Collect mask pixels, then keep only the 70% closest to the
+            // centroid. This naturally removes:
+            //   - Earphone wire/cable (thin, extends far from bud center)
+            //   - Earphone stem/handle (wider but still extends away)
+            //   - Edge noise pixels
+            // Only the compact earphone bud remains for PCA.
+
+            std::vector<cv::Point2f> all_mask_pts;
             for (int y = ear_roi_.y; y < ear_roi_.y + ear_roi_.height; ++y) {
-                const float* row_base = baseline_avg_.ptr<float>(y);
-                const float* row_cur  = current_avg.ptr<float>(y);
-                float* row_df = diff_float.ptr<float>(y);
+                const uint8_t* row = m.earphone_mask.ptr<uint8_t>(y);
                 for (int x = ear_roi_.x; x < ear_roi_.x + ear_roi_.width; ++x) {
-                    if (m.earphone_mask.at<uint8_t>(y, x) == 0) continue;
-                    if (row_base[x] > 1.0f && row_cur[x] > 1.0f) {
-                        row_df[x] = row_base[x] - row_cur[x];
-                    }
+                    if (row[x]) all_mask_pts.emplace_back(
+                        static_cast<float>(x), static_cast<float>(y));
                 }
             }
 
-            cv::Mat grad_x, grad_y;
-            cv::Sobel(diff_float, grad_x, CV_32F, 1, 0, 3);
-            cv::Sobel(diff_float, grad_y, CV_32F, 0, 1, 3);
+            // Compute centroid
+            float cx_mask = 0, cy_mask = 0;
+            for (const auto& pt : all_mask_pts) {
+                cx_mask += pt.x;
+                cy_mask += pt.y;
+            }
+            if (!all_mask_pts.empty()) {
+                cx_mask /= all_mask_pts.size();
+                cy_mask /= all_mask_pts.size();
+            }
 
-            double sum_gx = 0, sum_gy = 0;
-            int grad_count = 0;
-            for (int y = ear_roi_.y; y < ear_roi_.y + ear_roi_.height; ++y) {
-                for (int x = ear_roi_.x; x < ear_roi_.x + ear_roi_.width; ++x) {
-                    if (m.earphone_mask.at<uint8_t>(y, x) == 0) continue;
-                    float gx = grad_x.at<float>(y, x);
-                    float gy = grad_y.at<float>(y, x);
-                    if (std::abs(gx) > 0.1f || std::abs(gy) > 0.1f) {
-                        sum_gx += gx;
-                        sum_gy += gy;
-                        grad_count++;
+            // Sort by distance to centroid, keep closest 70%
+            std::vector<std::pair<float, size_t>> dist_idx;
+            dist_idx.reserve(all_mask_pts.size());
+            for (size_t i = 0; i < all_mask_pts.size(); ++i) {
+                float dx = all_mask_pts[i].x - cx_mask;
+                float dy = all_mask_pts[i].y - cy_mask;
+                dist_idx.push_back({dx * dx + dy * dy, i});
+            }
+            std::sort(dist_idx.begin(), dist_idx.end());
+
+            int n_keep = std::max(20, static_cast<int>(dist_idx.size() * 0.7));
+            n_keep = std::min(n_keep, static_cast<int>(dist_idx.size()));
+
+            std::vector<cv::Point2f> mask_pts_2d;
+            mask_pts_2d.reserve(n_keep);
+            for (int i = 0; i < n_keep; ++i) {
+                mask_pts_2d.push_back(all_mask_pts[dist_idx[i].second]);
+            }
+
+            double angle_2d_deg = 0;
+
+            if (mask_pts_2d.size() >= 20) {
+                cv::Mat pts_mat(mask_pts_2d.size(), 2, CV_32F);
+                for (size_t i = 0; i < mask_pts_2d.size(); ++i) {
+                    pts_mat.at<float>(i, 0) = mask_pts_2d[i].x;
+                    pts_mat.at<float>(i, 1) = mask_pts_2d[i].y;
+                }
+                cv::PCA pca_2d(pts_mat, cv::Mat(), cv::PCA::DATA_AS_ROW);
+
+                float ev0_2d = pca_2d.eigenvalues.at<float>(0);
+                float ev1_2d = std::max(pca_2d.eigenvalues.at<float>(1), 1e-6f);
+                float ev_ratio_2d = ev0_2d / ev1_2d;
+
+                // Only meaningful if mask is elongated (earphone-like shape)
+                if (ev_ratio_2d > 1.3f) {
+                    float dir_u = pca_2d.eigenvectors.at<float>(0, 0);
+                    float dir_v = pca_2d.eigenvectors.at<float>(0, 1);
+
+                    // --- Step 2: Project ear canal direction to 2D ---
+                    // ear_plane_.normal ≈ (nx, ny, nz) with nz ≈ -1
+                    // In image plane, canal direction ∝ (nx*fx, ny*fy)
+                    double ear_2d_u = -ear_plane_.normal.x() * fx;
+                    double ear_2d_v = -ear_plane_.normal.y() * fy;
+                    double ear_2d_len = std::sqrt(
+                        ear_2d_u * ear_2d_u + ear_2d_v * ear_2d_v);
+
+                    if (ear_2d_len > 1.0) {
+                        // Ear canal has a meaningful 2D projection
+                        ear_2d_u /= ear_2d_len;
+                        ear_2d_v /= ear_2d_len;
+
+                        // Angle between earphone's 2D axis and ear canal's 2D direction
+                        double cos_2d = std::abs(
+                            static_cast<double>(dir_u) * ear_2d_u +
+                            static_cast<double>(dir_v) * ear_2d_v);
+                        angle_2d_deg = std::acos(
+                            std::clamp(cos_2d, 0.0, 1.0)) * 180.0 / M_PI;
+                    } else {
+                        // Ear canal is perpendicular to image → tilt from elongation
+                        // A perfectly inserted earphone appears circular (ev_ratio ≈ 1)
+                        // More elongated = more tilted
+                        angle_2d_deg = std::atan(
+                            std::sqrt(std::max(0.0, ev_ratio_2d - 1.0))) * 180.0 / M_PI;
                     }
+
+                    // Construct effective_axis that produces this angle
+                    // relative to the camera Z axis (reference)
+                    double angle_rad = angle_2d_deg * M_PI / 180.0;
+                    // Direction of tilt in 3D camera frame
+                    Eigen::Vector3d tilt_dir(
+                        static_cast<double>(dir_u) / fx,
+                        static_cast<double>(dir_v) / fy, 0);
+                    if (tilt_dir.norm() > 1e-9) tilt_dir.normalize();
+
+                    Eigen::Vector3d canal_dir = -ear_plane_.normal;
+                    if (canal_dir.z() < 0) canal_dir = -canal_dir;
+
+                    effective_axis = (canal_dir * std::cos(angle_rad) +
+                                     tilt_dir * std::sin(angle_rad)).normalized();
+                    if (effective_axis.z() < 0) effective_axis = -effective_axis;
+
+                    used_2d_pca = true;
+
+                    RCLCPP_INFO(get_logger(),
+                        "2D PCA: dir=(%.3f,%.3f) ev_ratio_2d=%.1f "
+                        "ear_2d=(%.3f,%.3f) angle_2d=%.1f° axis=(%.3f,%.3f,%.3f)",
+                        dir_u, dir_v, ev_ratio_2d,
+                        ear_2d_u, ear_2d_v, angle_2d_deg,
+                        effective_axis.x(), effective_axis.y(), effective_axis.z());
                 }
             }
 
-            if (grad_count > 5) {
-                // Convert 2D gradient to 3D direction estimate
-                double norm = std::sqrt(sum_gx * sum_gx + sum_gy * sum_gy);
-                if (norm > 1e-6) {
-                    // 2D gradient in image → rough 3D direction
-                    double dx = sum_gx / norm;
-                    double dy = sum_gy / norm;
-                    effective_axis = Eigen::Vector3d(dx * 0.3, dy * 0.3, 1.0).normalized();
-                }
+            if (!used_2d_pca) {
+                // Fallback: ear plane normal (mask too compact for 2D PCA)
+                effective_axis = -ear_plane_.normal;
+                if (effective_axis.z() < 0) effective_axis = -effective_axis;
+
+                RCLCPP_INFO(get_logger(),
+                    "Hole-dominated: mask too compact for 2D PCA, "
+                    "using ear plane normal. n_zero=%d/%zu",
+                    n_zero_in_mask, points_3d.size());
             }
         }
 
@@ -1321,14 +1996,16 @@ private:
         std::snprintf(buf, sizeof(buf),
             "Angle=%.1f deg  Depth=%.1fmm  Conf=%.2f  Points=%d  "
             "Area=%.0f  Channel=%s  Axis=(%.3f,%.3f,%.3f)  "
-            "EV_ratio=%.1f%s%s%s",
+            "EV_ratio=%.1f%s%s%s%s",
             angle_deg, median_depth, confidence, pca.n_points,
             m.area, m.stats.primary_channel.c_str(),
             effective_axis.x(), effective_axis.y(), effective_axis.z(),
             ev_ratio,
-            pca_unstable ? " [PCA_UNSTABLE:gradient_fallback]" : "",
+            mask_hole_dominated ? (used_2d_pca ? " [2D_PCA]" : " [EAR_PLANE_AXIS]") :
+                (pca_unstable ? " [PCA_UNSTABLE]" : ""),
             is_sparse ? " [SPARSE]" : "",
-            aruco.detected ? " [ARUCO]" : "");
+            aruco.detected ? " [ARUCO]" : "",
+            hole_dominated ? " [HOLE_MERGE]" : "");
         m.detail = buf;
 
         return m;
@@ -1402,6 +2079,25 @@ private:
                 resp->saved_path = save_debug_failure(
                     req->file_tag, current_avg, cur_color,
                     primary.stats, primary.detail);
+
+                // Also save per-channel debug masks for diagnosis
+                if (!resp->saved_path.empty()) {
+                    fs::path dbg_dir(resp->saved_path);
+                    if (!primary.debug_mask_diff.empty())
+                        cv::imwrite((dbg_dir / "mask_diff.png").string(), primary.debug_mask_diff);
+                    if (!primary.debug_mask_diff_low.empty())
+                        cv::imwrite((dbg_dir / "mask_diff_low.png").string(), primary.debug_mask_diff_low);
+                    if (!primary.debug_mask_holes.empty())
+                        cv::imwrite((dbg_dir / "mask_holes.png").string(), primary.debug_mask_holes);
+                    if (!primary.debug_mask_plane.empty())
+                        cv::imwrite((dbg_dir / "mask_plane.png").string(), primary.debug_mask_plane);
+                    if (!primary.debug_candidates.empty())
+                        cv::imwrite((dbg_dir / "candidates.png").string(), primary.debug_candidates);
+                    if (!primary.debug_combined.empty())
+                        cv::imwrite((dbg_dir / "combined_before_cluster.png").string(), primary.debug_combined);
+                    if (!primary.earphone_mask.empty())
+                        cv::imwrite((dbg_dir / "earphone_mask.png").string(), primary.earphone_mask);
+                }
             }
             RCLCPP_WARN(get_logger(), "Measurement failed: %s", primary.detail.c_str());
             return;
@@ -1501,7 +2197,7 @@ private:
                 final_angle, final_depth, final_confidence,
                 primary.axis, primary.centroid,
                 primary.stats, primary.detail + trial_info,
-                fx, fy, cx, cy);
+                fx, fy, cx, cy, primary);
         }
     }
 
@@ -1516,7 +2212,8 @@ private:
         double angle_deg, double depth_mm, double confidence,
         const Eigen::Vector3d& axis, const Eigen::Vector3d& centroid,
         const DetectionChannelStats& stats, const std::string& detail,
-        double fx, double fy, double cx, double cy)
+        double fx, double fy, double cx, double cy,
+        const SingleMeasurement& meas = {})
     {
         auto stamp = this->now().nanoseconds();
         fs::path dir = fs::path(save_dir_) / tag / std::to_string(stamp);
@@ -1590,8 +2287,40 @@ private:
         if (!cur_color.empty())
             cv::imwrite((dir / "measure_color.png").string(), cur_color);
 
+        // Save raw baseline data so this result dir can be used as baseline source
+        cv::imwrite((dir / "baseline_avg.exr").string(), baseline_avg_);
+        {
+            cv::FileStorage meta((dir / "meta.yaml").string(),
+                                  cv::FileStorage::WRITE);
+            meta << "roi_x" << ear_roi_.x;
+            meta << "roi_y" << ear_roi_.y;
+            meta << "roi_w" << ear_roi_.width;
+            meta << "roi_h" << ear_roi_.height;
+            meta << "plane_nx" << ear_plane_.normal.x();
+            meta << "plane_ny" << ear_plane_.normal.y();
+            meta << "plane_nz" << ear_plane_.normal.z();
+            meta << "plane_d" << ear_plane_.d;
+            meta << "fx" << fx; meta << "fy" << fy;
+            meta << "cx" << cx; meta << "cy" << cy;
+            meta.release();
+        }
+
         // Earphone mask
         cv::imwrite((dir / "earphone_mask.png").string(), mask);
+
+        // Debug: per-channel masks and pipeline intermediates
+        if (!meas.debug_mask_diff.empty())
+            cv::imwrite((dir / "mask_diff.png").string(), meas.debug_mask_diff);
+        if (!meas.debug_mask_diff_low.empty())
+            cv::imwrite((dir / "mask_diff_low.png").string(), meas.debug_mask_diff_low);
+        if (!meas.debug_mask_holes.empty())
+            cv::imwrite((dir / "mask_holes.png").string(), meas.debug_mask_holes);
+        if (!meas.debug_mask_plane.empty())
+            cv::imwrite((dir / "mask_plane.png").string(), meas.debug_mask_plane);
+        if (!meas.debug_candidates.empty())
+            cv::imwrite((dir / "candidates.png").string(), meas.debug_candidates);
+        if (!meas.debug_combined.empty())
+            cv::imwrite((dir / "combined_before_cluster.png").string(), meas.debug_combined);
 
         // ROI visualization on mask
         {

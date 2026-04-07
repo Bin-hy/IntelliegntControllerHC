@@ -85,6 +85,10 @@ public:
   void call_lhand_set_velocity(int joint_id, int velocity);
   void call_lhand_move(int joint_id);
   void call_lhand_get_position(int joint_id, std::function<void(int)> callback);
+
+  // Right hand (rhandpro_service)
+  void call_rhand_set_all_position(const std::array<int, 6>& positions);
+  void call_rhand_move(int joint_id);
   
   std::vector<std::string> scan_cameras();
   std::vector<std::string> scan_point_clouds();
@@ -187,6 +191,15 @@ private:
   rclcpp::Client<lhandpro_interfaces::srv::MoveMotors>::SharedPtr client_lhand_move_;
   rclcpp::Client<lhandpro_interfaces::srv::HomeMotors>::SharedPtr client_lhand_home_;
   rclcpp::Client<lhandpro_interfaces::srv::GetNowPosition>::SharedPtr client_lhand_get_now_pos_;
+
+  // RHand Clients (mirror of LHand, under /rhandpro_service namespace)
+  rclcpp::Client<lhandpro_interfaces::srv::SetEnable>::SharedPtr client_rhand_enable_;
+  rclcpp::Client<lhandpro_interfaces::srv::SetPosition>::SharedPtr client_rhand_pos_;
+  rclcpp::Client<lhandpro_interfaces::srv::SetAllPosition>::SharedPtr client_rhand_all_pos_;
+  rclcpp::Client<lhandpro_interfaces::srv::SetPositionVelocity>::SharedPtr client_rhand_vel_;
+  rclcpp::Client<lhandpro_interfaces::srv::MoveMotors>::SharedPtr client_rhand_move_;
+  rclcpp::Client<lhandpro_interfaces::srv::HomeMotors>::SharedPtr client_rhand_home_;
+  rclcpp::Client<lhandpro_interfaces::srv::GetNowPosition>::SharedPtr client_rhand_get_now_pos_;
 
   // Lift platform client
   rclcpp::Client<lift_server::srv::LiftControl>::SharedPtr client_lift_;

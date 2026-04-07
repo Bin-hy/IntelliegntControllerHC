@@ -27,6 +27,7 @@ class QToolButton;
 class QMenu;
 class PointCloudWidget;
 class UDEGloveSDK;
+struct Vector3Float;
 
 class AppWindow : public QWidget {
 public:
@@ -188,6 +189,17 @@ private:
   QTableWidget* table_glove_left_ = nullptr;
   QTableWidget* table_glove_right_ = nullptr;
   QLabel* label_glove_ctrl_[12] = {};
+
+  // Glove → Hand control
+  QCheckBox* chk_glove_hand_ctrl_ = nullptr;
+  QComboBox* combo_glove_hand_side_ = nullptr;
+  QLabel* label_glove_hand_status_ = nullptr;
+  bool glove_hand_request_in_flight_ = false;
+  std::array<int, 6> glove_hand_last_sent_ = {-1, -1, -1, -1, -1, -1};
+
+  // Mapping helpers
+  int gloveAngleToPosition(double deg, double min_deg, double max_deg) const;
+  void sendGloveToHand(const std::vector<Vector3Float>& finger_data);
 };
 
 #endif // APP_WINDOW_HPP

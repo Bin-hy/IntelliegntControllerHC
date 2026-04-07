@@ -171,6 +171,7 @@ class HandControlService : public rclcpp::Node {
   rclcpp::TimerBase::SharedPtr reconnect_timer_;
   std::atomic<bool> is_connected_;
   int current_channel_{0};
+  std::string hand_side_{"left"};  // "left" or "right"
   std::atomic<bool> stop_flag_{false};
   std::thread monitor_thread_;
 

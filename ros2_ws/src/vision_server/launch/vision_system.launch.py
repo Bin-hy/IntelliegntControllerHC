@@ -131,6 +131,8 @@ def make_camera_node(ns, serial_number, device_num=1, usb_port='', connection_de
                 'device_num': str(device_num),
                 'usb_port': usb_port or '',
                 'connection_delay': str(connection_delay),
+                'depth_registration': 'true',
+                'align_mode': 'SW',
                 'enable_point_cloud': 'true',
                 'enable_colored_point_cloud': 'true',
                 'enable_color': 'true',

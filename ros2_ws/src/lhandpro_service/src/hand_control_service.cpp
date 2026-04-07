@@ -11,16 +11,23 @@ HandControlService::HandControlService() : Node("lhandpro_service") {
   ec_master_ = std::make_shared<EthercatMaster>();
 
   is_connected_ = false;
-  
+
   // 声明并获取参数, 默认值为1
   this->declare_parameter("ethercat_channel", 1);
   current_channel_ = this->get_parameter("ethercat_channel").as_int();
-  
+
+  // 手型参数: "left" 或 "right"，决定设备状态上报的信息
+  this->declare_parameter("hand_side", std::string("left"));
+  hand_side_ = this->get_parameter("hand_side").as_string();
+
+  // 根据 hand_side 确定 now_angles 话题名 (使用节点所在的命名空间)
+  std::string angles_topic = "now_angles";  // 相对话题名，会自动加上节点命名空间
+
   // Publisher for DeviceStatus
   pub_device_status_ = this->create_publisher<common_msgs::msg::DeviceStatus>("/system/device_status", 10);
-  now_angles_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/lhandpro_service/now_angles", 10);
+  now_angles_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(angles_topic, 10);
 
-  RCLCPP_INFO(this->get_logger(), "使用EtherCAT通道: %d", current_channel_);
+  RCLCPP_INFO(this->get_logger(), "使用EtherCAT通道: %d, 手型: %s", current_channel_, hand_side_.c_str());
 
   init_ethercat(current_channel_);
   init_service();
@@ -121,11 +128,19 @@ void HandControlService::cleanup_resources() {
 
 void HandControlService::check_and_reconnect() {
   common_msgs::msg::DeviceStatus status_msg;
-  status_msg.device_type = "lhand";
-  status_msg.device_usage = "left_hand";
-  status_msg.device_model = "DH116-L000-A1";
-  status_msg.device_name = "DH116 左手";
-  status_msg.device_sn = "lhand_1";
+  if (hand_side_ == "right") {
+    status_msg.device_type = "rhand";
+    status_msg.device_usage = "right_hand";
+    status_msg.device_model = "DH116-R000-A1";
+    status_msg.device_name = "DH116 右手";
+    status_msg.device_sn = "rhand_1";
+  } else {
+    status_msg.device_type = "lhand";
+    status_msg.device_usage = "left_hand";
+    status_msg.device_model = "DH116-L000-A1";
+    status_msg.device_name = "DH116 左手";
+    status_msg.device_sn = "lhand_1";
+  }
 
   if (is_connected_) {
     // 检查是否仍然有效

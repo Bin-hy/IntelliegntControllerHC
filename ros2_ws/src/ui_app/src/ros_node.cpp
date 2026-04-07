@@ -80,6 +80,15 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     client_lhand_home_ = create_client<lhandpro_interfaces::srv::HomeMotors>("/lhandpro_service/home_motors");
     client_lhand_get_now_pos_ = create_client<lhandpro_interfaces::srv::GetNowPosition>("/lhandpro_service/get_now_position");
 
+    // RHand Clients
+    client_rhand_enable_ = create_client<lhandpro_interfaces::srv::SetEnable>("/rhandpro_service/set_enable");
+    client_rhand_pos_ = create_client<lhandpro_interfaces::srv::SetPosition>("/rhandpro_service/set_position");
+    client_rhand_all_pos_ = create_client<lhandpro_interfaces::srv::SetAllPosition>("/rhandpro_service/set_all_position");
+    client_rhand_vel_ = create_client<lhandpro_interfaces::srv::SetPositionVelocity>("/rhandpro_service/set_position_velocity");
+    client_rhand_move_ = create_client<lhandpro_interfaces::srv::MoveMotors>("/rhandpro_service/move_motors");
+    client_rhand_home_ = create_client<lhandpro_interfaces::srv::HomeMotors>("/rhandpro_service/home_motors");
+    client_rhand_get_now_pos_ = create_client<lhandpro_interfaces::srv::GetNowPosition>("/rhandpro_service/get_now_position");
+
     // Task Execution Action Client
     client_execute_task_ = rclcpp_action::create_client<ExecuteTask>(this, "execute_task");
 
@@ -689,114 +698,150 @@ void RosNode::set_user_context(const std::string& username,
 
 // LHand Implementation
 void RosNode::call_lhand_enable(bool enable) {
-    if (!client_lhand_enable_->wait_for_service(std::chrono::seconds(1))) {
-        RCLCPP_WARN(get_logger(), "LHand Enable service not available");
+    // Try left hand first, then right hand
+    auto& client = client_lhand_enable_->service_is_ready() ? client_lhand_enable_ : client_rhand_enable_;
+    if (!client->service_is_ready()) {
+        RCLCPP_WARN(get_logger(), "Hand Enable service not available (neither lhand nor rhand)");
         return;
     }
     auto request = std::make_shared<lhandpro_interfaces::srv::SetEnable::Request>();
     request->joint_id = 0; // 0 = all joints
     request->enable = enable ? 1 : 0;
-    
+
     using ServiceT = lhandpro_interfaces::srv::SetEnable;
-    client_lhand_enable_->async_send_request(request, 
+    client->async_send_request(request,
         [this](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
-                RCLCPP_INFO(get_logger(), "LHand Enable result: %d", response->result);
+                RCLCPP_INFO(get_logger(), "Hand Enable result: %d", response->result);
             } catch (const std::exception &e) {
-                RCLCPP_ERROR(get_logger(), "LHand Enable failed: %s", e.what());
+                RCLCPP_ERROR(get_logger(), "Hand Enable failed: %s", e.what());
             }
         });
 }
 
 void RosNode::call_lhand_set_position(int joint_id, int position) {
-    if (!client_lhand_pos_->wait_for_service(std::chrono::seconds(1))) {
-        RCLCPP_WARN(get_logger(), "LHand SetPosition service not available");
+    auto& client = client_lhand_pos_->service_is_ready() ? client_lhand_pos_ : client_rhand_pos_;
+    if (!client->service_is_ready()) {
+        RCLCPP_WARN(get_logger(), "Hand SetPosition service not available");
         return;
     }
     auto request = std::make_shared<lhandpro_interfaces::srv::SetPosition::Request>();
     request->joint_id = joint_id;
     request->position = position;
-    
+
     using ServiceT = lhandpro_interfaces::srv::SetPosition;
-    client_lhand_pos_->async_send_request(request, 
+    client->async_send_request(request,
         [this](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
-                RCLCPP_INFO(get_logger(), "LHand SetPosition result: %d", response->result);
+                RCLCPP_INFO(get_logger(), "Hand SetPosition result: %d", response->result);
             } catch (const std::exception &e) {
-                RCLCPP_ERROR(get_logger(), "LHand SetPosition failed: %s", e.what());
+                RCLCPP_ERROR(get_logger(), "Hand SetPosition failed: %s", e.what());
             }
         });
 }
 
 void RosNode::call_lhand_set_all_position(const std::array<int, 6>& positions) {
-    if (!client_lhand_all_pos_->wait_for_service(std::chrono::seconds(1))) {
-        RCLCPP_WARN(get_logger(), "LHand SetAllPosition service not available");
+    auto& client = client_lhand_all_pos_->service_is_ready() ? client_lhand_all_pos_ : client_rhand_all_pos_;
+    if (!client->service_is_ready()) {
+        RCLCPP_WARN(get_logger(), "Hand SetAllPosition service not available");
         return;
     }
     auto request = std::make_shared<lhandpro_interfaces::srv::SetAllPosition::Request>();
-    // Copy array to request
     for(size_t i=0; i<6; ++i) {
         request->positions[i] = positions[i];
     }
-    
+
     using ServiceT = lhandpro_interfaces::srv::SetAllPosition;
-    client_lhand_all_pos_->async_send_request(request, 
+    client->async_send_request(request,
         [this](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
-                RCLCPP_INFO(get_logger(), "LHand SetAllPosition result: %d", response->result);
+                RCLCPP_INFO(get_logger(), "Hand SetAllPosition result: %d", response->result);
             } catch (const std::exception &e) {
-                RCLCPP_ERROR(get_logger(), "LHand SetAllPosition failed: %s", e.what());
+                RCLCPP_ERROR(get_logger(), "Hand SetAllPosition failed: %s", e.what());
             }
         });
 }
 
 void RosNode::call_lhand_set_velocity(int joint_id, int velocity) {
-    if (!client_lhand_vel_->wait_for_service(std::chrono::seconds(1))) {
-        RCLCPP_WARN(get_logger(), "LHand SetVelocity service not available");
+    auto& client = client_lhand_vel_->service_is_ready() ? client_lhand_vel_ : client_rhand_vel_;
+    if (!client->service_is_ready()) {
+        RCLCPP_WARN(get_logger(), "Hand SetVelocity service not available");
         return;
     }
     auto request = std::make_shared<lhandpro_interfaces::srv::SetPositionVelocity::Request>();
     request->joint_id = joint_id;
     request->velocity = velocity;
-    
+
     using ServiceT = lhandpro_interfaces::srv::SetPositionVelocity;
-    client_lhand_vel_->async_send_request(request, 
+    client->async_send_request(request,
         [this](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
-                RCLCPP_INFO(get_logger(), "LHand SetVelocity result: %d", response->result);
+                RCLCPP_INFO(get_logger(), "Hand SetVelocity result: %d", response->result);
             } catch (const std::exception &e) {
-                RCLCPP_ERROR(get_logger(), "LHand SetVelocity failed: %s", e.what());
+                RCLCPP_ERROR(get_logger(), "Hand SetVelocity failed: %s", e.what());
             }
         });
 }
 
 void RosNode::call_lhand_move(int joint_id) {
-    if (!client_lhand_move_->wait_for_service(std::chrono::seconds(1))) {
-        RCLCPP_WARN(get_logger(), "LHand Move service not available");
+    auto& client = client_lhand_move_->service_is_ready() ? client_lhand_move_ : client_rhand_move_;
+    if (!client->service_is_ready()) {
+        RCLCPP_WARN(get_logger(), "Hand Move service not available");
         return;
     }
     auto request = std::make_shared<lhandpro_interfaces::srv::MoveMotors::Request>();
     request->joint_id = joint_id;
-    
+
     using ServiceT = lhandpro_interfaces::srv::MoveMotors;
-    client_lhand_move_->async_send_request(request, 
+    client->async_send_request(request,
         [this](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
-                RCLCPP_INFO(get_logger(), "LHand Move result: %d", response->result);
+                RCLCPP_INFO(get_logger(), "Hand Move result: %d", response->result);
             } catch (const std::exception &e) {
-                RCLCPP_ERROR(get_logger(), "LHand Move failed: %s", e.what());
+                RCLCPP_ERROR(get_logger(), "Hand Move failed: %s", e.what());
             }
         });
 }
 
+void RosNode::call_rhand_set_all_position(const std::array<int, 6>& positions) {
+    if (!client_rhand_all_pos_->service_is_ready()) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "RHand SetAllPosition service not available");
+        return;
+    }
+    auto request = std::make_shared<lhandpro_interfaces::srv::SetAllPosition::Request>();
+    for(size_t i=0; i<6; ++i) {
+        request->positions[i] = positions[i];
+    }
+    using ServiceT = lhandpro_interfaces::srv::SetAllPosition;
+    client_rhand_all_pos_->async_send_request(request,
+        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+            try { future.get(); } catch (...) {}
+        });
+}
+
+void RosNode::call_rhand_move(int joint_id) {
+    if (!client_rhand_move_->service_is_ready()) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "RHand Move service not available");
+        return;
+    }
+    auto request = std::make_shared<lhandpro_interfaces::srv::MoveMotors::Request>();
+    request->joint_id = joint_id;
+    using ServiceT = lhandpro_interfaces::srv::MoveMotors;
+    client_rhand_move_->async_send_request(request,
+        [this](rclcpp::Client<ServiceT>::SharedFuture future) {
+            try { future.get(); } catch (...) {}
+        });
+}
+
 void RosNode::call_lhand_home(int joint_id, std::function<void(int)> callback) {
-    if (!client_lhand_home_->wait_for_service(std::chrono::seconds(1))) {
-        RCLCPP_WARN(get_logger(), "LHand Home service not available");
+    auto& client = client_lhand_home_->service_is_ready() ? client_lhand_home_ : client_rhand_home_;
+    if (!client->service_is_ready()) {
+        RCLCPP_WARN(get_logger(), "Hand Home service not available");
         if (callback) callback(-1);
         return;
     }
@@ -804,37 +849,38 @@ void RosNode::call_lhand_home(int joint_id, std::function<void(int)> callback) {
     request->joint_id = joint_id;
 
     using ServiceT = lhandpro_interfaces::srv::HomeMotors;
-    client_lhand_home_->async_send_request(request,
+    client->async_send_request(request,
         [this, callback](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
-                RCLCPP_INFO(get_logger(), "LHand Home result: %d", response->result);
+                RCLCPP_INFO(get_logger(), "Hand Home result: %d", response->result);
                 if (callback) callback(response->result);
             } catch (const std::exception &e) {
-                RCLCPP_ERROR(get_logger(), "LHand Home failed: %s", e.what());
+                RCLCPP_ERROR(get_logger(), "Hand Home failed: %s", e.what());
                 if (callback) callback(-1);
             }
         });
 }
 
 void RosNode::call_lhand_get_position(int joint_id, std::function<void(int)> callback) {
-    if (!client_lhand_get_now_pos_->wait_for_service(std::chrono::seconds(1))) {
-        RCLCPP_WARN(get_logger(), "LHand GetNowPosition service not available");
-        if(callback) callback(-1); 
+    auto& client = client_lhand_get_now_pos_->service_is_ready() ? client_lhand_get_now_pos_ : client_rhand_get_now_pos_;
+    if (!client->service_is_ready()) {
+        RCLCPP_WARN(get_logger(), "Hand GetNowPosition service not available");
+        if(callback) callback(-1);
         return;
     }
     auto request = std::make_shared<lhandpro_interfaces::srv::GetNowPosition::Request>();
     request->joint_id = joint_id;
-    
+
     using ServiceT = lhandpro_interfaces::srv::GetNowPosition;
-    client_lhand_get_now_pos_->async_send_request(request, 
+    client->async_send_request(request,
         [this, callback](rclcpp::Client<ServiceT>::SharedFuture future) {
             try {
                 auto response = future.get();
-                RCLCPP_INFO(get_logger(), "LHand GetNowPosition result: %d", response->position);
+                RCLCPP_INFO(get_logger(), "Hand GetNowPosition result: %d", response->position);
                 if(callback) callback(response->position);
             } catch (const std::exception &e) {
-                RCLCPP_ERROR(get_logger(), "LHand GetNowPosition failed: %s", e.what());
+                RCLCPP_ERROR(get_logger(), "Hand GetNowPosition failed: %s", e.what());
                 if(callback) callback(-1);
             }
         });

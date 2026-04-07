@@ -44,3 +44,11 @@
    source /opt/ros/humble/setup.bash
    ros2 topic list
    timeout 3 ros2 topic echo /ui/heartbeat
+
+
+### eartest.quick.sh - 快速耳机检测测试脚本（支持复用基线）                                                                                 
+用法:                                                                                                                                   
+bash eartest.quick.sh                    # 自动检测相机，首次采集基线后自动保存                                                       
+bash eartest.quick.sh --reuse            # 复用上次保存的基线（无需摘耳机！）                                                         
+bash eartest.quick.sh --baseline <路径>  # 指定基线目录                                                                               
+bash eartest.quick.sh <相机命名空间>     # 指定相机                                                                                   

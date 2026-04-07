@@ -21,7 +21,8 @@ def generate_launch_description():
             output='screen',                 # 输出日志到终端
             emulate_tty=True,                 # 更好地显示日志
             parameters=[{
-                'ethercat_channel': LaunchConfiguration('ethercat_channel')
-            }]            
+                'ethercat_channel': LaunchConfiguration('ethercat_channel'),
+                'hand_side': 'left',
+            }]
         )
     ])

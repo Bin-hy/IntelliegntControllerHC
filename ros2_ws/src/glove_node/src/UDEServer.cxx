@@ -76,6 +76,7 @@ void UDEGloveSDK::recv_func(int sock_fd_, std::atomic<bool>* running)
     while(*running)
     {
         memset(buffer, 0, sizeof(buffer));
+        addr_len = sizeof(addr);
         ssize_t len = recvfrom(sock_fd_, buffer, sizeof(buffer), 0, reinterpret_cast<struct sockaddr *>(&addr), &addr_len);
         if(len > 0)
         {
@@ -88,7 +89,6 @@ void UDEGloveSDK::recv_func(int sock_fd_, std::atomic<bool>* running)
                 const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
                 if(!reader->parse(str.c_str(), str.c_str() + rawJsonLength, &value, &err))
                 {
-                    cout << "Error" << endl;
                     continue;
                 }
             }
@@ -299,57 +299,52 @@ map<string, float> UDEGloveSDK::GetControllerData(string RoleName)
 
 vector<Vector3Float> UDEGloveSDK::GetVecFingerData(string RoleName)
 {
-    cout << "[DEBUG] Enter GetVecFingerData" << endl;
     if(gloveDataList.size() == 0) return GloveVecRes;
     for(auto &gloves: gloveDataList)
     {
         if(gloves.roleName == RoleName)
         {
-            if(gloves.handDatas.fingerJoints.fingerJoint_L.size() != 25) {
-                cerr << "Error: Insufficient left hand joint data" << endl;
-                return GloveVecRes;
+            // 左手数据 (indices 0-14): 数据不足时保持上一次的值，不阻塞右手
+            if(gloves.handDatas.fingerJoints.fingerJoint_L.size() >= 25) {
+                auto &joints_L = gloves.handDatas.fingerJoints.fingerJoint_L;
+
+                GloveVecRes[0] = Vector3Float(joints_L[HandJointIndex::Thumb1X].value, joints_L[HandJointIndex::Thumb1Y].value, joints_L[HandJointIndex::Thumb1Z].value);
+                GloveVecRes[1] = Vector3Float(joints_L[HandJointIndex::Thumb2X].value, 0, 0);
+                GloveVecRes[2] = Vector3Float(joints_L[HandJointIndex::Thumb3X].value, 0, 0);
+                GloveVecRes[3] = Vector3Float(joints_L[HandJointIndex::Index1X].value, joints_L[HandJointIndex::Index1Y].value, joints_L[HandJointIndex::Index1Z].value);
+                GloveVecRes[4] = Vector3Float(joints_L[HandJointIndex::Index2X].value, 0, 0);
+                GloveVecRes[5] = Vector3Float(joints_L[HandJointIndex::Index3X].value, 0, 0);
+                GloveVecRes[6] = Vector3Float(joints_L[HandJointIndex::Middle1X].value, joints_L[HandJointIndex::Middle1Y].value, 0);
+                GloveVecRes[7] = Vector3Float(joints_L[HandJointIndex::Middle2X].value, 0, 0);
+                GloveVecRes[8] = Vector3Float(joints_L[HandJointIndex::Middle3X].value, 0, 0);
+                GloveVecRes[9] = Vector3Float(joints_L[HandJointIndex::Ring1X].value, joints_L[HandJointIndex::Ring1Y].value, 0);
+                GloveVecRes[10] = Vector3Float(joints_L[HandJointIndex::Ring2X].value, 0, 0);
+                GloveVecRes[11] = Vector3Float(joints_L[HandJointIndex::Ring3X].value, 0, 0);
+                GloveVecRes[12] = Vector3Float(joints_L[HandJointIndex::Pinky1X].value, joints_L[HandJointIndex::Pinky1Y].value, joints_L[HandJointIndex::Pinky1Z].value);
+                GloveVecRes[13] = Vector3Float(joints_L[HandJointIndex::Pinky2X].value, 0, 0);
+                GloveVecRes[14] = Vector3Float(joints_L[HandJointIndex::Pinky3X].value, 0, 0);
             }
-            
-            auto &joints_L = gloves.handDatas.fingerJoints.fingerJoint_L;
 
-            GloveVecRes[0] = Vector3Float(joints_L[HandJointIndex::Thumb1X].value, joints_L[HandJointIndex::Thumb1Y].value, joints_L[HandJointIndex::Thumb1Z].value);
-            GloveVecRes[1] = Vector3Float(joints_L[HandJointIndex::Thumb2X].value, 0, 0);
-            GloveVecRes[2] = Vector3Float(joints_L[HandJointIndex::Thumb3X].value, 0, 0);
-            GloveVecRes[3] = Vector3Float(joints_L[HandJointIndex::Index1X].value, joints_L[HandJointIndex::Index1Y].value, joints_L[HandJointIndex::Index1Z].value);
-            GloveVecRes[4] = Vector3Float(joints_L[HandJointIndex::Index2X].value, 0, 0);
-            GloveVecRes[5] = Vector3Float(joints_L[HandJointIndex::Index3X].value, 0, 0);
-            GloveVecRes[6] = Vector3Float(joints_L[HandJointIndex::Middle1X].value, joints_L[HandJointIndex::Middle1Y].value, 0);
-            GloveVecRes[7] = Vector3Float(joints_L[HandJointIndex::Middle2X].value, 0, 0);
-            GloveVecRes[8] = Vector3Float(joints_L[HandJointIndex::Middle3X].value, 0, 0);
-            GloveVecRes[9] = Vector3Float(joints_L[HandJointIndex::Ring1X].value, joints_L[HandJointIndex::Ring1Y].value, 0);
-            GloveVecRes[10] = Vector3Float(joints_L[HandJointIndex::Ring2X].value, 0, 0);
-            GloveVecRes[11] = Vector3Float(joints_L[HandJointIndex::Ring3X].value, 0, 0);
-            GloveVecRes[12] = Vector3Float(joints_L[HandJointIndex::Pinky1X].value, joints_L[HandJointIndex::Pinky1Y].value, joints_L[HandJointIndex::Pinky1Z].value);
-            GloveVecRes[13] = Vector3Float(joints_L[HandJointIndex::Pinky2X].value, 0, 0);
-            GloveVecRes[14] = Vector3Float(joints_L[HandJointIndex::Pinky3X].value, 0, 0);
+            // 右手数据 (indices 15-29): 数据不足时保持上一次的值，不阻塞左手
+            if(gloves.handDatas.fingerJoints.fingerJoint_R.size() >= 25) {
+                auto &joints_R = gloves.handDatas.fingerJoints.fingerJoint_R;
 
-            if(gloves.handDatas.fingerJoints.fingerJoint_R.size() != 25) {
-                cerr << "Error: Insufficient right hand joint data" << endl;
-                return GloveVecRes;
+                GloveVecRes[15] = Vector3Float(joints_R[HandJointIndex::Thumb1X].value, joints_R[HandJointIndex::Thumb1Y].value, joints_R[HandJointIndex::Thumb1Z].value);
+                GloveVecRes[16] = Vector3Float(joints_R[HandJointIndex::Thumb2X].value, 0, 0);
+                GloveVecRes[17] = Vector3Float(joints_R[HandJointIndex::Thumb3X].value, 0, 0);
+                GloveVecRes[18] = Vector3Float(joints_R[HandJointIndex::Index1X].value, joints_R[HandJointIndex::Index1Y].value, joints_R[HandJointIndex::Index1Z].value);
+                GloveVecRes[19] = Vector3Float(joints_R[HandJointIndex::Index2X].value, 0, 0);
+                GloveVecRes[20] = Vector3Float(joints_R[HandJointIndex::Index3X].value, 0, 0);
+                GloveVecRes[21] = Vector3Float(joints_R[HandJointIndex::Middle1X].value, joints_R[HandJointIndex::Middle1Y].value, 0);
+                GloveVecRes[22] = Vector3Float(joints_R[HandJointIndex::Middle2X].value, 0, 0);
+                GloveVecRes[23] = Vector3Float(joints_R[HandJointIndex::Middle3X].value, 0, 0);
+                GloveVecRes[24] = Vector3Float(joints_R[HandJointIndex::Ring1X].value, joints_R[HandJointIndex::Ring1Y].value, 0);
+                GloveVecRes[25] = Vector3Float(joints_R[HandJointIndex::Ring2X].value, 0, 0);
+                GloveVecRes[26] = Vector3Float(joints_R[HandJointIndex::Ring3X].value, 0, 0);
+                GloveVecRes[27] = Vector3Float(joints_R[HandJointIndex::Pinky1X].value, joints_R[HandJointIndex::Pinky1Y].value, joints_R[HandJointIndex::Pinky1Z].value);
+                GloveVecRes[28] = Vector3Float(joints_R[HandJointIndex::Pinky2X].value, 0, 0);
+                GloveVecRes[29] = Vector3Float(joints_R[HandJointIndex::Pinky3X].value, 0, 0);
             }
-            
-            auto &joints_R = gloves.handDatas.fingerJoints.fingerJoint_R;
-
-            GloveVecRes[15] = Vector3Float(joints_R[HandJointIndex::Thumb1X].value, joints_R[HandJointIndex::Thumb1Y].value, joints_R[HandJointIndex::Thumb1Z].value);
-            GloveVecRes[16] = Vector3Float(joints_R[HandJointIndex::Thumb2X].value, 0, 0);
-            GloveVecRes[17] = Vector3Float(joints_R[HandJointIndex::Thumb3X].value, 0, 0);
-            GloveVecRes[18] = Vector3Float(joints_R[HandJointIndex::Index1X].value, joints_R[HandJointIndex::Index1Y].value, joints_R[HandJointIndex::Index1Z].value);
-            GloveVecRes[19] = Vector3Float(joints_R[HandJointIndex::Index2X].value, 0, 0);
-            GloveVecRes[20] = Vector3Float(joints_R[HandJointIndex::Index3X].value, 0, 0);
-            GloveVecRes[21] = Vector3Float(joints_R[HandJointIndex::Middle1X].value, joints_R[HandJointIndex::Middle1Y].value, 0);
-            GloveVecRes[22] = Vector3Float(joints_R[HandJointIndex::Middle2X].value, 0, 0);
-            GloveVecRes[23] = Vector3Float(joints_R[HandJointIndex::Middle3X].value, 0, 0);
-            GloveVecRes[24] = Vector3Float(joints_R[HandJointIndex::Ring1X].value, joints_R[HandJointIndex::Ring1Y].value, 0);
-            GloveVecRes[25] = Vector3Float(joints_R[HandJointIndex::Ring2X].value, 0, 0);
-            GloveVecRes[26] = Vector3Float(joints_R[HandJointIndex::Ring3X].value, 0, 0);
-            GloveVecRes[27] = Vector3Float(joints_R[HandJointIndex::Pinky1X].value, joints_R[HandJointIndex::Pinky1Y].value, joints_R[HandJointIndex::Pinky1Z].value);
-            GloveVecRes[28] = Vector3Float(joints_R[HandJointIndex::Pinky2X].value, 0, 0);
-            GloveVecRes[29] = Vector3Float(joints_R[HandJointIndex::Pinky3X].value, 0, 0);
 
             return GloveVecRes;
         }

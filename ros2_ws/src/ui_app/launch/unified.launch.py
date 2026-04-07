@@ -10,7 +10,7 @@ from launch.event_handlers import OnProcessExit
 def generate_launch_description():
     # Args
     robot_ip_arg = DeclareLaunchArgument(
-        'robot_ip', 
+        'robot_ip',
         default_value='192.168.1.10',
         description='Robot IP Address'
     )
@@ -25,6 +25,12 @@ def generate_launch_description():
         'ethercat_channel',
         default_value='1',
         description='EtherCAT network interface channel index'
+    )
+
+    hand_side_arg = DeclareLaunchArgument(
+        'hand_side',
+        default_value='left',
+        description='Which DH116 hand is connected: left or right'
     )
 
     camera1_serial_arg = DeclareLaunchArgument(
@@ -51,6 +57,19 @@ def generate_launch_description():
         description='RS485 serial port for lift platform servo driver'
     )
 
+    # ---- Derived substitutions based on hand_side ----
+    hand_side = LaunchConfiguration('hand_side')
+
+    # Namespace: "left" -> "/lhandpro_service", "right" -> "/rhandpro_service"
+    hand_namespace = PythonExpression([
+        "'lhandpro_service' if '", hand_side, "' == 'left' else 'rhandpro_service'"
+    ])
+
+    # Joint prefix: "left" -> "L_", "right" -> "R_"
+    hand_joint_prefix = PythonExpression([
+        "'L_' if '", hand_side, "' == 'left' else 'R_'"
+    ])
+
     # 1. Vision System (Camera + Image Saver)
     # Launches Orbbec cameras + Vision Server Nodes
     vision_pkg = FindPackageShare('vision_server')
@@ -67,7 +86,7 @@ def generate_launch_description():
     duco_pkg = FindPackageShare('duco_ros_driver')
     robot_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([duco_pkg, '/launch/start_robot.launch.py']),
-        launch_arguments={'robot_ip': LaunchConfiguration('robot_ip')}.items() 
+        launch_arguments={'robot_ip': LaunchConfiguration('robot_ip')}.items()
     )
 
     # Robot State Publisher (TF Bridge)
@@ -85,11 +104,11 @@ def generate_launch_description():
         'urdf',
         urdf_file_name
     ])
-    
+
     # We need the CONTENT of the URDF for robot_state_publisher
     # Command will execute cat at runtime
     robot_description_content = ParameterValue(Command(['cat ', urdf_path]), value_type=str)
-    
+
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -98,28 +117,43 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_description_content}]
     )
 
-    # 3. LHandPro Service
-    lhand_pkg = FindPackageShare('lhandpro_service')
-    lhand_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([lhand_pkg, '/launch/lhandpro.launch.py']),
-        launch_arguments={'ethercat_channel': LaunchConfiguration('ethercat_channel')}.items()
+    # 3. Hand Service (single instance, namespace determined by hand_side)
+    # "left"  -> namespace /lhandpro_service  (matches system_controller's "lhand" target)
+    # "right" -> namespace /rhandpro_service  (matches system_controller's "rhand" target)
+    hand_service_node = Node(
+        package='lhandpro_service',
+        executable='lhandpro_service',
+        name=PythonExpression(["'lhandpro_service' if '", hand_side, "' == 'left' else 'rhandpro_service'"]),
+        namespace=PythonExpression(["'/' + ('lhandpro_service' if '", hand_side, "' == 'left' else 'rhandpro_service')"]),
+        output='screen',
+        emulate_tty=True,
+        parameters=[{
+            'ethercat_channel': LaunchConfiguration('ethercat_channel'),
+            'hand_side': hand_side,
+        }]
     )
 
-    # LHand Description & State Publisher
+    # Hand Description & State Publisher
     lhand_desc_pkg = FindPackageShare('dh116_l000_a1')
     lhand_urdf_path = PathJoinSubstitution([lhand_desc_pkg, 'urdf', 'DH116-L000-A1.urdf'])
     rhand_desc_pkg = FindPackageShare('dh116_r000_a1')
     rhand_urdf_path = PathJoinSubstitution([rhand_desc_pkg, 'urdf', 'DH116-R000-A1.urdf'])
 
-    # Hand joint state publisher (publishes L_finger* names to /joint_states)
-    # The combined robot_state_publisher above handles TF for the full chain
-    # (base_link -> link_6 -> L_base_link -> L_finger*_Link)
-    lhand_state_publisher = Node(
+    # Angles topic follows the namespace: /lhandpro_service/now_angles or /rhandpro_service/now_angles
+    hand_angles_topic = PythonExpression([
+        "'/lhandpro_service/now_angles' if '", hand_side, "' == 'left' else '/rhandpro_service/now_angles'"
+    ])
+
+    # Hand joint state publisher (publishes L_finger* or R_finger* names to /joint_states)
+    hand_state_publisher = Node(
         package='lhandpro_description',
         executable='lhandpro_state_publisher',
         name='lhandpro_state_publisher',
         output='screen',
-        parameters=[{'joint_prefix': 'L_'}]
+        parameters=[{
+            'joint_prefix': hand_joint_prefix,
+            'angles_topic': hand_angles_topic,
+        }]
     )
 
     # 4. Lift Platform Server (RS485 Modbus RTU)
@@ -143,9 +177,12 @@ def generate_launch_description():
         output='screen'
     )
 
+    # 5.5. Glove-Hand control is now integrated into ui_app's Glove Tab
+    #      (no separate glove_node or glove_hand_bridge needed)
+
     # 6. UI App
     # Launched last with a delay
-    
+
     # Construct URDF path for UI
     urdf_file_name = PythonExpression([
         "'duco_gcr5_910_with_dh116_lhand.urdf' if '",
@@ -190,6 +227,7 @@ def generate_launch_description():
         robot_ip_arg,
         model_arg,
         ethercat_channel_arg,
+        hand_side_arg,
         camera1_serial_arg,
         camera2_serial_arg,
         depth_camera_serial_arg,
@@ -197,8 +235,8 @@ def generate_launch_description():
         vision_launch,
         robot_launch,
         robot_state_publisher_node,
-        lhand_launch,
-        lhand_state_publisher,
+        hand_service_node,
+        hand_state_publisher,
         lift_server_node,
         sys_ctrl_node,
         ui_delayed,

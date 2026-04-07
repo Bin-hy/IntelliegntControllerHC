@@ -22,3 +22,31 @@ source install/setup.bash
 # 指定机器臂的ip和机器手的网卡id
 ros2 launch ui_app unified.launch.py robot_ip:=192.168.1.10 ethercat_channel:=0 
 ```
+
+## 宇叠动捕手套
+
+```bash
+sudo systemctl restart hdservice # 重启hd服务
+sudo systemctl start hdservice  # 启动hd服务
+sudo systemctl status hdservice # 查看hd服务状态
+```
+
+浏览器：访问http://localhost:8088/
+```
+hwtws@hwtws-O-E-M:~/IntelliegntControllerHC/ros2_ws$ ros2 service call /glove_hand_bridge/enable std_srvs/srv/SetBool "{data: true}"
+waiting for service to become available...
+requester: making request: std_srvs.srv.SetBool_Request(data=True)
+
+response:
+std_srvs.srv.SetBool_Response(success=True, message='Glove-hand bridge enabled')
+
+```
+
+## lift平台任务队列设置
+运行运动到指定位置后停止
+接收到指令回零
+
+在断使能的时候设置参数
+使能状态下不能设置脉冲和速度的
+
+

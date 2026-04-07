@@ -3,6 +3,7 @@
 #include "ui_app/i18n_manager.hpp"
 #include "UDEServer.h"
 #include <cmath>
+#include <algorithm>
 #include <QProcess>
 #include <QApplication>
 #include <QVBoxLayout>
@@ -2247,6 +2248,39 @@ QWidget* AppWindow::createGloveTab() {
     group_ctrl->setLayout(layout_ctrl);
     layout->addWidget(group_ctrl);
 
+    // --- Hand Control ---
+    auto * group_hand = new QGroupBox(tr_ui("灵巧手控制", "Hand Control"));
+    auto * layout_hand = new QHBoxLayout();
+
+    chk_glove_hand_ctrl_ = new QCheckBox(tr_ui("启用手套控制灵巧手", "Enable Glove → Hand Control"));
+    layout_hand->addWidget(chk_glove_hand_ctrl_);
+
+    layout_hand->addWidget(new QLabel(tr_ui("手套侧:", "Glove side:")));
+    combo_glove_hand_side_ = new QComboBox();
+    combo_glove_hand_side_->addItem(tr_ui("左手", "Left Hand"), "left");
+    combo_glove_hand_side_->addItem(tr_ui("右手", "Right Hand"), "right");
+    layout_hand->addWidget(combo_glove_hand_side_);
+
+    label_glove_hand_status_ = new QLabel(tr_ui("未启用", "Disabled"));
+    label_glove_hand_status_->setStyleSheet("font-weight: bold; color: gray;");
+    layout_hand->addWidget(label_glove_hand_status_);
+
+    layout_hand->addStretch();
+    group_hand->setLayout(layout_hand);
+    layout->addWidget(group_hand);
+
+    connect(chk_glove_hand_ctrl_, &QCheckBox::toggled, this, [this](bool checked){
+        if (checked) {
+            glove_hand_last_sent_.fill(-1);  // force first send
+            glove_hand_request_in_flight_ = false;
+            label_glove_hand_status_->setText(tr_ui("控制中", "Active"));
+            label_glove_hand_status_->setStyleSheet("font-weight: bold; color: green;");
+        } else {
+            label_glove_hand_status_->setText(tr_ui("未启用", "Disabled"));
+            label_glove_hand_status_->setStyleSheet("font-weight: bold; color: gray;");
+        }
+    });
+
     // --- Connections ---
     connect(btn_glove_start_, &QPushButton::clicked, this, [this](){
         if (!glove_sdk_) {
@@ -2329,4 +2363,90 @@ void AppWindow::updateGloveData() {
             label_glove_ctrl_[i]->setText(QString::number(ctrl[i], 'f', 2));
         }
     }
+
+    // --- Glove → Hand control ---
+    if (chk_glove_hand_ctrl_ && chk_glove_hand_ctrl_->isChecked()) {
+        sendGloveToHand(finger_data);
+    }
+}
+
+int AppWindow::gloveAngleToPosition(double deg, double min_deg, double max_deg) const {
+    if (max_deg <= min_deg) return 0;
+    double ratio = (deg - min_deg) / (max_deg - min_deg);
+    ratio = std::clamp(ratio, 0.0, 1.0);
+    return static_cast<int>(ratio * 10000);
+}
+
+void AppWindow::sendGloveToHand(const std::vector<Vector3Float>& finger_data) {
+    if (glove_hand_request_in_flight_) return;
+    if ((int)finger_data.size() < 30) return;
+
+    // Determine which hand's glove data to use (0=left glove, 15=right glove)
+    int offset = 0;
+    if (combo_glove_hand_side_ && combo_glove_hand_side_->currentData().toString() == "right") {
+        offset = 15;
+    }
+
+    // Mapping constants (degrees)
+    const double FLEX_MIN = 0.0, FLEX_MAX = 90.0;
+    const double SPREAD_MIN = -30.0, SPREAD_MAX = 30.0;
+    const int DEADZONE = 200; // position units (~2 degrees)
+
+    // Motor 1: Thumb spread (Thumb1.Y = abduction)
+    double thumb_spread = finger_data[offset + 0].y;
+    int pos0 = gloveAngleToPosition(thumb_spread, SPREAD_MIN, SPREAD_MAX);
+
+    // Motor 2: Thumb bend (average flexion of 3 thumb joints)
+    double thumb_flex = (std::abs(finger_data[offset + 0].x) +
+                         std::abs(finger_data[offset + 1].x) +
+                         std::abs(finger_data[offset + 2].x)) / 3.0;
+    int pos1 = gloveAngleToPosition(thumb_flex, FLEX_MIN, FLEX_MAX);
+
+    // Motor 3: Index bend
+    double index_flex = (std::abs(finger_data[offset + 3].x) +
+                         std::abs(finger_data[offset + 4].x) +
+                         std::abs(finger_data[offset + 5].x)) / 3.0;
+    int pos2 = gloveAngleToPosition(index_flex, FLEX_MIN, FLEX_MAX);
+
+    // Motor 4: Middle bend
+    double middle_flex = (std::abs(finger_data[offset + 6].x) +
+                          std::abs(finger_data[offset + 7].x) +
+                          std::abs(finger_data[offset + 8].x)) / 3.0;
+    int pos3 = gloveAngleToPosition(middle_flex, FLEX_MIN, FLEX_MAX);
+
+    // Motor 5: Ring bend
+    double ring_flex = (std::abs(finger_data[offset + 9].x) +
+                        std::abs(finger_data[offset + 10].x) +
+                        std::abs(finger_data[offset + 11].x)) / 3.0;
+    int pos4 = gloveAngleToPosition(ring_flex, FLEX_MIN, FLEX_MAX);
+
+    // Motor 6: Pinky bend
+    double pinky_flex = (std::abs(finger_data[offset + 12].x) +
+                         std::abs(finger_data[offset + 13].x) +
+                         std::abs(finger_data[offset + 14].x)) / 3.0;
+    int pos5 = gloveAngleToPosition(pinky_flex, FLEX_MIN, FLEX_MAX);
+
+    std::array<int, 6> positions = {pos0, pos1, pos2, pos3, pos4, pos5};
+
+    // Deadzone: skip if nothing changed significantly
+    bool changed = false;
+    for (int i = 0; i < 6; ++i) {
+        if (std::abs(positions[i] - glove_hand_last_sent_[i]) >= DEADZONE) {
+            changed = true;
+            break;
+        }
+    }
+    if (!changed) return;
+
+    glove_hand_last_sent_ = positions;
+    glove_hand_request_in_flight_ = true;
+
+    // call_lhand_* auto-fallbacks to rhand if lhand is not available
+    node_->call_lhand_set_all_position(positions);
+
+    // Trigger move after a short delay to let set_all_position complete
+    QTimer::singleShot(30, this, [this]() {
+        node_->call_lhand_move(0);  // 0 = move all joints
+        glove_hand_request_in_flight_ = false;
+    });
 }

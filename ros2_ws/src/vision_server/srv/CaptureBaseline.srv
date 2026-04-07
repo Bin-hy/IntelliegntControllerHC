@@ -1,4 +1,11 @@
 # Capture current depth frame as the baseline (ear-only, no earphone)
+#
+# load_path: (optional) path to a previously saved baseline directory.
+#   - empty string  → capture live from camera and auto-save to save_dir
+#   - valid path    → load baseline data from that directory (skip camera)
+string load_path
 ---
 bool success
 string message
+# Path where baseline data was saved (for reuse in future runs)
+string saved_baseline_path
