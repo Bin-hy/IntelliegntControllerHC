@@ -2424,7 +2424,7 @@ private:
         }
 
         RCLCPP_INFO(get_logger(), "Results saved to %s", dir.string().c_str());
-        return dir.string();
+        return (dir / "debug_overlay.png").string();
     }
 
     std::string save_debug_failure(
@@ -2536,7 +2536,7 @@ private:
         }
 
         RCLCPP_INFO(get_logger(), "Failure diagnostics saved to %s", dir.string().c_str());
-        return dir.string();
+        return (dir / "debug_overlay.png").string();
     }
 
     // ========================================================================

@@ -849,6 +849,89 @@ private:
                              const std::string& run_time,
                              int round_index,
                              int step_index) {
+        // --- Redirect vision steps stored as camera types ---
+        // UI stores vision_baseline/vision_measure as step.type="camera"
+        // with camera_type=["vision_baseline"] or ["vision_measure"].
+        // Redirect to the appropriate vision service here.
+        bool has_vision_baseline = false, has_vision_measure = false;
+        for (const auto& ct : step.camera_type) {
+            if (ct == "vision_baseline") has_vision_baseline = true;
+            if (ct == "vision_measure")  has_vision_measure = true;
+        }
+
+        if (has_vision_baseline) {
+            if (!client_vision_baseline_->wait_for_service(2s)) {
+                RCLCPP_ERROR(this->get_logger(), "CaptureBaseline service not available");
+                last_step_error_ = "BASELINE_SERVICE_UNAVAILABLE";
+                return false;
+            }
+            auto req = std::make_shared<vision_server::srv::CaptureBaseline::Request>();
+            auto future = client_vision_baseline_->async_send_request(req);
+            auto t0 = std::chrono::steady_clock::now();
+            while (rclcpp::ok()) {
+                if (future.wait_for(100ms) == std::future_status::ready) break;
+                if (goal_handle->is_canceling()) return false;
+                if (std::chrono::steady_clock::now() - t0 > 5s) {
+                    last_step_error_ = "BASELINE_TIMEOUT";
+                    return false;
+                }
+            }
+            try {
+                auto res = future.get();
+                if (res->success) {
+                    auto feedback = std::make_shared<ExecuteTask::Feedback>();
+                    feedback->current_step_index = step_index;
+                    feedback->current_status = "VISION_BASELINE_OK:" + res->message;
+                    if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
+                    RCLCPP_INFO(this->get_logger(), "Baseline captured: %s", res->message.c_str());
+                } else {
+                    last_step_error_ = "BASELINE_FAILED:" + res->message;
+                    return false;
+                }
+            } catch (const std::exception& e) {
+                last_step_error_ = "BASELINE_EXCEPTION:" + std::string(e.what());
+                return false;
+            }
+            return true;
+        }
+
+        if (has_vision_measure) {
+            if (!client_vision_measure_->wait_for_service(2s)) {
+                RCLCPP_WARN(this->get_logger(), "MeasureEarphone service not available — skipping");
+                auto feedback = std::make_shared<ExecuteTask::Feedback>();
+                feedback->current_step_index = step_index;
+                feedback->current_status = "VISION_RESULT:0,0,0,";
+                if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
+                return true;  // soft-fail
+            }
+            auto req = std::make_shared<vision_server::srv::MeasureEarphone::Request>();
+            req->file_tag = sanitize_component(task_name) + "/" + run_time;
+            auto future = client_vision_measure_->async_send_request(req);
+            auto t0 = std::chrono::steady_clock::now();
+            while (rclcpp::ok()) {
+                if (future.wait_for(100ms) == std::future_status::ready) break;
+                if (goal_handle->is_canceling()) break;
+                if (std::chrono::steady_clock::now() - t0 > 10s) break;
+            }
+            auto feedback = std::make_shared<ExecuteTask::Feedback>();
+            feedback->current_step_index = step_index;
+            try {
+                auto res = future.get();
+                std::ostringstream oss;
+                oss << "VISION_RESULT:" << res->angle_deg << "," << res->depth_mm
+                    << "," << res->confidence << "," << res->saved_path;
+                feedback->current_status = oss.str();
+                RCLCPP_INFO(this->get_logger(),
+                    "耳机测量: 角度=%.1f° 深度=%.1fmm 置信度=%.2f",
+                    res->angle_deg, res->depth_mm, res->confidence);
+            } catch (...) {
+                feedback->current_status = "VISION_RESULT:0,0,0,";
+            }
+            if (!goal_handle->is_canceling()) goal_handle->publish_feedback(feedback);
+            return true;  // soft-fail
+        }
+
+        // --- Normal camera capture path ---
         auto client_primary = this->create_client<vision_server::srv::SaveImage>("/image_saver/save_image");
         auto client_fallback = this->create_client<vision_server::srv::SaveImage>("save_image");
         rclcpp::Client<vision_server::srv::SaveImage>::SharedPtr client;

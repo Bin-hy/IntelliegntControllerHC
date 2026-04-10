@@ -1197,7 +1197,12 @@ void TaskRunDialog::onTaskResult(const rclcpp_action::ClientGoalHandle<common_ms
     }
 
     if (record_manager_) {
-        record_manager_->saveRecord(current_record_);
+        // 延迟保存: SAVED_FILE feedback 走 topic, result 走 service response,
+        // 两条通道独立调度, result 可能先于 feedback 被 spin_some() 处理。
+        // 推迟 300ms 确保所有 in-flight SAVED_FILE feedback 已写入 current_record_。
+        QTimer::singleShot(300, this, [this]() {
+            if (record_manager_) record_manager_->saveRecord(current_record_);
+        });
     }
 }
 

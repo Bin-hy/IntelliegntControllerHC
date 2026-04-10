@@ -144,7 +144,8 @@ public:
 
     // ===== 第1步: 初始化并回零 =====
     // 前端QT输入: 速度RPM + 回原点按钮, 只执行一次
-    bool enable(uint16_t speed) {
+    // homing_trigger: 外部注入的回零回调 (DIO10: true→1s→false), 由调用方传入
+    bool enable(uint16_t speed, std::function<bool()> homing_trigger = nullptr) {
         // 0. 清除换步信号 P535=0 (电平归零)
         bus_.write_register(0x0523, 0x0000);
 
@@ -164,6 +165,9 @@ public:
         // 4. 使能电机 P520: 写0x0010 (上升沿, 触发SI3回原点)
         usleep(100000); // 延时100ms
         if (!bus_.write_register(0x0514, 0x0010)) return false;
+
+        // 5. 触发回零信号: DIO10 置true → 等待1s → 置false
+        if (homing_trigger && !homing_trigger()) return false;
 
         return true;
     }
@@ -343,14 +347,12 @@ private:
                 return;
             }
 
-            // 2) 使能电机+写速度+回零
-            ok = lift_.enable(speed);
-
-            // 3) DIO10触发回零信号 (true→1s→false)
-            if (ok) {
-                if (!dio_.trigger_homing()) {
-                    RCLCPP_WARN(get_logger(), "DIO10 homing trigger failed, motor enabled but homing may not start");
-                }
+            // 2) 使能电机+写速度, 并在使能完成后内部触发 DIO10 回零脉冲
+            ok = lift_.enable(speed, [this]() -> bool {
+                return dio_.trigger_homing();
+            });
+            if (!ok) {
+                RCLCPP_WARN(get_logger(), "enable or DIO10 homing trigger failed");
             }
         }
 

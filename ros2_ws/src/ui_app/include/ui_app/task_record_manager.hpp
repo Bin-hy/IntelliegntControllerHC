@@ -33,6 +33,7 @@ struct TaskExecutionRecord {
     bool success;
     QString error_msg;
     QVector<StepRecord> steps;
+    QString source_file;  // populated by loadAllRecords(), not serialized
 
     QJsonObject toJson() const;
     static TaskExecutionRecord fromJson(const QJsonObject& obj);

@@ -115,7 +115,9 @@ QVector<TaskExecutionRecord> TaskRecordManager::loadAllRecords() const {
         QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
         file.close();
         if (doc.isObject()) {
-            records.append(TaskExecutionRecord::fromJson(doc.object()));
+            auto rec = TaskExecutionRecord::fromJson(doc.object());
+            rec.source_file = name;
+            records.append(rec);
         }
     }
     return records;

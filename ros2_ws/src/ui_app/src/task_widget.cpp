@@ -23,6 +23,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDirIterator>
+#include <QFileInfo>
 #include <QPixmap>
 #include <QRegularExpression>
 #include <iostream>
@@ -341,6 +342,8 @@ void TaskWidget::onShowHistory() {
         table->setItem(i, 3, new QTableWidgetItem(r.error_msg));
     }
     left->addWidget(table);
+    auto * btn_del_record = new QPushButton(tr_ui("删除记录", "Delete Record"));
+    left->addWidget(btn_del_record);
     layout->addLayout(left, 1);
 
     // --- Right: step details + photo preview ---
@@ -395,34 +398,38 @@ void TaskWidget::onShowHistory() {
             }
         }
 
-        // Collect all captured files from all steps + scan task_photos directory
+        // Collect captured files from record steps (existence-checked, deduped)
         QStringList all_files;
         for (const auto& s : rec.steps) {
-            all_files.append(s.captured_files);
+            for (const auto& f : s.captured_files) {
+                if (QFile::exists(f) && !all_files.contains(f))
+                    all_files.append(f);
+            }
         }
-        // Also scan the task_photos directory for matching files
+        // Also scan task_photos directory by matching task directory name exactly
         QString base_dir = QDir::homePath() + "/.ros/task_photos";
         QDir photos_dir(base_dir);
         if (photos_dir.exists()) {
-            QString task_tag = rec.task_name;
-            task_tag.replace(QRegularExpression("[^a-zA-Z0-9_-]"), "_");
             QDirIterator dit(base_dir, QStringList() << "*.png", QDir::Files, QDirIterator::Subdirectories);
             while (dit.hasNext()) {
                 QString path = dit.next();
-                if (path.contains(task_tag) && !all_files.contains(path)) {
+                QString rel = photos_dir.relativeFilePath(path);
+                QStringList parts = rel.split("/", Qt::SkipEmptyParts);
+                if (!parts.isEmpty() && parts[0] == rec.task_name && !all_files.contains(path))
                     all_files.append(path);
-                }
             }
         }
         for (const auto& f : all_files) {
-            photo_list->addItem(f);
+            auto* pi = new QListWidgetItem(QFileInfo(f).fileName());
+            pi->setData(Qt::UserRole, f);
+            photo_list->addItem(pi);
         }
     });
 
     // When photo is selected, show preview
     QObject::connect(photo_list, &QListWidget::currentItemChanged, &dlg, [preview](QListWidgetItem* item) {
         if (!item) { preview->clear(); return; }
-        QPixmap pix(item->text());
+        QPixmap pix(item->data(Qt::UserRole).toString());
         if (!pix.isNull()) {
             preview->setPixmap(pix.scaled(preview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
         } else {
@@ -434,6 +441,30 @@ void TaskWidget::onShowHistory() {
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     // Add to the right side
     right->addWidget(buttons);
+
+    connect(btn_del_record, &QPushButton::clicked, &dlg, [&]() {
+        int row = table->currentRow();
+        if (row < 0 || row >= records.size()) return;
+        const auto& rec = records[row];
+        QStringList files_to_delete;
+        for (const auto& s : rec.steps) {
+            for (const auto& f : s.captured_files) {
+                if (QFile::exists(f)) files_to_delete.append(f);
+            }
+        }
+        if (QMessageBox::question(&dlg, tr_ui("删除记录", "Delete Record"),
+            tr_ui("确认删除此记录？\n同时删除关联的 %1 张图片。",
+                  "Delete this record?\nAlso delete %1 associated photo(s).")
+                .arg(files_to_delete.size()),
+            QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) return;
+        for (const auto& f : files_to_delete) QFile::remove(f);
+        if (!rec.source_file.isEmpty()) record_manager_->deleteRecord(rec.source_file);
+        records.removeAt(row);
+        table->removeRow(row);
+        step_table->setRowCount(0);
+        photo_list->clear();
+        preview->clear();
+    });
 
     if (records.size() > 0) {
         table->selectRow(0);
