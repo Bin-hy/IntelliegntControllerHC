@@ -6,6 +6,7 @@ from launch_ros.substitutions import FindPackageShare
 from launch_ros.parameter_descriptions import ParameterValue
 from launch.substitutions import LaunchConfiguration, PythonExpression, PathJoinSubstitution, Command
 from launch.event_handlers import OnProcessExit
+from launch.conditions import IfCondition
 
 def generate_launch_description():
     # Args
@@ -56,6 +57,16 @@ def generate_launch_description():
         default_value='/dev/ttyUSB0',
         description='RS485 serial port for lift platform servo driver'
     )
+
+    grasp_camera_ns_arg = DeclareLaunchArgument(
+        'grasp_camera_ns',
+        default_value='/CV2R1610004H',
+        description='Camera namespace for vision grasp (e.g. /CV2R1610004H). Empty = disable vision grasp.'
+    )
+
+    enable_grasp = PythonExpression([
+        "'", LaunchConfiguration('grasp_camera_ns'), "' != ''"
+    ])
 
     # ---- Derived substitutions based on hand_side ----
     hand_side = LaunchConfiguration('hand_side')
@@ -180,6 +191,17 @@ def generate_launch_description():
     # 5.5. Glove-Hand control is now integrated into ui_app's Glove Tab
     #      (no separate glove_node or glove_hand_bridge needed)
 
+    # 5.6. Vision Grasp (conditional — only when grasp_camera_ns is set)
+    vision_grasp_pkg = FindPackageShare('vision_grasp')
+    vision_grasp_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([vision_grasp_pkg, '/launch/vision_grasp.launch.py']),
+        launch_arguments={
+            'camera_ns': LaunchConfiguration('grasp_camera_ns'),
+            'launch_camera': 'false',
+        }.items(),
+        condition=IfCondition(enable_grasp),
+    )
+
     # 6. UI App
     # Launched last with a delay
 
@@ -232,6 +254,7 @@ def generate_launch_description():
         camera2_serial_arg,
         depth_camera_serial_arg,
         lift_serial_port_arg,
+        grasp_camera_ns_arg,
         vision_launch,
         robot_launch,
         robot_state_publisher_node,
@@ -239,6 +262,7 @@ def generate_launch_description():
         hand_state_publisher,
         lift_server_node,
         sys_ctrl_node,
+        vision_grasp_launch,
         ui_delayed,
         exit_event_handler
     ])

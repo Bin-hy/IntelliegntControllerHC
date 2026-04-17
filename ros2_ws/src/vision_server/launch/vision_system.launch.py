@@ -70,6 +70,9 @@ def _detect_orbbec_cameras():
 def _camera_profile(cam_info):
     """Determine launch profile based on detected camera model name."""
     name = cam_info.get('name', '').lower()
+    # Gemini 305 series — use gemini305.launch.py
+    if '305' in name:
+        return 'gemini305'
     # Gemini 215 / 210 series (PID 0x0808 / 0x0809) — use gemini2.launch.py per vendor
     if any(tag in name for tag in ['215', '210']):
         return 'gemini2'
@@ -98,6 +101,28 @@ def make_camera_node(ns, serial_number, device_num=1, usb_port='', connection_de
     ns: the ROS namespace AND camera_name — equals the SN when known.
     camera_profile: 'default' for 330-series, 'gemini210' for 210/215, 'gemini2l' for Gemini 2/2L.
     """
+    if camera_profile == 'gemini305':
+        # Gemini 305 → gemini305.launch.py
+        orbbec_share = get_package_share_directory('orbbec_camera')
+        launch_file = os.path.join(orbbec_share, 'launch', 'gemini305.launch.py')
+        return IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(launch_file),
+            launch_arguments={
+                'camera_name': ns,
+                'serial_number': serial_number,
+                'device_num': str(device_num),
+                'usb_port': usb_port or '',
+                'connection_delay': str(connection_delay),
+                'depth_registration': 'true',
+                'enable_point_cloud': 'true',
+                'enable_color': 'true',
+                'enable_depth': str(enable_depth).lower(),
+                'enable_left_ir': 'true',
+                'enable_right_ir': 'true',
+                'log_level': 'none',
+            }.items()
+        )
+
     if camera_profile == 'gemini2l':
         # Gemini 2/2L → gemini2L.launch.py (PID 0x0670/0x0673)
         orbbec_share = get_package_share_directory('orbbec_camera')

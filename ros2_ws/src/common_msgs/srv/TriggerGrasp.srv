@@ -1,0 +1,7 @@
+# Request: trigger grasp at user-selected pixel in camera image
+float64 u    # pixel x in camera image
+float64 v    # pixel y in camera image
+---
+# Response
+bool success
+string message

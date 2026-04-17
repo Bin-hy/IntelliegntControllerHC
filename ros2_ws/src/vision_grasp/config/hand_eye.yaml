@@ -1,0 +1,45 @@
+# Hand-eye calibration: T_end_camera (link_6 → camera_link)
+# These are PLACEHOLDER values — must be calibrated!
+# Method: measure with ruler first, then refine with easy_handeye2
+hand_eye:
+  # Translation (meters) from link_6 flange center to camera optical center
+  x: 0.05
+  y: 0.00
+  z: 0.08
+  # Rotation (quaternion) — identity means camera Z aligns with flange Z
+  qx: 0.0
+  qy: 0.0
+  qz: 0.0
+  qw: 1.0
+
+# Grasp parameters
+grasp:
+  pre_grasp_height: 0.15    # m above target before descend
+  grasp_z_offset: 0.02      # m offset to account for fingertip length
+  lift_height: 0.15          # m above target after grasp
+  grasp_rx: 3.14159          # rad — vertical downward
+  grasp_ry: 0.0
+  grasp_rz: 0.0
+  move_speed: 0.20           # m/s transit
+  approach_speed: 0.05       # m/s approach
+  lift_speed: 0.10           # m/s lift
+  move_accel: 0.5            # m/s²
+
+# Hand motor positions (6 motors, DH116)
+hand:
+  open:  [0, 0, 0, 0, 0, 0]
+  close: [800, 800, 800, 800, 800, 800]
+
+# Place position in base frame (meters)
+place:
+  x: 0.30
+  y: -0.30
+  z: 0.25
+
+# Detection
+detection:
+  model_path: "yolov8n.pt"
+  confidence_threshold: 0.5
+  depth_roi_half: 10
+  min_depth_mm: 100.0
+  max_depth_mm: 2000.0

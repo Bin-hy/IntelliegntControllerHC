@@ -13,6 +13,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CollisionStatus.msg"
   "msg/DepthMeasurement.msg"
   "srv/SetCurrentUser.srv"
+  "srv/DetectBottle.srv"
+  "srv/TriggerGrasp.srv"
   "action/ExecuteTask.action"
   DEPENDENCIES std_msgs action_msgs
 )

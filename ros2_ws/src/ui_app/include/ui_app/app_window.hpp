@@ -5,6 +5,7 @@
 #include <memory>
 #include "ui_app/ros_node.hpp"
 #include "ui_app/robot_viz_widget.hpp"
+#include "ui_app/selectable_image_label.hpp"
 #include "ui_app/task_widget.hpp"
 #include "ui_app/auth_manager.hpp"
 #include "ui_app/auth_log_manager.hpp"
@@ -49,6 +50,7 @@ private:
   QWidget* createIOTab();
   QWidget* createLHandTab();
   QWidget* createGloveTab();
+  QWidget* createCalibrationTab();
   void updateGloveData();
   QWidget* createCameraTab();
   QWidget* createTaskTab();
@@ -196,6 +198,19 @@ private:
   QLabel* label_glove_hand_status_ = nullptr;
   bool glove_hand_request_in_flight_ = false;
   std::array<int, 6> glove_hand_last_sent_ = {-1, -1, -1, -1, -1, -1};
+
+  // Vision calibration tab (debug)
+  QDoubleSpinBox* spin_calib_tf_[6] = {};
+  QSpinBox* spin_calib_hand_[6] = {};
+  QLabel* label_calib_status_ = nullptr;
+  QLabel* label_grasp_target_ = nullptr;
+  QPushButton* btn_grasp_ = nullptr;
+
+  // Video target selection (event filter on label_color_stream_)
+  QPointF video_selected_point_;
+  bool has_video_selection_ = false;
+  QSize video_image_size_;
+  bool eventFilter(QObject* obj, QEvent* event) override;
 
   // Mapping helpers
   int gloveAngleToPosition(double deg, double min_deg, double max_deg) const;

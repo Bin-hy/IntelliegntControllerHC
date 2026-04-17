@@ -35,6 +35,7 @@ find_package(rclcpp_action REQUIRED)
     src/ros_node.cpp
     src/app_window.cpp
     src/app_window_task.cpp
+    src/app_window_calibration.cpp
     src/task_widget.cpp
     src/task_dialogs.cpp
     src/task_record_manager.cpp
@@ -57,6 +58,7 @@ find_package(rclcpp_action REQUIRED)
     include/ui_app/permission_manager.hpp
     include/ui_app/login_window.hpp
     include/ui_app/idle_logout_watcher.hpp
+    include/ui_app/selectable_image_label.hpp
   )
 
   target_include_directories(ui_app PUBLIC

@@ -33,6 +33,8 @@
 #include <string>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
+#include <tf2_ros/static_transform_broadcaster.h>
+#include <tf2/LinearMath/Quaternion.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
@@ -42,6 +44,7 @@
 #include "common_msgs/msg/collision_status.hpp"
 #include "common_msgs/msg/depth_measurement.hpp"
 #include "common_msgs/srv/set_current_user.hpp"
+#include "common_msgs/srv/trigger_grasp.hpp"
 #include "lift_server/srv/lift_control.hpp"
 
 class RosNode : public rclcpp::Node {
@@ -77,6 +80,14 @@ public:
   void call_lift_control(const std::string& command, int speed_rpm = 100,
                          std::function<void(bool, const std::string&, int)> callback = nullptr,
                          int target_pulses = 0, int accel_ms = 0, int decel_ms = 0);
+
+  // Hand-eye calibration TF (debug)
+  void publish_hand_eye_tf(double tx, double ty, double tz,
+                           double rx_deg, double ry_deg, double rz_deg);
+
+  // Vision grasp trigger
+  void call_trigger_grasp(double u, double v,
+                          std::function<void(bool, const std::string&)> callback = nullptr);
 
   void call_lhand_enable(bool enable); // Use global enable for now, or default joint_id if needed
   void call_lhand_home(int joint_id, std::function<void(int)> callback = nullptr);
@@ -180,6 +191,7 @@ private:
   // TF
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
   // rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client_save_image_;
   rclcpp::Client<vision_server::srv::SaveImage>::SharedPtr client_save_image_;
 
@@ -203,6 +215,9 @@ private:
 
   // Lift platform client
   rclcpp::Client<lift_server::srv::LiftControl>::SharedPtr client_lift_;
+
+  // Vision grasp client
+  rclcpp::Client<common_msgs::srv::TriggerGrasp>::SharedPtr client_trigger_grasp_;
 
   rclcpp_action::Client<ExecuteTask>::SharedPtr client_execute_task_;
   GoalHandleExecuteTask::SharedPtr current_goal_handle_;

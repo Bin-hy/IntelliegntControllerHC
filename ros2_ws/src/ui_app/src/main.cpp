@@ -81,7 +81,11 @@ int main(int argc, char ** argv) {
   app.installEventFilter(&watcher);
   
   QTimer timer;
-  QObject::connect(&timer, &QTimer::timeout, [&exec](){
+  QObject::connect(&timer, &QTimer::timeout, [&exec, &app](){
+    if (!rclcpp::ok()) {
+      app.quit();
+      return;
+    }
     exec.spin_some();
   });
   timer.start(10);

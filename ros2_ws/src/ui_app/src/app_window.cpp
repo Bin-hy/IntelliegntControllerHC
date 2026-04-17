@@ -13,6 +13,7 @@
 #include <QPushButton>
 #include <QTextEdit>
 #include <QGroupBox>
+#include <QMouseEvent>
 #include <QTabWidget>
 #include <QDoubleSpinBox>
 #include <QSpinBox>
@@ -276,6 +277,12 @@ void AppWindow::buildDashboard() {
     glove_scroll->setWidget(createGloveTab());
     tabs_->addTab(glove_scroll, tr_ui("动捕手套", "Motion Glove"));
 
+    // Wrap CalibrationTab in QScrollArea (debug — remove after calibration)
+    auto * calib_scroll = new QScrollArea();
+    calib_scroll->setWidgetResizable(true);
+    calib_scroll->setWidget(createCalibrationTab());
+    tabs_->addTab(calib_scroll, tr_ui("视觉标定", "Vision Calibration"));
+
     tabs_->setMinimumHeight(200);
     splitter->addWidget(tabs_);
     splitter->setSizes({600, 300});
@@ -451,6 +458,32 @@ void AppWindow::updateUI() {
           };
 
           update_label(label_color_stream_, node_->last_color_image_, true);
+          // Store image size for coordinate conversion
+          if (!node_->last_color_image_.empty()) {
+              video_image_size_ = QSize(node_->last_color_image_.cols, node_->last_color_image_.rows);
+          }
+          // Draw crosshair overlay on color stream if target selected
+          if (has_video_selection_ && label_color_stream_ && !video_image_size_.isEmpty()) {
+              QPixmap pix = label_color_stream_->pixmap(Qt::ReturnByValue);
+              if (!pix.isNull()) {
+                  double sx = (double)pix.width() / video_image_size_.width();
+                  double sy = (double)pix.height() / video_image_size_.height();
+                  double wx = video_selected_point_.x() * sx;
+                  double wy = video_selected_point_.y() * sy;
+                  QPainter painter(&pix);
+                  painter.setRenderHint(QPainter::Antialiasing);
+                  painter.setPen(QPen(QColor(0, 255, 80), 2));
+                  painter.drawLine(QPointF(wx - 18, wy), QPointF(wx + 18, wy));
+                  painter.drawLine(QPointF(wx, wy - 18), QPointF(wx, wy + 18));
+                  painter.drawEllipse(QPointF(wx, wy), 12, 12);
+                  painter.setPen(Qt::white);
+                  painter.setFont(QFont("monospace", 9));
+                  painter.drawText(QPointF(wx + 16, wy - 6),
+                      QString("(%1,%2)").arg((int)video_selected_point_.x()).arg((int)video_selected_point_.y()));
+                  painter.end();
+                  label_color_stream_->setPixmap(pix);
+              }
+          }
           update_label(label_depth_stream_, node_->last_depth_image_, false);
           update_label(label_ir_left_stream_, node_->last_ir_left_image_, false);
           update_label(label_ir_right_stream_, node_->last_ir_right_image_, false);
@@ -833,6 +866,9 @@ QWidget* AppWindow::createCameraTab() {
     widget_color_ = createVideoWidget(tr_ui("彩色流", "Color Stream"), label_color_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), true, false, false, false, false, make_callback());
     });
+    // Enable click-to-select on color stream for grasp target
+    label_color_stream_->setCursor(Qt::CrossCursor);
+    label_color_stream_->installEventFilter(this);
     widget_depth_ = createVideoWidget(tr_ui("深度流", "Depth Stream"), label_depth_stream_, [this, make_callback](){
         node_->save_snapshot(combo_camera_->currentText().toStdString(), false, true, false, false, false, make_callback());
     });
@@ -2449,4 +2485,42 @@ void AppWindow::sendGloveToHand(const std::vector<Vector3Float>& finger_data) {
         node_->call_lhand_move(0);  // 0 = move all joints
         glove_hand_request_in_flight_ = false;
     });
+}
+
+bool AppWindow::eventFilter(QObject* obj, QEvent* event) {
+    if (obj == label_color_stream_ && event->type() == QEvent::MouseButtonPress) {
+        auto* me = static_cast<QMouseEvent*>(event);
+        if (me->button() != Qt::LeftButton) return false;
+        if (video_image_size_.isEmpty()) return false;
+
+        QPixmap pix = label_color_stream_->pixmap(Qt::ReturnByValue);
+        if (pix.isNull()) return false;
+
+        // Pixmap is centered in label (Qt::AlignCenter)
+        int pw = pix.width(), ph = pix.height();
+        int lw = label_color_stream_->width(), lh = label_color_stream_->height();
+        double ox = (lw - pw) / 2.0;
+        double oy = (lh - ph) / 2.0;
+
+        double px = me->pos().x() - ox;
+        double py = me->pos().y() - oy;
+        if (px < 0 || py < 0 || px >= pw || py >= ph) return false;
+
+        // Convert to original image coordinates
+        double img_u = px * (double)video_image_size_.width() / pw;
+        double img_v = py * (double)video_image_size_.height() / ph;
+
+        video_selected_point_ = QPointF(img_u, img_v);
+        has_video_selection_ = true;
+
+        // Update calibration tab UI if available
+        if (label_grasp_target_) {
+            label_grasp_target_->setText(QString("Target: (%1, %2)").arg((int)img_u).arg((int)img_v));
+            label_grasp_target_->setStyleSheet("font-size: 12px; color: #00ff88;");
+        }
+        if (btn_grasp_) btn_grasp_->setEnabled(true);
+
+        return true;
+    }
+    return QWidget::eventFilter(obj, event);
 }

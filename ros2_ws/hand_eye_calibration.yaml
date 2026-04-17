@@ -1,0 +1,11 @@
+# Hand-eye calibration config (auto-generated)
+hand_eye:
+  x: 0.05
+  y: 0
+  z: 0.08
+  rx_deg: 90
+  ry_deg: 90
+  rz_deg: 0
+
+hand:
+  close: [0, 0, 0, 0, 0, 0]

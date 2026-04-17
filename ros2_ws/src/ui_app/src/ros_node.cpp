@@ -70,6 +70,8 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     client_save_image_ = create_client<vision_server::srv::SaveImage>("/image_saver/save_image");
     // Lift platform
     client_lift_ = create_client<lift_server::srv::LiftControl>("/lift_server/lift_control");
+    // Vision grasp
+    client_trigger_grasp_ = create_client<common_msgs::srv::TriggerGrasp>("/grasp_coordinator/trigger_grasp");
 
     // LHand Clients
     client_lhand_enable_ = create_client<lhandpro_interfaces::srv::SetEnable>("/lhandpro_service/set_enable");
@@ -97,6 +99,7 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     // TF Listener
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+    tf_static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
 
     // Timer
     timer_ = create_wall_timer(std::chrono::seconds(1), [this](){
@@ -981,4 +984,50 @@ RosNode::CameraCapabilities RosNode::get_camera_capabilities(std::string camera_
 
     last_caps_ = caps;
     return caps;
+}
+
+void RosNode::publish_hand_eye_tf(double tx, double ty, double tz,
+                                   double rx_deg, double ry_deg, double rz_deg) {
+    double rx = rx_deg * M_PI / 180.0;
+    double ry = ry_deg * M_PI / 180.0;
+    double rz = rz_deg * M_PI / 180.0;
+
+    tf2::Quaternion q;
+    q.setRPY(rx, ry, rz);
+
+    geometry_msgs::msg::TransformStamped t;
+    t.header.stamp = this->get_clock()->now();
+    t.header.frame_id = "link_6";
+    t.child_frame_id = "camera_link";
+    t.transform.translation.x = tx;
+    t.transform.translation.y = ty;
+    t.transform.translation.z = tz;
+    t.transform.rotation.x = q.x();
+    t.transform.rotation.y = q.y();
+    t.transform.rotation.z = q.z();
+    t.transform.rotation.w = q.w();
+
+    tf_static_broadcaster_->sendTransform(t);
+    RCLCPP_INFO(this->get_logger(),
+        "Published hand-eye TF: t=(%.4f, %.4f, %.4f) rpy=(%.1f, %.1f, %.1f)°",
+        tx, ty, tz, rx_deg, ry_deg, rz_deg);
+}
+
+void RosNode::call_trigger_grasp(double u, double v,
+                                  std::function<void(bool, const std::string&)> callback) {
+    if (!client_trigger_grasp_->wait_for_service(std::chrono::seconds(2))) {
+        RCLCPP_WARN(get_logger(), "TriggerGrasp service not available");
+        if (callback) callback(false, "Grasp service not available — is vision_grasp launched?");
+        return;
+    }
+    auto request = std::make_shared<common_msgs::srv::TriggerGrasp::Request>();
+    request->u = u;
+    request->v = v;
+    RCLCPP_INFO(get_logger(), "TriggerGrasp: pixel=(%.0f, %.0f)", u, v);
+    client_trigger_grasp_->async_send_request(request,
+        [this, callback](rclcpp::Client<common_msgs::srv::TriggerGrasp>::SharedFuture future) {
+            auto response = future.get();
+            RCLCPP_INFO(get_logger(), "TriggerGrasp result: %s", response->message.c_str());
+            if (callback) callback(response->success, response->message);
+        });
 }
