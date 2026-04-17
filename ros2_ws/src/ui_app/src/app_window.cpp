@@ -601,17 +601,13 @@ void AppWindow::onPermission() {
                              tr_ui("当前用户无权访问权限管理", "Insufficient permission to access Permissions"));
         return;
     }
-    if (!admin_tab_) {
-        admin_tab_ = createAdminTab();
-    }
-    auto * dialog = new QDialog(this);
-    dialog->setWindowTitle(tr_ui("权限管理", "Permissions"));
-    dialog->resize(860, 520);
-    auto * layout = new QVBoxLayout(dialog);
-    layout->addWidget(admin_tab_);
-    dialog->setLayout(layout);
-    dialog->exec();
-    admin_tab_->setParent(nullptr);
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr_ui("权限管理", "Permissions"));
+    dialog.resize(860, 520);
+    auto * tab = createAdminTab();
+    auto * layout = new QVBoxLayout(&dialog);
+    layout->addWidget(tab);
+    dialog.exec();
 }
 
 void AppWindow::updateUserModule() {
