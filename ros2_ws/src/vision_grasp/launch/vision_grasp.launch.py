@@ -19,54 +19,67 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
+def _hand_eye_yaml():
+    return os.path.join(
+        get_package_share_directory('vision_grasp'), 'config', 'hand_eye.yaml')
+
 
 def _create_grasp_nodes(context):
-    """Derive TF frame names from camera_ns at launch time and create nodes."""
     camera_ns_str = LaunchConfiguration('camera_ns').perform(context)
-    # Strip leading slash to get the camera name used by OrbbecSDK for frame IDs
-    # e.g. "/CV2R1610004H" → "CV2R1610004H"
+    # Strip leading slash: "/CV2R1610004H" → "CV2R1610004H"
     sn = camera_ns_str.strip('/')
 
-    # --- Static TF: link_6 → {sn}_link ---
-    # This BRIDGES the robot TF tree (base_link → ... → link_6) to the camera
-    # TF tree ({sn}_link → {sn}_depth_frame → {sn}_color_optical_frame).
-    # The Orbbec driver publishes the internal camera chain automatically.
-    # Translation/rotation here represent the physical mounting of the camera
-    # on the robot flange — adjust after proper hand-eye calibration.
+    import yaml
+    cfg = {}
+    yaml_path = _hand_eye_yaml()
+    if os.path.exists(yaml_path):
+        with open(yaml_path) as f:
+            cfg = yaml.safe_load(f)
+    he = cfg.get('hand_eye', {})
+    grasp = cfg.get('grasp', {})
+    hand = cfg.get('hand', {})
+    place = cfg.get('place', {})
+    det = cfg.get('detection', {})
+
+    # Static TF: L_base_link (hand flange, coincident with link_6) → {sn}_link
+    # L_base_link is the semantic parent since the camera is mounted on the hand,
+    # not directly on the bare flange. lhand_mount is a zero-offset fixed joint
+    # so numerically equivalent to link_6, but semantically correct.
     static_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='hand_eye_tf',
         arguments=[
-            '--x', '0.05', '--y', '0.0', '--z', '0.08',
-            '--qx', '0.0', '--qy', '0.0', '--qz', '0.0', '--qw', '1.0',
-            '--frame-id', 'link_6', '--child-frame-id', f'{sn}_link',
+            '--x',  str(he.get('x',  0.05)),
+            '--y',  str(he.get('y',  0.00)),
+            '--z',  str(he.get('z',  0.08)),
+            '--qx', str(he.get('qx', 0.0)),
+            '--qy', str(he.get('qy', 0.0)),
+            '--qz', str(he.get('qz', 0.0)),
+            '--qw', str(he.get('qw', 1.0)),
+            '--frame-id', 'L_base_link',
+            '--child-frame-id', f'{sn}_link',
         ],
     )
 
-    # The camera_frame for the coordinator must be the optical frame where
-    # pinhole-deprojected 3D coordinates live (Z-forward, X-right, Y-down).
-    # When depth_registration=true, depth is aligned to color, so we use
-    # the color optical frame.
+    # depth_registration=true → depth aligned to color → use color optical frame
     camera_optical_frame = f'{sn}_color_optical_frame'
 
-    # --- Bottle detector ---
     detector = Node(
         package='vision_grasp',
         executable='bottle_detector_node',
         name='bottle_detector',
         parameters=[{
             'camera_ns': camera_ns_str,
-            'model_path': 'yolov8n.pt',
-            'confidence_threshold': 0.5,
-            'depth_roi_half': 10,
-            'min_depth_mm': 100.0,
-            'max_depth_mm': 2000.0,
+            'model_path': det.get('model_path', 'yolov8n.pt'),
+            'confidence_threshold': det.get('confidence_threshold', 0.5),
+            'depth_roi_half': det.get('depth_roi_half', 10),
+            'min_depth_mm': det.get('min_depth_mm', 100.0),
+            'max_depth_mm': det.get('max_depth_mm', 2000.0),
         }],
         output='screen',
     )
 
-    # --- Grasp coordinator ---
     coordinator = Node(
         package='vision_grasp',
         executable='grasp_coordinator_node',
@@ -75,21 +88,24 @@ def _create_grasp_nodes(context):
             'camera_ns': camera_ns_str,
             'camera_frame': camera_optical_frame,
             'base_frame': 'base_link',
-            'pre_grasp_height': 0.15,
-            'grasp_z_offset': 0.02,
-            'lift_height': 0.15,
-            'grasp_rx': 3.14159,
-            'grasp_ry': 0.0,
-            'grasp_rz': 0.0,
-            'move_speed': 0.20,
-            'approach_speed': 0.05,
-            'lift_speed': 0.10,
-            'move_accel': 0.5,
-            'hand_open': [0, 0, 0, 0, 0, 0],
-            'hand_close': [800, 800, 800, 800, 800, 800],
-            'place_x': 0.30,
-            'place_y': -0.30,
-            'place_z': 0.25,
+            'pre_grasp_height': grasp.get('pre_grasp_height', 0.15),
+            'grasp_z_offset':   grasp.get('grasp_z_offset',   0.02),
+            'lift_height':      grasp.get('lift_height',       0.15),
+            'grasp_rx':         grasp.get('grasp_rx',          3.14159),
+            'grasp_ry':         grasp.get('grasp_ry',          0.0),
+            'grasp_rz':         grasp.get('grasp_rz',          0.0),
+            'move_speed':       grasp.get('move_speed',        0.20),
+            'approach_speed':   grasp.get('approach_speed',    0.05),
+            'lift_speed':       grasp.get('lift_speed',        0.10),
+            'move_accel':       grasp.get('move_accel',        0.5),
+            'hand_open':        hand.get('open',  [0]*6),
+            'hand_close':       hand.get('close', [800]*6),
+            'place_x':          place.get('x', 0.30),
+            'place_y':          place.get('y', -0.30),
+            'place_z':          place.get('z', 0.25),
+            'grasp_offset_x':   cfg.get('grasp_offset', {}).get('x', 0.0),
+            'grasp_offset_y':   cfg.get('grasp_offset', {}).get('y', 0.0),
+            'grasp_offset_z':   cfg.get('grasp_offset', {}).get('z', 0.0),
         }],
         output='screen',
     )

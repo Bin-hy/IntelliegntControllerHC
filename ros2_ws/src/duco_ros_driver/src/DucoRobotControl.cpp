@@ -252,6 +252,12 @@ void DucoRobotControl::handle_robot_move(const std::shared_ptr<duco_msg::srv::Ro
                     joints,
                     request->tool,request->wobj,
                     request->block);
+        if (ret == 6) {
+            std::vector<std::string> errs;
+            _duco_robots[request->arm_num]->get_last_error(errs);
+            for (auto& e : errs)
+                RCLCPP_ERROR(this->get_logger(), "movej_pose ST_Error detail: %s", e.c_str());
+        }
     }
     else if ("movejpose2"==request->command)
     {
@@ -324,6 +330,12 @@ void DucoRobotControl::handle_robot_move(const std::shared_ptr<duco_msg::srv::Ro
                     joints,
                     request->tool,request->wobj,
                     request->block);
+        if (ret == 6) {
+            std::vector<std::string> errs;
+            _duco_robots[request->arm_num]->get_last_error(errs);
+            for (auto& e : errs)
+                RCLCPP_ERROR(this->get_logger(), "movel ST_Error detail: %s", e.c_str());
+        }
     }
     else if ("movetcp"==request->command)
     {

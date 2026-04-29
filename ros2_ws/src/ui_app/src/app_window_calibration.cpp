@@ -5,13 +5,82 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QDoubleSpinBox>
 #include <QSpinBox>
+#include <QComboBox>
 #include <QPushButton>
 #include <QMessageBox>
 #include <QFileDialog>
 #include <fstream>
 #include <sstream>
+#include <cmath>
+#include <algorithm>
+#include <yaml-cpp/yaml.h>
+#include <ament_index_cpp/get_package_share_directory.hpp>
+
+// ---------- loadCalibYaml -----------------------------------------------
+// Reads hand_eye.yaml and populates all spinboxes.
+// Converts quaternion → RPY (degrees) for the TF spinboxes.
+void AppWindow::loadCalibYaml(const QString& path)
+{
+    if (path.isEmpty()) return;
+    try {
+        YAML::Node cfg = YAML::LoadFile(path.toStdString());
+
+        // --- hand_eye → TF spinboxes ---
+        if (cfg["hand_eye"]) {
+            auto he = cfg["hand_eye"];
+            spin_calib_tf_[0]->setValue(he["x"]  ? he["x"].as<double>()  : 0.05);
+            spin_calib_tf_[1]->setValue(he["y"]  ? he["y"].as<double>()  : 0.00);
+            spin_calib_tf_[2]->setValue(he["z"]  ? he["z"].as<double>()  : 0.08);
+            // Convert quaternion → RPY (ZYX extrinsic, degrees)
+            double qx = he["qx"] ? he["qx"].as<double>() : 0.0;
+            double qy = he["qy"] ? he["qy"].as<double>() : 0.0;
+            double qz = he["qz"] ? he["qz"].as<double>() : 0.7071;
+            double qw = he["qw"] ? he["qw"].as<double>() : 0.7071;
+            double n = std::sqrt(qx*qx + qy*qy + qz*qz + qw*qw);
+            if (n > 1e-6) { qx/=n; qy/=n; qz/=n; qw/=n; }
+            double sinr = 2*(qw*qx + qy*qz), cosr = 1-2*(qx*qx+qy*qy);
+            double sinp = 2*(qw*qy - qz*qx);
+            double siny = 2*(qw*qz + qx*qy), cosy = 1-2*(qy*qy+qz*qz);
+            double rx_deg = std::atan2(sinr, cosr) * 180.0 / M_PI;
+            double ry_deg = (std::abs(sinp) >= 1.0
+                ? std::copysign(90.0, sinp)
+                : std::asin(sinp) * 180.0 / M_PI);
+            double rz_deg = std::atan2(siny, cosy) * 180.0 / M_PI;
+            spin_calib_tf_[3]->setValue(rx_deg);
+            spin_calib_tf_[4]->setValue(ry_deg);
+            spin_calib_tf_[5]->setValue(rz_deg);
+        }
+
+        // --- hand.close → hand spinboxes ---
+        if (cfg["hand"] && cfg["hand"]["close"]) {
+            auto cl = cfg["hand"]["close"];
+            for (int i = 0; i < 6 && i < (int)cl.size(); i++)
+                spin_calib_hand_[i]->setValue(cl[i].as<int>());
+        }
+
+        // --- grasp_offset → offset spinboxes ---
+        if (cfg["grasp_offset"]) {
+            auto go = cfg["grasp_offset"];
+            spin_grasp_offset_[0]->setValue(go["x"] ? go["x"].as<double>() : 0.0);
+            spin_grasp_offset_[1]->setValue(go["y"] ? go["y"].as<double>() : 0.0);
+            spin_grasp_offset_[2]->setValue(go["z"] ? go["z"].as<double>() : 0.0);
+        }
+
+        calib_yaml_path_ = path;
+        if (label_calib_status_)
+            label_calib_status_->setText(
+                tr_ui("已加载配置: ", "Loaded: ") + path);
+    } catch (const YAML::Exception& e) {
+        if (label_calib_status_)
+            label_calib_status_->setText(
+                tr_ui("加载失败: ", "Load failed: ") +
+                QString::fromStdString(e.what()));
+    }
+}
+// ------------------------------------------------------------------------
 
 QWidget* AppWindow::createCalibrationTab() {
     auto* widget = new QWidget();
@@ -19,11 +88,91 @@ QWidget* AppWindow::createCalibrationTab() {
     main_layout->setSpacing(8);
 
     // ================================================================
+    // Section -1: Config file path (load/save sync)
+    // ================================================================
+    auto* file_group = new QGroupBox(tr_ui("配置文件", "Config File"));
+    auto* file_layout = new QHBoxLayout(file_group);
+
+    // Resolve default path: installed share dir
+    QString default_yaml_path;
+    try {
+        std::string share = ament_index_cpp::get_package_share_directory("vision_grasp");
+        default_yaml_path = QString::fromStdString(share + "/config/hand_eye.yaml");
+    } catch (...) {
+        default_yaml_path = "";
+    }
+
+    auto* edit_yaml_path = new QLineEdit(default_yaml_path);
+    edit_yaml_path->setPlaceholderText(tr_ui("hand_eye.yaml 路径", "Path to hand_eye.yaml"));
+    auto* btn_browse = new QPushButton(tr_ui("浏览", "Browse"));
+    btn_browse->setFixedWidth(55);
+    auto* btn_load_yaml = new QPushButton(tr_ui("载入", "Load"));
+    btn_load_yaml->setFixedWidth(55);
+    file_layout->addWidget(edit_yaml_path, 1);
+    file_layout->addWidget(btn_browse);
+    file_layout->addWidget(btn_load_yaml);
+    main_layout->addWidget(file_group);
+
+    // ================================================================
+    // Section 0: Gemini 305 Camera Selection
+    // ================================================================
+    auto* cam_group = new QGroupBox(
+        tr_ui("视觉相机选择 (Gemini 305)", "Vision Camera (Gemini 305)"));
+    auto* cam_layout = new QHBoxLayout(cam_group);
+
+    combo_calib_camera_ = new QComboBox();
+    combo_calib_camera_->setMinimumWidth(220);
+    auto* btn_scan_cameras = new QPushButton(tr_ui("扫描", "Scan"));
+    btn_scan_cameras->setFixedWidth(60);
+    cam_layout->addWidget(new QLabel(tr_ui("相机:", "Camera:")));
+    cam_layout->addWidget(combo_calib_camera_, 1);
+    cam_layout->addWidget(btn_scan_cameras);
+    main_layout->addWidget(cam_group);
+
+    // Helper: populate combo with only Gemini 305 cameras (ns contains "305" or "cam_305")
+    // Falls back to all cameras if none match the filter.
+    auto populate_cameras = [this]() {
+        auto all = node_->scan_cameras();
+        combo_calib_camera_->clear();
+        // Filter: keep only namespaces that look like Gemini 305
+        // Orbbec driver uses camera_name as ns, so "305" in the name is the signal.
+        std::vector<std::string> filtered;
+        for (const auto& ns : all) {
+            std::string lower = ns;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            if (lower.find("305") != std::string::npos ||
+                lower.find("cam_305") != std::string::npos ||
+                lower.find("gemini305") != std::string::npos) {
+                filtered.push_back(ns);
+            }
+        }
+        // If no 305 found, show all (better than empty list)
+        const auto& show = filtered.empty() ? all : filtered;
+        for (const auto& ns : show)
+            combo_calib_camera_->addItem(QString::fromStdString(ns));
+        // Default: first entry
+        if (combo_calib_camera_->count() > 0)
+            combo_calib_camera_->setCurrentIndex(0);
+    };
+
+    // Scan on button click
+    connect(btn_scan_cameras, &QPushButton::clicked, this, [this, populate_cameras]() {
+        populate_cameras();
+        label_calib_status_->setText(
+            tr_ui("已扫描到 ", "Found ") +
+            QString::number(combo_calib_camera_->count()) +
+            tr_ui(" 台相机", " camera(s)"));
+    });
+
+    // Auto-scan once at construction
+    populate_cameras();
+
+    // ================================================================
     // Section 1: Hand-Eye TF Calibration (link_6 → camera_link)
     // ================================================================
     auto* tf_group = new QGroupBox(
-        tr_ui("手眼标定 TF (link_6 → camera_link)",
-              "Hand-Eye TF (link_6 → camera_link)"));
+        tr_ui("手眼标定 TF (L_base_link → cam_305_link)",
+              "Hand-Eye TF (L_base_link → cam_305_link)"));
     auto* tf_layout = new QGridLayout(tf_group);
 
     const char* tf_labels[] = {"X (m)", "Y (m)", "Z (m)", "RX (°)", "RY (°)", "RZ (°)"};
@@ -116,6 +265,54 @@ QWidget* AppWindow::createCalibrationTab() {
     grasp_layout->addWidget(btn_grasp_);
     main_layout->addWidget(grasp_group);
 
+    // ================================================================
+    // Section 4: Grasp Offset Compensation
+    // ================================================================
+    auto* offset_group = new QGroupBox(
+        tr_ui("抓取位置偏移补偿 (base frame, 米)",
+              "Grasp Position Offset (base frame, meters)"));
+    auto* offset_layout = new QGridLayout(offset_group);
+    offset_layout->setColumnStretch(1, 1);
+    offset_layout->setColumnStretch(3, 1);
+    offset_layout->setColumnStretch(5, 1);
+
+    const char* offset_labels[] = {"ΔX (m)", "ΔY (m)", "ΔZ (m)"};
+    const char* offset_tips[] = {
+        "正值→右偏, 负值→左偏\n(base +X direction)",
+        "正值→前偏, 负值→后偏\n(base +Y direction)",
+        "正值→上偏, 负值→下偏\n(base +Z direction)"
+    };
+    for (int i = 0; i < 3; i++) {
+        auto* lbl = new QLabel(offset_labels[i]);
+        lbl->setToolTip(QString::fromUtf8(offset_tips[i]));
+        offset_layout->addWidget(lbl, 0, i * 2);
+        spin_grasp_offset_[i] = new QDoubleSpinBox();
+        spin_grasp_offset_[i]->setRange(-2.0, 2.0);
+        spin_grasp_offset_[i]->setSingleStep(0.01);
+        spin_grasp_offset_[i]->setDecimals(3);
+        spin_grasp_offset_[i]->setValue(0.0);
+        spin_grasp_offset_[i]->setToolTip(QString::fromUtf8(offset_tips[i]));
+        offset_layout->addWidget(spin_grasp_offset_[i], 0, i * 2 + 1);
+    }
+
+    auto* offset_btn_row = new QHBoxLayout();
+    auto* btn_apply_offset = new QPushButton(tr_ui("应用偏移 (实时生效)", "Apply Offset (live)"));
+    btn_apply_offset->setStyleSheet("font-weight: bold; color: #00cc66;");
+    auto* btn_reset_offset = new QPushButton(tr_ui("清零", "Reset"));
+    btn_reset_offset->setFixedWidth(60);
+    offset_btn_row->addWidget(btn_apply_offset, 1);
+    offset_btn_row->addWidget(btn_reset_offset);
+    offset_layout->addLayout(offset_btn_row, 1, 0, 1, 6);
+
+    auto* offset_hint = new QLabel(tr_ui(
+        "💡 机器人偏右→ΔX填负值  偏左→ΔX填正值  偏高→ΔZ填负值  每次调5mm",
+        "💡 Robot goes right→ΔX negative  left→ΔX positive  high→ΔZ negative  adjust 5mm each time"));
+    offset_hint->setStyleSheet("color: #888; font-size: 11px;");
+    offset_hint->setWordWrap(true);
+    offset_layout->addWidget(offset_hint, 2, 0, 1, 6);
+
+    main_layout->addWidget(offset_group);
+
     // Wire up: grasp button → call trigger service using stored selection
     connect(btn_grasp_, &QPushButton::clicked, this, [this]() {
         if (!has_video_selection_) {
@@ -154,38 +351,100 @@ QWidget* AppWindow::createCalibrationTab() {
     // Connections
     // ================================================================
 
+    // --- Apply Offset (live, via ROS set_parameters) ---
+    connect(btn_apply_offset, &QPushButton::clicked, this, [this]() {
+        double ox = spin_grasp_offset_[0]->value();
+        double oy = spin_grasp_offset_[1]->value();
+        double oz = spin_grasp_offset_[2]->value();
+        node_->set_grasp_offset(ox, oy, oz);
+        label_calib_status_->setText(
+            tr_ui("偏移已应用: ", "Offset applied: ") +
+            QString("ΔX=%1 ΔY=%2 ΔZ=%3 m")
+                .arg(ox, 0, 'f', 3).arg(oy, 0, 'f', 3).arg(oz, 0, 'f', 3));
+    });
+
+    // --- Reset Offset ---
+    connect(btn_reset_offset, &QPushButton::clicked, this, [this]() {
+        for (int i = 0; i < 3; i++) spin_grasp_offset_[i]->setValue(0.0);
+        node_->set_grasp_offset(0.0, 0.0, 0.0);
+        label_calib_status_->setText(tr_ui("偏移已清零", "Offset reset to zero"));
+    });
+
     // --- Apply TF ---
     connect(btn_apply_tf, &QPushButton::clicked, this, [this]() {
+        std::string ns = combo_calib_camera_->currentText().toStdString();
+        std::string sn = ns;
+        if (!sn.empty() && sn[0] == '/') sn = sn.substr(1);
         node_->publish_hand_eye_tf(
             spin_calib_tf_[0]->value(), spin_calib_tf_[1]->value(),
             spin_calib_tf_[2]->value(), spin_calib_tf_[3]->value(),
-            spin_calib_tf_[4]->value(), spin_calib_tf_[5]->value());
-        label_calib_status_->setText(tr_ui("TF 已发布", "TF published"));
+            spin_calib_tf_[4]->value(), spin_calib_tf_[5]->value(),
+            sn + "_link");
+        label_calib_status_->setText(
+            tr_ui("TF 已发布 → ", "TF published → ") + QString::fromStdString(sn + "_link"));
     });
 
     // --- Save Config ---
     connect(btn_save_tf, &QPushButton::clicked, this, [this]() {
+        QString default_path = calib_yaml_path_.isEmpty() ? "hand_eye.yaml" : calib_yaml_path_;
         QString path = QFileDialog::getSaveFileName(
             this, tr_ui("保存标定配置", "Save Calibration"),
-            "hand_eye_calibration.yaml", "YAML (*.yaml)");
+            default_path, "YAML (*.yaml)");
         if (path.isEmpty()) return;
+
+        // Convert RPY (degrees) → quaternion for hand_eye.yaml format
+        double rx = spin_calib_tf_[3]->value() * M_PI / 180.0;
+        double ry = spin_calib_tf_[4]->value() * M_PI / 180.0;
+        double rz = spin_calib_tf_[5]->value() * M_PI / 180.0;
+        double cy = std::cos(rz * 0.5), sy = std::sin(rz * 0.5);
+        double cp = std::cos(ry * 0.5), sp = std::sin(ry * 0.5);
+        double cr = std::cos(rx * 0.5), sr = std::sin(rx * 0.5);
+        double qw = cr*cp*cy + sr*sp*sy;
+        double qx = sr*cp*cy - cr*sp*sy;
+        double qy = cr*sp*cy + sr*cp*sy;
+        double qz = cr*cp*sy - sr*sp*cy;
+
         std::ofstream f(path.toStdString());
-        f << "# Hand-eye calibration config (auto-generated)\n";
+        f << "# Hand-eye calibration: T_end_camera (L_base_link → cam_305_link)\n";
+        f << "# Generated by UI calibration tool\n";
         f << "hand_eye:\n";
-        f << "  x: " << spin_calib_tf_[0]->value() << "\n";
-        f << "  y: " << spin_calib_tf_[1]->value() << "\n";
-        f << "  z: " << spin_calib_tf_[2]->value() << "\n";
-        f << "  rx_deg: " << spin_calib_tf_[3]->value() << "\n";
-        f << "  ry_deg: " << spin_calib_tf_[4]->value() << "\n";
-        f << "  rz_deg: " << spin_calib_tf_[5]->value() << "\n";
+        f << "  x: "  << spin_calib_tf_[0]->value() << "\n";
+        f << "  y: "  << spin_calib_tf_[1]->value() << "\n";
+        f << "  z: "  << spin_calib_tf_[2]->value() << "\n";
+        f << "  qx: " << qx << "\n";
+        f << "  qy: " << qy << "\n";
+        f << "  qz: " << qz << "\n";
+        f << "  qw: " << qw << "\n";
+        f << "\ngrasp:\n";
+        f << "  pre_grasp_height: 0.15\n";
+        f << "  grasp_z_offset: 0.02\n";
+        f << "  lift_height: 0.15\n";
+        f << "  grasp_rx: 3.14159\n";
+        f << "  grasp_ry: 0.0\n";
+        f << "  grasp_rz: 0.0\n";
+        f << "  move_speed: 0.20\n";
+        f << "  approach_speed: 0.05\n";
+        f << "  lift_speed: 0.10\n";
+        f << "  move_accel: 0.5\n";
         f << "\nhand:\n";
+        f << "  open:  [0, 0, 0, 0, 0, 0]\n";
         f << "  close: [";
-        for (int i = 0; i < 6; i++) {
-            if (i) f << ", ";
-            f << spin_calib_hand_[i]->value();
-        }
+        for (int i = 0; i < 6; i++) { if (i) f << ", "; f << spin_calib_hand_[i]->value(); }
         f << "]\n";
+        f << "\nplace:\n";
+        f << "  x: 0.30\n  y: -0.30\n  z: 0.25\n";
+        f << "\ngrasp_offset:\n";
+        f << "  x: " << spin_grasp_offset_[0]->value() << "\n";
+        f << "  y: " << spin_grasp_offset_[1]->value() << "\n";
+        f << "  z: " << spin_grasp_offset_[2]->value() << "\n";
+        f << "\ndetection:\n";
+        f << "  model_path: \"yolov8n.pt\"\n";
+        f << "  confidence_threshold: 0.5\n";
+        f << "  depth_roi_half: 10\n";
+        f << "  min_depth_mm: 100.0\n";
+        f << "  max_depth_mm: 2000.0\n";
         f.close();
+        calib_yaml_path_ = path;
         label_calib_status_->setText(tr_ui("配置已保存: ", "Config saved: ") + path);
     });
 
@@ -239,6 +498,25 @@ QWidget* AppWindow::createCalibrationTab() {
             });
         }
     });
+
+    // --- File path: Browse ---
+    connect(btn_browse, &QPushButton::clicked, this, [this, edit_yaml_path]() {
+        QString f = QFileDialog::getOpenFileName(
+            this, tr_ui("选择标定配置文件", "Select Calibration YAML"),
+            edit_yaml_path->text(), "YAML (*.yaml *.yml)");
+        if (!f.isEmpty()) edit_yaml_path->setText(f);
+    });
+
+    // --- File path: Load ---
+    connect(btn_load_yaml, &QPushButton::clicked, this, [this, edit_yaml_path]() {
+        loadCalibYaml(edit_yaml_path->text());
+    });
+
+    // --- Auto-load on startup ---
+    if (!default_yaml_path.isEmpty())
+        QMetaObject::invokeMethod(this, [this, default_yaml_path]() {
+            loadCalibYaml(default_yaml_path);
+        }, Qt::QueuedConnection);
 
     return widget;
 }

@@ -1,16 +1,28 @@
-# Hand-eye calibration: T_end_camera (link_6 → camera_link)
+# Hand-eye calibration: T_end_camera (L_base_link → camera_link)
 # These are PLACEHOLDER values — must be calibrated!
 # Method: measure with ruler first, then refine with easy_handeye2
 hand_eye:
-  # Translation (meters) from link_6 flange center to camera optical center
+  # Translation (meters) from L_base_link flange center to camera optical center
   x: 0.05
   y: 0.00
   z: 0.08
-  # Rotation (quaternion) — identity means camera Z aligns with flange Z
+  # Rotation (quaternion) — joint 6 natural working position is +90° (π/2 rad).
+  # Camera is mounted with a 90° yaw offset relative to the flange Z axis.
+  # Quaternion for +90° rotation about Z: qz=sin(45°)=0.7071, qw=cos(45°)=0.7071
   qx: 0.0
   qy: 0.0
-  qz: 0.0
-  qw: 1.0
+  qz: 0.7071
+  qw: 0.7071
+
+# Grasp target offset correction (base frame, meters)
+# Use this to compensate for systematic grasp position error WITHOUT re-running hand-eye calibration.
+# Measure: actual_grasp_position - intended_target_position, negate each axis to get correction.
+# Example: if robot always goes 3cm too far in X and 2cm too high in Z:
+#   offset_x: -0.03, offset_z: -0.02
+grasp_offset:
+  x: 0.0    # positive = shift grasp right (base frame +X)
+  y: 0.0    # positive = shift grasp forward (base frame +Y)
+  z: 0.0    # positive = shift grasp up (base frame +Z)
 
 # Grasp parameters
 grasp:

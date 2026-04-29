@@ -25,6 +25,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(urdf REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
   set(CMAKE_AUTOMOC ON)
   set(CMAKE_AUTOUIC ON)
@@ -79,6 +80,7 @@ find_package(rclcpp_action REQUIRED)
     Qt5::3DExtras
     Qt5::3DInput
     Qt5::3DLogic
+    yaml-cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/ude_glove_sdk/libjsoncpp.a
   )
 

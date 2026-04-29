@@ -478,8 +478,20 @@ void AppWindow::updateUI() {
                   painter.drawEllipse(QPointF(wx, wy), 12, 12);
                   painter.setPen(Qt::white);
                   painter.setFont(QFont("monospace", 9));
-                  painter.drawText(QPointF(wx + 16, wy - 6),
-                      QString("(%1,%2)").arg((int)video_selected_point_.x()).arg((int)video_selected_point_.y()));
+                  // Map color-image coords to depth-image coords (different resolutions)
+                  double du = node_->last_depth_raw_.empty() ? 0.0 :
+                      video_selected_point_.x() * node_->last_depth_raw_.cols / video_image_size_.width();
+                  double dv = node_->last_depth_raw_.empty() ? 0.0 :
+                      video_selected_point_.y() * node_->last_depth_raw_.rows / video_image_size_.height();
+                  uint16_t depth_mm = node_->get_depth_mm_locked((int)du, (int)dv);
+                  QString info = QString("(%1,%2)")
+                      .arg((int)video_selected_point_.x())
+                      .arg((int)video_selected_point_.y());
+                  if (depth_mm > 0)
+                      info += QString(" %1mm").arg(depth_mm);
+                  else
+                      info += " --mm";
+                  painter.drawText(QPointF(wx + 16, wy - 6), info);
                   painter.end();
                   label_color_stream_->setPixmap(pix);
               }

@@ -17,25 +17,28 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 
 from common_msgs.srv import DetectBottle, TriggerGrasp
-from duco_msg.srv import RobotMove
+from duco_msg.srv import RobotMove, RobotControl
+from duco_msg.msg import DucoRobotState
 from lhandpro_interfaces.srv import SetAllPosition, MoveMotors
 
 from geometry_msgs.msg import PointStamped
 from tf2_ros import Buffer, TransformListener
 import tf2_geometry_msgs  # noqa: F401
 
+from vision_grasp.grasp_pose_safety_filter import GraspPoseSafetyFilter
+
 
 class GraspCoordinatorNode(Node):
 
     def __init__(self):
-        super().__init__('grasp_coordinator_node')
+        super().__init__('grasp_coordinator')
         self.cb_group = ReentrantCallbackGroup()
 
         # --- Parameters ---
         self.declare_parameter('camera_ns', '/camera')
         self.declare_parameter('camera_frame', 'camera_color_optical_frame')
         self.declare_parameter('base_frame', 'base_link')
-        self.declare_parameter('pre_grasp_height', 0.08)
+        self.declare_parameter('pre_grasp_height', 0.15)
         self.declare_parameter('grasp_z_offset', 0.02)
         self.declare_parameter('lift_height', 0.15)
         self.declare_parameter('grasp_rx', math.pi)
@@ -52,7 +55,18 @@ class GraspCoordinatorNode(Node):
         self.declare_parameter('place_z', 0.25)
         self.declare_parameter('max_reach', 0.90)
         self.declare_parameter('shoulder_height', 0.16)
+        self.declare_parameter('grasp_offset_x', 0.0)
+        self.declare_parameter('grasp_offset_y', 0.0)
+        self.declare_parameter('grasp_offset_z', 0.0)
         self._load_params()
+
+        # --- Safety filter ---
+        self._safety_filter = GraspPoseSafetyFilter(
+            logger=self.get_logger(),
+            max_reach=self.max_reach,
+            shoulder_height=self.shoulder_h,
+            pre_grasp_offset=self.pre_grasp_h,
+        )
 
         # --- TF2 ---
         self.tf_buffer = Buffer()
@@ -63,6 +77,8 @@ class GraspCoordinatorNode(Node):
             DetectBottle, '/bottle_detector/detect', callback_group=self.cb_group)
         self.cli_move = self.create_client(
             RobotMove, '/duco_robot/robot_move', callback_group=self.cb_group)
+        self.cli_control = self.create_client(
+            RobotControl, '/duco_robot/robot_control', callback_group=self.cb_group)
         self.cli_hand_pos = self.create_client(
             SetAllPosition, '/lhandpro_service/set_all_position', callback_group=self.cb_group)
         self.cli_hand_move = self.create_client(
@@ -76,8 +92,13 @@ class GraspCoordinatorNode(Node):
         # --- Subscribe to joint states for movel IK seed ---
         from sensor_msgs.msg import JointState
         self._current_joints = []
+        self._current_cart = []
+        self._robot_state = -1  # robot_state field from DucoRobotState
         self.create_subscription(
             JointState, '/joint_states', self._joint_states_cb, 10,
+            callback_group=self.cb_group)
+        self.create_subscription(
+            DucoRobotState, '/duco_cobot/robot_state', self._robot_state_cb, 10,
             callback_group=self.cb_group)
 
         self.get_logger().info('GraspCoordinatorNode ready')
@@ -103,18 +124,45 @@ class GraspCoordinatorNode(Node):
         self.place_z = self.get_parameter('place_z').value
         self.max_reach = self.get_parameter('max_reach').value
         self.shoulder_h = self.get_parameter('shoulder_height').value
+        self.grasp_offset_x = self.get_parameter('grasp_offset_x').value
+        self.grasp_offset_y = self.get_parameter('grasp_offset_y').value
+        self.grasp_offset_z = self.get_parameter('grasp_offset_z').value
 
     def _call_sync(self, client, request, timeout=30.0):
-        if not client.wait_for_service(timeout_sec=5.0):
+        if not client.wait_for_service(timeout_sec=10.0):
             raise RuntimeError(f'Service {client.srv_name} not available')
         future = client.call_async(request)
         deadline = time.time() + timeout
         while rclpy.ok() and not future.done():
             if time.time() > deadline:
                 future.cancel()
-                raise RuntimeError(f'Service {client.srv_name} timed out')
+                raise RuntimeError(f'Service {client.srv_name} timed out after {timeout}s')
+            # Abort immediately if robot was emergency-stopped or disabled
+            if self._robot_state not in (-1, 6):
+                future.cancel()
+                raise RuntimeError(
+                    f'Motion aborted: robot_state={self._robot_state} '
+                    f'(e-stop or disabled) during {client.srv_name}')
             time.sleep(0.02)
         return future.result()
+
+    # Pre-defined q_near seeds for different arm configurations.
+    # joint 6 (index 5) = π/2 (1.5708 rad) — natural working orientation
+    # where camera and gripper are correctly aligned.
+    IK_SEEDS = [
+        # Seed 1: front-low reach (elbow up)
+        [0.0,   -0.5,  1.2,  -0.7, -1.57,  1.5708],
+        # Seed 2: front-mid reach
+        [0.0,   -0.8,  1.5,  -0.7, -1.57,  1.5708],
+        # Seed 3: front-high reach
+        [0.0,   -1.0,  1.0,  -0.5, -1.57,  1.5708],
+        # Seed 4: slight right rotation
+        [0.3,   -0.7,  1.4,  -0.8, -2.0,   1.5708],
+        # Seed 5: slight left rotation
+        [-0.3,  -0.7,  1.4,  -0.8, -2.0,   1.5708],
+        # Seed 6: elbow down config
+        [0.0,    0.5, -1.2,   0.7, -1.57,  1.5708],
+    ]
 
     # Arm joint names published by DucoRobotStatus (must match URDF)
     ARM_JOINT_NAMES = [
@@ -135,6 +183,12 @@ class GraspCoordinatorNode(Node):
         except (ValueError, IndexError):
             pass  # message doesn't contain arm joints — skip
 
+    def _robot_state_cb(self, msg):
+        if len(msg.cart_actual_position) >= 6:
+            self._current_cart = list(msg.cart_actual_position[:6])
+        if hasattr(msg, 'robot_state'):
+            self._robot_state = int(msg.robot_state)
+
     def _check_reach(self, x, y, z):
         dz = z - self.shoulder_h
         dist = math.sqrt(x * x + y * y + dz * dz)
@@ -145,7 +199,6 @@ class GraspCoordinatorNode(Node):
     def _movel(self, x, y, z, rx, ry, rz, speed, accel=None):
         if len(self._current_joints) < 6:
             raise RuntimeError('No joint states received yet — cannot seed movel')
-        self._check_reach(x, y, z)
         req = RobotMove.Request()
         req.command = 'movel'
         req.arm_num = 0
@@ -154,35 +207,118 @@ class GraspCoordinatorNode(Node):
         req.v = float(speed)
         req.a = float(accel or self.move_accel)
         req.r = 0.0
+        req.tool = 'default'
+        req.wobj = 'default'
         req.block = True
         result = self._call_sync(self.cli_move, req, timeout=30.0)
         code = result.response.strip()
         if code == '4':
             self.get_logger().info(f'movel OK → ({x:.3f}, {y:.3f}, {z:.3f})')
             return
-        # movel failed (code 6 = singularity, 7 = illegal) — try movej as fallback
-        self.get_logger().warn(
-            f'movel failed (code={code}), falling back to movej')
+        # Don't attempt fallback if robot is in protective stop / e-stop
+        if self._robot_state != 6:
+            raise RuntimeError(
+                f'movel failed (code={code}) and robot stopped '
+                f'(state={self._robot_state}, likely safety zone violation). '
+                f'Check robot safety zone config for target ({x:.3f},{y:.3f},{z:.3f})')
+        self.get_logger().warn(f'movel failed (code={code}), falling back to movejpose')
         self._movej_cart(x, y, z, rx, ry, rz, speed, accel)
 
     def _movej_cart(self, x, y, z, rx, ry, rz, speed, accel=None):
-        """Move to Cartesian target using movejpose (joint-space path, avoids singularity)."""
+        """Move to Cartesian target using movejpose with multi-seed IK retry.
+
+        movejpose velocity unit: % of system max (0-100], NOT m/s.
+        Convert: assume max Cartesian speed ~1.0 m/s → multiply by 100.
+        Clamp to [5, 80] to keep motion safe.
+        """
         if len(self._current_joints) < 6:
             raise RuntimeError('No joint states received yet — cannot seed movejpose')
-        req = RobotMove.Request()
-        req.command = 'movejpose'
+
+        # Convert m/s → percentage for movejpose
+        v_pct = float(max(5.0, min(80.0, speed * 100.0)))
+        a_pct = float(max(5.0, min(80.0, (accel or self.move_accel) * 100.0)))
+
+        # Build seed list: current joints first, then pre-defined configs
+        seeds = [list(self._current_joints)] + self.IK_SEEDS
+        last_code = '?'
+
+        for i, seed in enumerate(seeds):
+            req = RobotMove.Request()
+            req.command = 'movejpose'
+            req.arm_num = 0
+            req.p = [float(x), float(y), float(z), float(rx), float(ry), float(rz)]
+            req.q = [float(j) for j in seed]
+            req.v = v_pct
+            req.a = a_pct
+            req.r = 0.0
+            req.tool = 'default'
+            req.wobj = 'default'
+            req.block = True
+            result = self._call_sync(self.cli_move, req, timeout=30.0)
+            last_code = result.response.strip()
+            if last_code == '4':
+                self.get_logger().info(
+                    f'movejpose OK (seed {i}) → ({x:.3f},{y:.3f},{z:.3f})')
+                return
+            self.get_logger().warn(
+                f'movejpose seed {i} failed (code={last_code}), trying next seed...')
+
+        raise RuntimeError(
+            f'movejpose failed with all {len(seeds)} seeds (last code={last_code})')
+
+    def _robot_control(self, command):
+        """Send a robot control command (enable/disable/poweron/poweroff)."""
+        req = RobotControl.Request()
+        req.command = command
         req.arm_num = 0
-        req.p = [float(x), float(y), float(z), float(rx), float(ry), float(rz)]
-        req.q = [float(j) for j in self._current_joints]
-        req.v = float(speed)
-        req.a = float(accel or self.move_accel)
+        req.block = False
+        result = self._call_sync(self.cli_control, req, timeout=5.0)
+        self.get_logger().info(f'robot_control {command} → {result.response}')
+
+    def _movej(self, joints, speed=1.0, accel=1.0, timeout=20.0):
+        """Joint-space move via movej2 (rad/s), bypasses IK."""
+        req = RobotMove.Request()
+        req.command = 'movej2'
+        req.arm_num = 0
+        req.q = [float(j) for j in joints]
+        req.p = []
+        req.v = float(speed)   # rad/s
+        req.a = float(accel)   # rad/s²
         req.r = 0.0
+        # movej2 does NOT use tool/wobj
+        req.tool = ''
+        req.wobj = ''
         req.block = True
-        result = self._call_sync(self.cli_move, req, timeout=30.0)
+        result = self._call_sync(self.cli_move, req, timeout=timeout)
         code = result.response.strip()
-        if code != '4':
-            raise RuntimeError(f'movejpose also failed (code={code})')
-        self.get_logger().info(f'movejpose OK → ({x:.3f}, {y:.3f}, {z:.3f})')
+        if code not in ('4', '5'):  # ST_Finished or ST_Interrupt both OK
+            raise RuntimeError(f'movej2 failed (code={code})')
+        self.get_logger().info(f'movej2 OK → {[f"{j:.3f}" for j in joints]}')
+
+    def _escape_singularity(self):
+        """Move to a known safe non-singular home pose via joint-space."""
+        # joint 6 = π/2 (1.5708 rad) — natural orientation for camera+gripper alignment
+        safe_joints = [0.0, -0.8, 1.4, -0.6, -1.57, 1.5708]
+
+        # If not enabled, send enable and wait for robot_state == 6 (SR_Enable)
+        STATE_ENABLE = 6
+        if self._robot_state != STATE_ENABLE:
+            self.get_logger().info(
+                f'[escape] robot_state={self._robot_state}, sending enable...')
+            self._robot_control('enable')
+            # Poll up to 5s for enable to take effect
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                time.sleep(0.2)
+                if self._robot_state == STATE_ENABLE:
+                    break
+            if self._robot_state != STATE_ENABLE:
+                raise RuntimeError(
+                    f'Robot not enabled after 5s (state={self._robot_state}). '
+                    'Please enable manually via UI.')
+
+        self.get_logger().info('[escape] Moving to safe home via movej...')
+        self._movej(safe_joints, speed=0.5, timeout=20.0)
 
     def _set_hand(self, positions):
         req_pos = SetAllPosition.Request()
@@ -197,7 +333,10 @@ class GraspCoordinatorNode(Node):
     def _transform_to_base(self, x_cam, y_cam, z_cam):
         p = PointStamped()
         p.header.frame_id = self.camera_frame
-        p.header.stamp = self.get_clock().now().to_msg()
+        # Use time=0 to request the latest available transform instead of
+        # current clock time, which avoids "extrapolation into the future"
+        # errors caused by small clock/TF publish skew (~10-20ms).
+        p.header.stamp = rclpy.time.Time().to_msg()
         p.point.x = x_cam
         p.point.y = y_cam
         p.point.z = z_cam
@@ -219,8 +358,9 @@ class GraspCoordinatorNode(Node):
     def _execute_grasp(self, select_u, select_v):
         self.get_logger().info(f'=== Grasp at pixel ({select_u:.0f}, {select_v:.0f}) ===')
 
-        # Step 1: Detect / locate target
-        self.get_logger().info('[1/7] Locating target...')
+        # Step 1: Detect FIRST while camera is still at the position user was looking from.
+        # eye-in-hand: detection MUST happen before any robot motion.
+        self.get_logger().info('[1/7] Locating target (camera in current pose)...')
         det_req = DetectBottle.Request()
         det_req.camera_ns = self.camera_ns
         det_req.select_u = float(select_u)
@@ -231,61 +371,85 @@ class GraspCoordinatorNode(Node):
         self.get_logger().info(
             f'  Camera frame: ({det_result.x:.3f}, {det_result.y:.3f}, {det_result.z:.3f})')
 
-        # Step 2: Transform to base frame
+        # Step 2: Transform to base frame NOW (robot hasn't moved yet, TF is valid).
         self.get_logger().info('[2/7] Transforming to base frame...')
         bx, by, bz = self._transform_to_base(det_result.x, det_result.y, det_result.z)
+        # Read offset parameters fresh each call so UI changes take effect immediately
+        ox = self.get_parameter('grasp_offset_x').value
+        oy = self.get_parameter('grasp_offset_y').value
+        oz = self.get_parameter('grasp_offset_z').value
+        bx += ox; by += oy; bz += oz
+        if ox or oy or oz:
+            self.get_logger().info(
+                f'  Offset applied: dx={ox:.3f} dy={oy:.3f} dz={oz:.3f}')
         self.get_logger().info(f'  Base frame: ({bx:.3f}, {by:.3f}, {bz:.3f})')
 
-        rx, ry, rz = self.grasp_rx, self.grasp_ry, self.grasp_rz
+        # Step 2b: Safety filter (uses current cart/joints before escape)
+        self.get_logger().info('[2b/7] Applying grasp pose safety filter...')
+        filt = self._safety_filter.filter(bx, by, bz,
+                                           list(self._current_cart),
+                                           list(self._current_joints))
+        if not filt.success:
+            raise RuntimeError(f'SafetyFilter rejected pose: {filt.reason}')
 
-        # Adaptive tilt: when target is far from base, tilt end-effector inward
-        # to help IK solve. Max tilt ~15° at max_reach.
-        horiz = math.sqrt(bx * bx + by * by)
-        tilt_threshold = 0.55  # start tilting beyond this distance
-        if horiz > tilt_threshold:
-            tilt_ratio = min((horiz - tilt_threshold) / (self.max_reach - tilt_threshold), 1.0)
-            max_tilt = math.radians(15)
-            tilt = tilt_ratio * max_tilt
-            # Tilt toward base origin: adjust rx/ry based on direction
-            angle_to_base = math.atan2(-by, -bx)
-            rx = rx - tilt * math.cos(angle_to_base)
-            ry = ry - tilt * math.sin(angle_to_base)
+        g  = filt.candidate
+        pg = filt.pre_grasp
+        grasp_z = g.z + self.grasp_z_off
+        lift_z  = g.z + self.lift_h
+
+        # Reach check on grasp point
+        self._check_reach(g.x, g.y, grasp_z)
+
+        # Clamp pre-grasp z within max_reach (DUCO reports out-of-workspace as "singular")
+        dxy = math.sqrt(g.x * g.x + g.y * g.y)
+        dz_avail = math.sqrt(max(0.0, self.max_reach ** 2 - dxy ** 2))
+        max_pg_z = self.shoulder_h + dz_avail - 0.03
+        pg_z = min(pg.z, max_pg_z)
+        pg_z = max(pg_z, grasp_z + 0.05)
+        if pg_z < pg.z:
             self.get_logger().info(
-                f'  Adaptive tilt: horiz={horiz:.3f}m, tilt={math.degrees(tilt):.1f}deg, rx={rx:.3f}, ry={ry:.3f}')
-
-        # Compute pre-grasp: retract along horizontal direction toward base
-        # This keeps z the same (avoids pushing z higher) and moves closer to base
-        if horiz > 0.01:
-            retract = self.pre_grasp_h  # reuse param as retract distance
-            ratio = retract / horiz
-            pre_bx = bx + (0 - bx) * ratio  # move toward base (0,0)
-            pre_by = by + (0 - by) * ratio
-        else:
-            pre_bx, pre_by = bx, by
-        pre_bz = bz + 0.03  # just slightly above target
-
-        grasp_z = bz + self.grasp_z_off
-        lift_z = bz + self.lift_h
+                f'  Pre-grasp z clamped {pg.z:.3f}→{pg_z:.3f}m (max_reach limit)')
 
         self.get_logger().info(
-            f'  Pre-grasp: ({pre_bx:.3f}, {pre_by:.3f}, {pre_bz:.3f}), '
-            f'Grasp: z={grasp_z:.3f}, Lift: z={lift_z:.3f}')
+            f'  Pre-grasp: ({pg.x:.3f},{pg.y:.3f},{pg_z:.3f}) '
+            f'Grasp z={grasp_z:.3f}, Lift z={lift_z:.3f}')
+
+        # Step 0: Escape singularity AFTER detection — robot moves, but target
+        # coordinates are already captured in base frame (which is fixed).
+        self.get_logger().info('[0/7] Escaping singularity to safe home...')
+        self._escape_singularity()
 
         # Step 3-7: Grasp sequence
         self.get_logger().info('[3/7] Opening hand...')
         self._set_hand(self.hand_open)
 
-        self.get_logger().info('[4/7] Pre-grasp...')
-        self._movel(pre_bx, pre_by, pre_bz, rx, ry, rz, self.move_speed)
+        self.get_logger().info('[4/7] Pre-grasp (trying orientation candidates)...')
+        orient_list = self._safety_filter.orientation_candidates(list(self._current_cart))
+        pre_grasp_ok = False
+        chosen_rx, chosen_ry, chosen_rz = g.rx, g.ry, g.rz
+        for i, (rx, ry, rz) in enumerate(orient_list):
+            try:
+                self._movej_cart(pg.x, pg.y, pg_z, rx, ry, rz, self.move_speed)
+                chosen_rx, chosen_ry, chosen_rz = rx, ry, rz
+                pre_grasp_ok = True
+                self.get_logger().info(
+                    f'  Pre-grasp OK with orientation candidate {i}: '
+                    f'rv=({rx:.3f},{ry:.3f},{rz:.3f})')
+                break
+            except RuntimeError as e:
+                self.get_logger().warn(f'  Orientation {i} failed: {e}')
+        if not pre_grasp_ok:
+            raise RuntimeError('Pre-grasp failed with all orientation candidates')
 
         self.get_logger().info('[5/7] Approaching...')
-        self._movel(bx, by, grasp_z, rx, ry, rz, self.approach_speed)
+        self._movel(g.x, g.y, grasp_z, chosen_rx, chosen_ry, chosen_rz, self.approach_speed)
 
         self.get_logger().info('[6/7] Grasping...')
         self._set_hand(self.hand_close)
 
         self.get_logger().info('[7/7] Lifting...')
-        self._movel(bx, by, lift_z, rx, ry, rz, self.lift_speed)
+        lift_z_safe = min(lift_z, max_pg_z)
+        self._movel(g.x, g.y, lift_z_safe, chosen_rx, chosen_ry, chosen_rz, self.lift_speed)
 
         self.get_logger().info('=== Grasp completed ===')
 

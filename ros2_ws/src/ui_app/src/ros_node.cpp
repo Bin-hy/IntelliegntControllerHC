@@ -2,6 +2,10 @@
 #include <sstream>
 #include <chrono>
 #include <algorithm>
+#include <rcl_interfaces/srv/set_parameters.hpp>
+#include <rcl_interfaces/msg/parameter.hpp>
+#include <rcl_interfaces/msg/parameter_value.hpp>
+#include <rcl_interfaces/msg/parameter_type.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
 using namespace std::chrono_literals;
@@ -487,9 +491,10 @@ void RosNode::color_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
 void RosNode::depth_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
     std::lock_guard<std::mutex> lock(image_mutex_);
     try {
-        // Normalize 16UC1 to 8UC1 for display
-        cv::Mat depth_raw = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_16UC1)->image;
-        cv::normalize(depth_raw, last_depth_image_, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+        // Keep raw 16UC1 for depth queries (millimeters)
+        last_depth_raw_ = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_16UC1)->image;
+        // Normalize to 8UC1 for display
+        cv::normalize(last_depth_raw_, last_depth_image_, 0, 255, cv::NORM_MINMAX, CV_8UC1);
     } catch (cv_bridge::Exception& e) {
         RCLCPP_ERROR(get_logger(), "cv_bridge exception (depth): %s", e.what());
     }
@@ -987,7 +992,8 @@ RosNode::CameraCapabilities RosNode::get_camera_capabilities(std::string camera_
 }
 
 void RosNode::publish_hand_eye_tf(double tx, double ty, double tz,
-                                   double rx_deg, double ry_deg, double rz_deg) {
+                                   double rx_deg, double ry_deg, double rz_deg,
+                                   const std::string& child_frame) {
     double rx = rx_deg * M_PI / 180.0;
     double ry = ry_deg * M_PI / 180.0;
     double rz = rz_deg * M_PI / 180.0;
@@ -997,8 +1003,8 @@ void RosNode::publish_hand_eye_tf(double tx, double ty, double tz,
 
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = this->get_clock()->now();
-    t.header.frame_id = "link_6";
-    t.child_frame_id = "camera_link";
+    t.header.frame_id = "L_base_link";
+    t.child_frame_id = child_frame.empty() ? "cam_305_link" : child_frame;
     t.transform.translation.x = tx;
     t.transform.translation.y = ty;
     t.transform.translation.z = tz;
@@ -1009,8 +1015,8 @@ void RosNode::publish_hand_eye_tf(double tx, double ty, double tz,
 
     tf_static_broadcaster_->sendTransform(t);
     RCLCPP_INFO(this->get_logger(),
-        "Published hand-eye TF: t=(%.4f, %.4f, %.4f) rpy=(%.1f, %.1f, %.1f)°",
-        tx, ty, tz, rx_deg, ry_deg, rz_deg);
+        "Published hand-eye TF: t=(%.4f, %.4f, %.4f) rpy=(%.1f, %.1f, %.1f)° → %s",
+        tx, ty, tz, rx_deg, ry_deg, rz_deg, t.child_frame_id.c_str());
 }
 
 void RosNode::call_trigger_grasp(double u, double v,
@@ -1030,4 +1036,33 @@ void RosNode::call_trigger_grasp(double u, double v,
             RCLCPP_INFO(get_logger(), "TriggerGrasp result: %s", response->message.c_str());
             if (callback) callback(response->success, response->message);
         });
+}
+
+void RosNode::set_grasp_offset(double ox, double oy, double oz) {
+    using rcl_interfaces::srv::SetParameters;
+    using rcl_interfaces::msg::Parameter;
+    using rcl_interfaces::msg::ParameterValue;
+    auto client = create_client<SetParameters>("/grasp_coordinator/set_parameters");
+    if (!client->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_WARN(get_logger(), "grasp_coordinator set_parameters not available");
+        return;
+    }
+    auto req = std::make_shared<SetParameters::Request>();
+    auto make_param = [](const std::string& name, double val) {
+        Parameter p;
+        p.name = name;
+        p.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+        p.value.double_value = val;
+        return p;
+    };
+    req->parameters = {
+        make_param("grasp_offset_x", ox),
+        make_param("grasp_offset_y", oy),
+        make_param("grasp_offset_z", oz),
+    };
+    client->async_send_request(req, [this, ox, oy, oz](
+        rclcpp::Client<SetParameters>::SharedFuture) {
+        RCLCPP_INFO(get_logger(),
+            "Grasp offset updated: dx=%.3f dy=%.3f dz=%.3f", ox, oy, oz);
+    });
 }

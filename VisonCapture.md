@@ -5,7 +5,7 @@
   ---                                                                                                                                           
   第一步：手眼 TF 标定（最关键）                                                                                                                
                                                                                                                                                 
-  这一步确定相机相对于机械臂末端法兰（link_6）的安装偏移。  
+  这一步确定相机相对于机械臂末端手爪基座（L_base_link）的安装偏移。  
                                                                                                                                                 
   初始测量（用尺子）：                                                                                                                          
   1. 测量相机光心到法兰中心的偏移：                                                                                                             
@@ -99,3 +99,15 @@
   # 3. grasp_z_offset 参数（下降偏移）                                                                                                          
                                                                                                                                                 
   调试完成、参数固化后，这个 Tab 可以从 app_window.cpp 的 buildDashboard() 中注释掉。
+
+
+
+
+
+
+    你现在需要做的实际调整：
+
+  1. 用卷尺粗测相机光心相对 L_base_link 的 x/y/z，更新 hand_eye.yaml 里的 placeholder 值
+  2. 重新 build：colcon build --packages-select vision_grasp ui_app
+  3. 启动系统后，在标定界面调整 TF 参数 → 点"发布 TF" → 观察 ros2 run tf2_tools view_frames 确认 TF 树连通
+  4. 用 easy_handeye2 做正式手眼标定，把结果通过 UI 保存为 hand_eye.yaml 覆盖原文件

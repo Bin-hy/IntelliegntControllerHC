@@ -83,11 +83,15 @@ public:
 
   // Hand-eye calibration TF (debug)
   void publish_hand_eye_tf(double tx, double ty, double tz,
-                           double rx_deg, double ry_deg, double rz_deg);
+                           double rx_deg, double ry_deg, double rz_deg,
+                           const std::string& child_frame = "cam_305_link");
 
   // Vision grasp trigger
   void call_trigger_grasp(double u, double v,
                           std::function<void(bool, const std::string&)> callback = nullptr);
+
+  // Update grasp offset compensation in running coordinator (via set_parameters service)
+  void set_grasp_offset(double ox, double oy, double oz);
 
   void call_lhand_enable(bool enable); // Use global enable for now, or default joint_id if needed
   void call_lhand_home(int joint_id, std::function<void(int)> callback = nullptr);
@@ -143,10 +147,19 @@ public:
   
   // Image storage
   cv::Mat last_color_image_;
-  cv::Mat last_depth_image_;
+  cv::Mat last_depth_image_;     // 8-bit normalized for display
+  cv::Mat last_depth_raw_;       // 16UC1 original millimeter values
   cv::Mat last_ir_left_image_;
   cv::Mat last_ir_right_image_;
   sensor_msgs::msg::PointCloud2::SharedPtr last_point_cloud_;
+
+  // Returns depth in mm at image pixel (u,v).
+  // MUST be called while holding image_mutex_ (caller's responsibility).
+  uint16_t get_depth_mm_locked(int u, int v) const {
+      if (last_depth_raw_.empty()) return 0;
+      if (u < 0 || v < 0 || u >= last_depth_raw_.cols || v >= last_depth_raw_.rows) return 0;
+      return last_depth_raw_.at<uint16_t>(v, u);
+  }
   
   std::mutex data_mutex_;
   std::mutex image_mutex_;

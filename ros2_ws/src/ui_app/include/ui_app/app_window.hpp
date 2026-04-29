@@ -200,11 +200,16 @@ private:
   std::array<int, 6> glove_hand_last_sent_ = {-1, -1, -1, -1, -1, -1};
 
   // Vision calibration tab (debug)
+  QComboBox* combo_calib_camera_ = nullptr;
   QDoubleSpinBox* spin_calib_tf_[6] = {};
+  QDoubleSpinBox* spin_grasp_offset_[3] = {};
   QSpinBox* spin_calib_hand_[6] = {};
   QLabel* label_calib_status_ = nullptr;
   QLabel* label_grasp_target_ = nullptr;
   QPushButton* btn_grasp_ = nullptr;
+  QString calib_yaml_path_;   // path to hand_eye.yaml currently loaded
+
+  void loadCalibYaml(const QString& path);   // populate spinboxes from yaml
 
   // Video target selection (event filter on label_color_stream_)
   QPointF video_selected_point_;
