@@ -45,6 +45,7 @@
 #include "common_msgs/msg/depth_measurement.hpp"
 #include "common_msgs/srv/set_current_user.hpp"
 #include "common_msgs/srv/trigger_grasp.hpp"
+#include "common_msgs/srv/calibrate_hand_eye.hpp"
 #include "lift_server/srv/lift_control.hpp"
 
 class RosNode : public rclcpp::Node {
@@ -81,10 +82,14 @@ public:
                          std::function<void(bool, const std::string&, int)> callback = nullptr,
                          int target_pulses = 0, int accel_ms = 0, int decel_ms = 0);
 
-  // Hand-eye calibration TF (debug)
+  // Hand-eye calibration TF (UI preview — for permanent calibration use call_hand_eye_calibrate)
   void publish_hand_eye_tf(double tx, double ty, double tz,
                            double rx_deg, double ry_deg, double rz_deg,
                            const std::string& child_frame = "cam_305_link");
+
+  // Hand-eye calibration service (delegates to vision_grasp/hand_eye_calibration node)
+  void call_hand_eye_calibrate(const std::string& command, double select_u = -1, double select_v = -1,
+                                std::function<void(bool, const std::string&, int, double, double)> callback = nullptr);
 
   // Vision grasp trigger
   void call_trigger_grasp(double u, double v,
@@ -231,6 +236,9 @@ private:
 
   // Vision grasp client
   rclcpp::Client<common_msgs::srv::TriggerGrasp>::SharedPtr client_trigger_grasp_;
+
+  // Hand-eye calibration client
+  rclcpp::Client<common_msgs::srv::CalibrateHandEye>::SharedPtr client_hand_eye_calibrate_;
 
   rclcpp_action::Client<ExecuteTask>::SharedPtr client_execute_task_;
   GoalHandleExecuteTask::SharedPtr current_goal_handle_;

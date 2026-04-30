@@ -313,6 +313,135 @@ QWidget* AppWindow::createCalibrationTab() {
 
     main_layout->addWidget(offset_group);
 
+    // ================================================================
+    // Hand-Eye Calibration Workflow (Touch-Point Method)
+    // ================================================================
+    auto* calib_wf_group = new QGroupBox(
+        tr_ui("手眼标定流程 (触点法)", "Hand-Eye Calibration (Touch-Point)"));
+    auto* calib_wf_layout = new QVBoxLayout(calib_wf_group);
+
+    auto* calib_wf_hint = new QLabel(tr_ui(
+        "步骤: 1) 工作面上画一个标记点(圆珠笔点即可), 保持固定\n"
+        "      2) 机器人指尖对准标记点 → 点\"触碰标记\"记录基准位置\n"
+        "      3) 移动机器人使相机能看到该点 → 在画面上点击标记位置\n"
+        "      4) 点\"拍照采点\" → 记录(机器人位姿, 相机3D坐标)\n"
+        "      5) 重复3-4, 至少4次不同视角, 位姿变化越大越好\n"
+        "      6) 点\"求解\" → 验证误差 < 5mm\n"
+        "      7) 点\"保存\" → 写入hand_eye.yaml并发布TF",
+        "Steps: 1) Draw a small dot on workspace, keep it FIXED\n"
+        "      2) Touch gripper tip to the dot → click \"Touch\"\n"
+        "      3) Move robot so camera sees the dot → click the dot on screen\n"
+        "      4) Click \"Collect\" → records (robot pose, camera 3D point)\n"
+        "      5) Repeat 3-4, at least 4 different viewpoints\n"
+        "      6) Click \"Solve\" → verify error < 5mm\n"
+        "      7) Click \"Save\" → writes hand_eye.yaml + publishes TF"));
+    calib_wf_hint->setStyleSheet("color: #888; font-size: 11px;");
+    calib_wf_hint->setWordWrap(true);
+    calib_wf_layout->addWidget(calib_wf_hint);
+
+    auto* calib_btn_row = new QHBoxLayout();
+    auto* btn_touch = new QPushButton(tr_ui("触碰标记", "Touch Dot"));
+    btn_touch->setStyleSheet("font-weight: bold; color: #ff6600;");
+    auto* btn_collect = new QPushButton(tr_ui("拍照采点", "Collect"));
+    btn_collect->setStyleSheet("font-weight: bold;");
+    auto* btn_solve = new QPushButton(tr_ui("求解", "Solve"));
+    auto* btn_save_calib = new QPushButton(tr_ui("保存标定", "Save Calibration"));
+    btn_save_calib->setStyleSheet("font-weight: bold; color: #00cc66;");
+    auto* btn_clear = new QPushButton(tr_ui("清除", "Clear"));
+    btn_clear->setFixedWidth(60);
+
+    calib_btn_row->addWidget(btn_touch, 1);
+    calib_btn_row->addWidget(btn_collect, 1);
+    calib_btn_row->addWidget(btn_solve, 1);
+    calib_btn_row->addWidget(btn_save_calib, 1);
+    calib_btn_row->addWidget(btn_clear);
+    calib_wf_layout->addLayout(calib_btn_row);
+
+    auto* label_calib_wf_status = new QLabel(
+        tr_ui("样本: 0 | 请先触碰标记", "Samples: 0 | Touch dot first"));
+    label_calib_wf_status->setStyleSheet("font-size: 12px;");
+    calib_wf_layout->addWidget(label_calib_wf_status);
+
+    main_layout->addWidget(calib_wf_group);
+
+    // --- Calibration workflow connections ---
+    connect(btn_touch, &QPushButton::clicked, this, [=]() {
+        btn_touch->setEnabled(false);
+        label_calib_wf_status->setText(tr_ui("触碰中...", "Touching..."));
+        node_->call_hand_eye_calibrate("touch", -1, -1,
+            [=](bool ok, const std::string& msg, int, double, double) {
+                QMetaObject::invokeMethod(this, [=]() {
+                    btn_touch->setEnabled(true);
+                    label_calib_wf_status->setText(QString::fromStdString(msg));
+                    label_calib_status_->setText(QString::fromStdString(msg));
+                });
+            });
+    });
+
+    connect(btn_collect, &QPushButton::clicked, this, [=]() {
+        if (!has_video_selection_) {
+            label_calib_wf_status->setText(
+                tr_ui("请先在画面中点击标记点!", "Click the dot on the video stream first!"));
+            return;
+        }
+        QPointF pt = video_selected_point_;
+        btn_collect->setEnabled(false);
+        label_calib_wf_status->setText(
+            tr_ui("采集中...", "Collecting...") +
+            QString(" (%1,%2)").arg((int)pt.x()).arg((int)pt.y()));
+        node_->call_hand_eye_calibrate("collect", pt.x(), pt.y(),
+            [=](bool ok, const std::string& msg, int count, double, double) {
+                QMetaObject::invokeMethod(this, [=]() {
+                    btn_collect->setEnabled(true);
+                    QString st = QString(tr_ui("样本: %1 | ", "Samples: %1 | ")).arg(count) +
+                                 QString::fromStdString(msg);
+                    label_calib_wf_status->setText(st);
+                    label_calib_status_->setText(QString::fromStdString(msg));
+                });
+            });
+    });
+
+    connect(btn_solve, &QPushButton::clicked, this, [=]() {
+        btn_solve->setEnabled(false);
+        label_calib_wf_status->setText(tr_ui("求解中...", "Solving..."));
+        node_->call_hand_eye_calibrate("solve", -1, -1,
+            [=](bool ok, const std::string& msg, int count,
+                double rot_err, double pos_err) {
+                QMetaObject::invokeMethod(this, [=]() {
+                    btn_solve->setEnabled(true);
+                    (void)rot_err;
+                    QString st = QString(tr_ui("样本: %1 | err=%2mm | ", "Samples: %1 | err=%2mm | "))
+                                     .arg(count).arg(pos_err, 0, 'f', 1) +
+                                 (ok ? tr_ui("通过", "PASS") : tr_ui("失败", "FAIL"));
+                    label_calib_wf_status->setText(st);
+                    label_calib_status_->setText(QString::fromStdString(msg));
+                });
+            });
+    });
+
+    connect(btn_save_calib, &QPushButton::clicked, this, [=]() {
+        btn_save_calib->setEnabled(false);
+        node_->call_hand_eye_calibrate("save", -1, -1,
+            [=](bool ok, const std::string& msg, int, double, double) {
+                QMetaObject::invokeMethod(this, [=]() {
+                    btn_save_calib->setEnabled(true);
+                    label_calib_wf_status->setText(QString::fromStdString(msg));
+                    label_calib_status_->setText(QString::fromStdString(msg));
+                });
+            });
+    });
+
+    connect(btn_clear, &QPushButton::clicked, this, [=]() {
+        node_->call_hand_eye_calibrate("clear", -1, -1,
+            [=](bool, const std::string& msg, int count, double, double) {
+                QMetaObject::invokeMethod(this, [=]() {
+                    QString st = QString(tr_ui("样本: %1 | ", "Samples: %1 | ")).arg(count) +
+                                 QString::fromStdString(msg);
+                    label_calib_wf_status->setText(st);
+                });
+            });
+    });
+
     // Wire up: grasp button → call trigger service using stored selection
     connect(btn_grasp_, &QPushButton::clicked, this, [this]() {
         if (!has_video_selection_) {

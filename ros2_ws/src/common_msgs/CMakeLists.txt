@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetCurrentUser.srv"
   "srv/DetectBottle.srv"
   "srv/TriggerGrasp.srv"
+  "srv/CalibrateHandEye.srv"
   "action/ExecuteTask.action"
   DEPENDENCIES std_msgs action_msgs
 )

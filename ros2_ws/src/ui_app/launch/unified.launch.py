@@ -64,6 +64,12 @@ def generate_launch_description():
         description='Camera namespace for vision grasp (e.g. /CV2R1610004H). Empty = disable vision grasp.'
     )
 
+    enable_calibration_arg = DeclareLaunchArgument(
+        'enable_calibration',
+        default_value='false',
+        description='Set true to launch hand-eye calibration node (requires printed ArUco marker)'
+    )
+
     enable_grasp = PythonExpression([
         "'", LaunchConfiguration('grasp_camera_ns'), "' != ''"
     ])
@@ -198,6 +204,7 @@ def generate_launch_description():
         launch_arguments={
             'camera_ns': LaunchConfiguration('grasp_camera_ns'),
             'launch_camera': 'false',
+            'calibration': LaunchConfiguration('enable_calibration'),
         }.items(),
         condition=IfCondition(enable_grasp),
     )
@@ -255,6 +262,7 @@ def generate_launch_description():
         depth_camera_serial_arg,
         lift_serial_port_arg,
         grasp_camera_ns_arg,
+        enable_calibration_arg,
         vision_launch,
         robot_launch,
         robot_state_publisher_node,

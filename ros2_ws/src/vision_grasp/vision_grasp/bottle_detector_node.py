@@ -74,6 +74,60 @@ class BottleDetectorNode(Node):
     def _cb_depth(self, msg): self.latest_depth = self.bridge.imgmsg_to_cv2(msg, 'passthrough')
     def _cb_info(self, msg):  self.K = msg.k
 
+    def _robust_depth_sample(self, u_center, v_center):
+        """Robust depth sampling with MAD outlier rejection and distance weighting.
+
+        Returns depth in meters, or None if no valid depth found.
+        """
+        u = int(round(u_center))
+        v = int(round(v_center))
+        h_img, w_img = self.latest_depth.shape[:2]
+        r = int(self.roi_half)
+
+        def _extract_roi(roi_r):
+            return self.latest_depth[
+                max(0, v - roi_r):min(h_img, v + roi_r),
+                max(0, u - roi_r):min(w_img, u + roi_r)
+            ].astype(np.float64)
+
+        roi = _extract_roi(r)
+        valid_mask = (roi > self.min_depth) & (roi < self.max_depth)
+        valid = roi[valid_mask]
+
+        # Fallback: smaller ROI if too few valid pixels
+        if len(valid) < 10:
+            r2 = max(3, r // 2)
+            roi2 = _extract_roi(r2)
+            valid_mask2 = (roi2 > self.min_depth) & (roi2 < self.max_depth)
+            valid2 = roi2[valid_mask2]
+            if len(valid2) < 5:
+                return None
+            return float(np.median(valid2)) / 1000.0
+
+        # MAD-based outlier rejection
+        median_val = np.median(valid)
+        mad = float(np.median(np.abs(valid - median_val)))
+        if mad < 1e-6:
+            return float(median_val) / 1000.0
+
+        # Build combined mask: valid AND inlier
+        inlier_thresh = 2.5 * mad
+        inlier_2d = valid_mask & (np.abs(roi - median_val) < inlier_thresh)
+        inliers = roi[inlier_2d]
+        if len(inliers) < 5:
+            return float(median_val) / 1000.0
+
+        # Distance-weighted mean (Gaussian kernel centered on ROI midpoint)
+        roi_h, roi_w = roi.shape
+        cy, cx = (roi_h - 1) / 2.0, (roi_w - 1) / 2.0
+        sigma = max(1.0, r / 2.0)
+        yu, xu = np.mgrid[0:roi_h, 0:roi_w]
+        weights = np.exp(-((yu - cy) ** 2 + (xu - cx) ** 2) / (2.0 * sigma ** 2))
+        inlier_weights = weights[inlier_2d]
+
+        weighted_mean = float(np.average(inliers, weights=inlier_weights))
+        return weighted_mean / 1000.0
+
     def detect_callback(self, request, response):
         # Camera switch
         if request.camera_ns and request.camera_ns != self.camera_ns:
@@ -135,22 +189,11 @@ class BottleDetectorNode(Node):
             bbox_h = float(xyxy[3] - xyxy[1])
 
         # --- Depth lookup (shared by both modes) ---
-        u = int(round(u_center))
-        v = int(round(v_center))
-        h_img, w_img = self.latest_depth.shape[:2]
-        r = self.roi_half
-        roi = self.latest_depth[
-            max(0, v - r):min(h_img, v + r),
-            max(0, u - r):min(w_img, u + r)
-        ].astype(np.float64)
-        valid = roi[(roi > self.min_depth) & (roi < self.max_depth)]
-
-        if len(valid) == 0:
+        depth_m = self._robust_depth_sample(u_center, v_center)
+        if depth_m is None:
             response.success = False
-            response.message = f'No valid depth at ({u}, {v})'
+            response.message = f'No valid depth at ({u_center:.0f}, {v_center:.0f})'
             return response
-
-        depth_m = float(np.median(valid)) / 1000.0
 
         # --- 3D projection (pinhole) ---
         fx, fy = self.K[0], self.K[4]

@@ -1,0 +1,10 @@
+string command          # "collect" | "solve" | "clear" | "save" | "verify"
+float64 select_u        # Manual pixel selection u (<0 = use ArUco auto-detection)
+float64 select_v        # Manual pixel selection v (<0 = use ArUco auto-detection)
+---
+bool success
+string message
+int32 sample_count
+float64 residual_rot_deg    # Mean rotation residual (degrees), after solve
+float64 residual_pos_mm     # Mean position residual (mm), after solve
+string filepath             # Path where calibration was saved

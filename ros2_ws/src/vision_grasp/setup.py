@@ -20,6 +20,7 @@ setup(
         'console_scripts': [
             'bottle_detector_node = vision_grasp.bottle_detector_node:main',
             'grasp_coordinator_node = vision_grasp.grasp_coordinator_node:main',
+            'hand_eye_calibration_node = vision_grasp.hand_eye_calibration_node:main',
         ],
     },
 )

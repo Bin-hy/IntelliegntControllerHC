@@ -110,7 +110,25 @@ def _create_grasp_nodes(context):
         output='screen',
     )
 
-    return [static_tf, detector, coordinator]
+    # Calibration node (conditional — only when calibration:=true)
+    # When active, it takes over static TF publishing from the launch-file node above.
+    # We also disable the launch-file static TF when calibrating to avoid duplicates.
+    is_calibrating = LaunchConfiguration('calibration')
+    calibration_node = Node(
+        package='vision_grasp',
+        executable='hand_eye_calibration_node',
+        name='hand_eye_calibration',
+        parameters=[{
+            'camera_ns': camera_ns_str,
+            'camera_frame': camera_optical_frame,
+            'base_frame': 'base_link',
+            'flange_frame': 'L_base_link',
+        }],
+        condition=IfCondition(is_calibrating),
+        output='screen',
+    )
+
+    return [static_tf, detector, coordinator, calibration_node]
 
 
 def generate_launch_description():
@@ -124,6 +142,8 @@ def generate_launch_description():
             description='Camera name (only used when launch_camera:=true)'),
         DeclareLaunchArgument('serial_number', default_value='',
             description='Camera serial number (only used when launch_camera:=true)'),
+        DeclareLaunchArgument('calibration', default_value='false',
+            description='Set true to launch hand-eye calibration node'),
     ]
 
     camera_name = LaunchConfiguration('camera_name')

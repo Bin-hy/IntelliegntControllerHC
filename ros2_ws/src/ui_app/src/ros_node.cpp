@@ -76,6 +76,7 @@ RosNode::RosNode() : rclcpp::Node("ui_ros_node"), count_(0) {
     client_lift_ = create_client<lift_server::srv::LiftControl>("/lift_server/lift_control");
     // Vision grasp
     client_trigger_grasp_ = create_client<common_msgs::srv::TriggerGrasp>("/grasp_coordinator/trigger_grasp");
+    client_hand_eye_calibrate_ = create_client<common_msgs::srv::CalibrateHandEye>("/hand_eye_calibration/calibrate");
 
     // LHand Clients
     client_lhand_enable_ = create_client<lhandpro_interfaces::srv::SetEnable>("/lhandpro_service/set_enable");
@@ -1015,8 +1016,36 @@ void RosNode::publish_hand_eye_tf(double tx, double ty, double tz,
 
     tf_static_broadcaster_->sendTransform(t);
     RCLCPP_INFO(this->get_logger(),
-        "Published hand-eye TF: t=(%.4f, %.4f, %.4f) rpy=(%.1f, %.1f, %.1f)° → %s",
+        "Published hand-eye TF preview: t=(%.4f, %.4f, %.4f) rpy=(%.1f, %.1f, %.1f)° → %s. "
+        "For permanent calibration, use call_hand_eye_calibrate('save') instead.",
         tx, ty, tz, rx_deg, ry_deg, rz_deg, t.child_frame_id.c_str());
+}
+
+void RosNode::call_hand_eye_calibrate(const std::string& command,
+                                       double select_u, double select_v,
+                                       std::function<void(bool, const std::string&, int, double, double)> callback) {
+    if (!client_hand_eye_calibrate_->wait_for_service(std::chrono::seconds(2))) {
+        RCLCPP_WARN(get_logger(), "HandEyeCalibration service not available — is vision_grasp launched with calibration:=true?");
+        if (callback) callback(false, "Calibration service not available", 0, 0.0, 0.0);
+        return;
+    }
+    auto request = std::make_shared<common_msgs::srv::CalibrateHandEye::Request>();
+    request->command = command;
+    request->select_u = select_u;
+    request->select_v = select_v;
+    RCLCPP_INFO(get_logger(), "HandEyeCalibration: command=%s", command.c_str());
+    client_hand_eye_calibrate_->async_send_request(request,
+        [this, callback](rclcpp::Client<common_msgs::srv::CalibrateHandEye>::SharedFuture future) {
+            auto response = future.get();
+            RCLCPP_INFO(get_logger(), "HandEyeCalibration result: %s (samples=%d)",
+                        response->message.c_str(), response->sample_count);
+            if (callback) {
+                callback(response->success, response->message,
+                         response->sample_count,
+                         response->residual_rot_deg,
+                         response->residual_pos_mm);
+            }
+        });
 }
 
 void RosNode::call_trigger_grasp(double u, double v,
