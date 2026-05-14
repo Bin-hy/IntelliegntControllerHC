@@ -13,7 +13,7 @@ Usage:
 import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -26,7 +26,6 @@ def _hand_eye_yaml():
 
 def _create_grasp_nodes(context):
     camera_ns_str = LaunchConfiguration('camera_ns').perform(context)
-    # Strip leading slash: "/CV2R1610004H" → "CV2R1610004H"
     sn = camera_ns_str.strip('/')
 
     import yaml
@@ -40,11 +39,11 @@ def _create_grasp_nodes(context):
     hand = cfg.get('hand', {})
     place = cfg.get('place', {})
     det = cfg.get('detection', {})
+    ft = cfg.get('fingertip', {})
 
-    # Static TF: L_base_link (hand flange, coincident with link_6) → {sn}_link
-    # L_base_link is the semantic parent since the camera is mounted on the hand,
-    # not directly on the bare flange. lhand_mount is a zero-offset fixed joint
-    # so numerically equivalent to link_6, but semantically correct.
+    # Static TF: L_base_link -> {sn}_link
+    # Only when NOT calibrating (calibration node publishes its own)
+    is_cal = LaunchConfiguration('calibration')
     static_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -60,9 +59,9 @@ def _create_grasp_nodes(context):
             '--frame-id', 'L_base_link',
             '--child-frame-id', f'{sn}_link',
         ],
+        condition=UnlessCondition(is_cal),
     )
 
-    # depth_registration=true → depth aligned to color → use color optical frame
     camera_optical_frame = f'{sn}_color_optical_frame'
 
     detector = Node(
@@ -106,14 +105,13 @@ def _create_grasp_nodes(context):
             'grasp_offset_x':   cfg.get('grasp_offset', {}).get('x', 0.0),
             'grasp_offset_y':   cfg.get('grasp_offset', {}).get('y', 0.0),
             'grasp_offset_z':   cfg.get('grasp_offset', {}).get('z', 0.0),
+            'fingertip_x':      ft.get('x', 0.0),
+            'fingertip_y':      ft.get('y', 0.0),
+            'fingertip_z':      ft.get('z', 0.12),
         }],
         output='screen',
     )
 
-    # Calibration node (conditional — only when calibration:=true)
-    # When active, it takes over static TF publishing from the launch-file node above.
-    # We also disable the launch-file static TF when calibrating to avoid duplicates.
-    is_calibrating = LaunchConfiguration('calibration')
     calibration_node = Node(
         package='vision_grasp',
         executable='hand_eye_calibration_node',
@@ -124,7 +122,7 @@ def _create_grasp_nodes(context):
             'base_frame': 'base_link',
             'flange_frame': 'L_base_link',
         }],
-        condition=IfCondition(is_calibrating),
+        condition=IfCondition(is_cal),
         output='screen',
     )
 
@@ -132,25 +130,23 @@ def _create_grasp_nodes(context):
 
 
 def generate_launch_description():
-    # --- Arguments ---
     args = [
         DeclareLaunchArgument('camera_ns', default_value='/cam_305',
-            description='Camera topic namespace (use SN if already launched by main system)'),
+            description='Camera topic namespace'),
         DeclareLaunchArgument('launch_camera', default_value='false',
-            description='Set true to launch Gemini 305 camera (skip if main system already launched it)'),
+            description='Set true to launch camera too'),
         DeclareLaunchArgument('camera_name', default_value='cam_305',
-            description='Camera name (only used when launch_camera:=true)'),
+            description='Camera name (only when launch_camera:=true)'),
         DeclareLaunchArgument('serial_number', default_value='',
-            description='Camera serial number (only used when launch_camera:=true)'),
+            description='Camera serial (only when launch_camera:=true)'),
         DeclareLaunchArgument('calibration', default_value='false',
-            description='Set true to launch hand-eye calibration node'),
+            description='Set true to launch calibration node'),
     ]
 
     camera_name = LaunchConfiguration('camera_name')
     serial_number = LaunchConfiguration('serial_number')
     launch_camera = LaunchConfiguration('launch_camera')
 
-    # --- 1. Gemini 305 camera (conditional) ---
     orbbec_share = get_package_share_directory('orbbec_camera')
     gemini305_launch = os.path.join(orbbec_share, 'launch', 'gemini305.launch.py')
     if not os.path.exists(gemini305_launch):
@@ -172,7 +168,6 @@ def generate_launch_description():
         condition=IfCondition(launch_camera),
     )
 
-    # --- 2-4. Static TF + Detector + Coordinator (created via OpaqueFunction) ---
     grasp_nodes = OpaqueFunction(function=_create_grasp_nodes)
 
     return LaunchDescription(args + [camera_node, grasp_nodes])

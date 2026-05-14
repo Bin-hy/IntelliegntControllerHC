@@ -1,35 +1,68 @@
-# Hand-eye calibration: T_end_camera (L_base_link → camera_link)
-# These are PLACEHOLDER values — must be calibrated!
-# Method: measure with ruler first, then refine with easy_handeye2
+# ==========================================================================
+# Hand-Eye Calibration Configuration
+# ==========================================================================
+# Transform: L_base_link → {sn}_link (hand flange to camera link frame)
+#
+# Calibration methods:
+#   Recommended: ArUco marker method
+#     ros2 launch ui_app unified.launch.py enable_aruco_calibration:=true
+#     1. Print ArUco marker (DICT_4X4_50, ID=0), ~40mm, fix on table.
+#     2. Jog robot to 8-12 varied poses where camera sees the marker.
+#     3. Call /aruco_calibration/calibrate collect at each pose.
+#     4. Call solve → check residuals < 5mm.
+#     5. Call save → writes this file + publishes TF.
+#
+#   Fallback: touch-point method
+#     ros2 launch ui_app unified.launch.py enable_calibration:=true
+#     Touch gripper tip to a fixed dot, then collect camera views of the dot.
+# ==========================================================================
+
 hand_eye:
-  # Translation (meters) from L_base_link flange center to camera optical center
+  # Translation from L_base_link to camera_link (meters)
+  # Camera is mounted above the hand connection area, looking forward along arm
   x: 0.05
   y: 0.00
-  z: 0.08
-  # Rotation (quaternion) — joint 6 natural working position is +90° (π/2 rad).
-  # Camera is mounted with a 90° yaw offset relative to the flange Z axis.
-  # Quaternion for +90° rotation about Z: qz=sin(45°)=0.7071, qw=cos(45°)=0.7071
+  z: 0.10
+  # Rotation quaternion [qx, qy, qz, qw]
+  # Camera link and L_base_link both have X≈forward direction
   qx: 0.0
   qy: 0.0
-  qz: 0.7071
-  qw: 0.7071
+  qz: 0.0
+  qw: 1.0
 
-# Grasp target offset correction (base frame, meters)
-# Use this to compensate for systematic grasp position error WITHOUT re-running hand-eye calibration.
-# Measure: actual_grasp_position - intended_target_position, negate each axis to get correction.
-# Example: if robot always goes 3cm too far in X and 2cm too high in Z:
-#   offset_x: -0.03, offset_z: -0.02
+# --------------------------------------------------------------------------
+# Grasp offset — fine-tuning WITHOUT re-running calibration
+# Applied in base_link frame AFTER the hand-eye TF transform.
+#
+# Usage: run a grasp, observe where gripper goes vs where bottle is,
+#        then set these to the NEGATIVE of the error.
+# Example: gripper always ends up 2cm too far in +X and 1cm too low in Z →
+#          offset_x: -0.02, offset_z: 0.01
+#
+# Values > 0.05m indicate calibration should be re-done.
+# --------------------------------------------------------------------------
 grasp_offset:
-  x: 0.0    # positive = shift grasp right (base frame +X)
-  y: 0.0    # positive = shift grasp forward (base frame +Y)
-  z: 0.0    # positive = shift grasp up (base frame +Z)
+  x: 0.0
+  y: 0.0
+  z: 0.0
 
-# Grasp parameters
+# --------------------------------------------------------------------------
+# Fingertip offset — position of grasp contact point in L_base_link frame
+# DH116 fingers extend in L_base_link +Z direction from the hand base.
+# Default 0.12m from URDF finger tip positions. Adjust if grasp is too
+# high/low relative to bottle.
+# --------------------------------------------------------------------------
+fingertip:
+  x: 0.0
+  y: 0.0
+  z: 0.12
+
+# Grasp motion parameters
 grasp:
   pre_grasp_height: 0.15    # m above target before descend
-  grasp_z_offset: 0.02      # m offset to account for fingertip length
+  grasp_z_offset: 0.02      # additional m for fingertip clearance
   lift_height: 0.15          # m above target after grasp
-  grasp_rx: 3.14159          # rad — vertical downward
+  grasp_rx: 3.14159          # rad — gripper pointing downward (rotation vector)
   grasp_ry: 0.0
   grasp_rz: 0.0
   move_speed: 0.20           # m/s transit
@@ -37,7 +70,7 @@ grasp:
   lift_speed: 0.10           # m/s lift
   move_accel: 0.5            # m/s²
 
-# Hand motor positions (6 motors, DH116)
+# Hand motor positions (6 motors, DH116, range 0-10000)
 hand:
   open:  [0, 0, 0, 0, 0, 0]
   close: [800, 800, 800, 800, 800, 800]
@@ -48,7 +81,7 @@ place:
   y: -0.30
   z: 0.25
 
-# Detection
+# Bottle detection parameters
 detection:
   model_path: "yolov8n.pt"
   confidence_threshold: 0.5

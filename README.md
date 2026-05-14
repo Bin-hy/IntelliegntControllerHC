@@ -42,3 +42,7 @@ sudo systemctl status hdservice # 查看hd服务状态
 使能状态下不能设置脉冲和速度的
 
 
+
+## 测试指令
+
+DISPLAY=:1 ros2 launch ui_app unified.launch.py robot_ip:=192.168.1.10 ethercat_channel:=1 grasp_camera_ns:='/CV2R1610004H' enable_calibration:=true 2>&1 | tee /home/hwtws/IntelliegntControllerHC/log/calib_$(date +%m%d_%H%M).log

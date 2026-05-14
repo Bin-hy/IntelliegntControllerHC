@@ -2,22 +2,9 @@
 """
 hand_eye_calibration_node.py
 -----------------------------
-Touch-point based eye-in-hand calibration.
+Touch-point based eye-in-hand calibration (translation only).
 
-Method (much more robust than ArUco 6D pose estimation):
-  1. Place a small, distinct marker dot on the work surface (fixed!).
-  2. "Touch": jog robot so gripper tip exactly touches the dot.
-     Record robot pose → marker position in base frame.
-  3. "Camera": jog robot to N >= 4 different poses where camera sees the dot.
-     At each pose, click the dot in the UI → pixel + depth → 3D in camera frame.
-  4. Solve: minimize projection error across all camera poses to find
-     T_flange→camera (X) that best explains all observations.
-  5. Save: write hand_eye.yaml + publish static TF.
-
-This avoids the unreliable ArUco orientation estimation on small markers.
-
-Services:
-  /hand_eye_calibration/calibrate  (common_msgs/srv/CalibrateHandEye)
+Service: /hand_eye_calibration/calibrate (common_msgs/srv/CalibrateHandEye)
 """
 
 import os
@@ -33,7 +20,6 @@ from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import TransformStamped
 from tf2_ros import StaticTransformBroadcaster
 from cv_bridge import CvBridge
-import cv2
 import numpy as np
 
 from vision_grasp.hand_eye_calibration import (
@@ -59,31 +45,27 @@ class HandEyeCalibrationNode(Node):
         self._load_params()
 
         # State
-        self._robot_pose = None       # 4x4 T_base→flange
-        self._robot_cart = None       # [x, y, z, rx, ry, rz]
-        self._color_img = None        # decoded BGR numpy array
-        self._depth_img = None        # decoded depth numpy array
+        self._robot_pose = None
+        self._robot_cart = None
+        self._depth_img = None
         self._camera_info = None
-        self._color_received = False
-        self._touch_sample = None     # (T_base→flange, p_base) from touch step
-        self._samples = []            # list of (T_W_E, p_cam) — flange pose + camera 3D point
+        self._touch_sample = None
+        self._samples = []            # list of (T_W_E, p_cam)
         self._solved_X = None
+        self._refined_p_base = None
 
-        # Subscribers
+        # Subscribers — only the ones that definitely work
         self._sub_robot = self.create_subscription(
             DucoRobotState, '/duco_cobot/robot_state',
             self._robot_state_cb, 10, callback_group=self.cb_group)
 
-        camera_ns = self.camera_ns if self.camera_ns.startswith('/') else '/' + self.camera_ns
-        self._sub_color = self.create_subscription(
-            Image, f'{camera_ns}/color/image_raw',
-            self._color_cb, 10, callback_group=self.cb_group)
+        camera_ns = self.camera_ns.lstrip('/')
         self._sub_depth = self.create_subscription(
-            Image, f'{camera_ns}/depth/image_raw',
-            self._depth_cb, 10, callback_group=self.cb_group)
+            Image, f'/{camera_ns}/depth/image_raw',
+            self._depth_cb, 1, callback_group=self.cb_group)
         self._sub_info = self.create_subscription(
-            CameraInfo, f'{camera_ns}/depth/camera_info',
-            self._info_cb, 10, callback_group=self.cb_group)
+            CameraInfo, f'/{camera_ns}/depth/camera_info',
+            self._info_cb, 1, callback_group=self.cb_group)
 
         self._tf_broadcaster = StaticTransformBroadcaster(self)
 
@@ -91,9 +73,7 @@ class HandEyeCalibrationNode(Node):
             CalibrateHandEye, '/hand_eye_calibration/calibrate',
             self._calibrate_callback, callback_group=self.cb_group)
 
-        self.get_logger().info(
-            f'HandEyeCalibration ready (camera="{camera_ns}") — '
-            f'touch-point method')
+        self.get_logger().info('HandEyeCalibration ready')
 
     def _load_params(self):
         self.camera_ns = self.get_parameter('camera_ns').value
@@ -106,28 +86,8 @@ class HandEyeCalibrationNode(Node):
             cart = list(msg.cart_actual_position[:6])
             self._robot_cart = cart
             x, y, z, rx, ry, rz = cart
-            # DUCO uses RPY Euler angles (radians), NOT Rodrigues
-            R = self._rpy_to_matrix(rx, ry, rz)
+            R = rotation_vector_to_matrix([rx, ry, rz])
             self._robot_pose = compose_4x4(R, np.array([x, y, z]))
-
-    @staticmethod
-    def _rpy_to_matrix(rx, ry, rz):
-        """X-Y-Z fixed angles (RPY): R = Rz(rz) * Ry(ry) * Rx(rx)."""
-        cr, sr = np.cos(rx), np.sin(rx)
-        cp, sp = np.cos(ry), np.sin(ry)
-        cy, sy = np.cos(rz), np.sin(rz)
-        return np.array([
-            [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
-            [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],
-            [-sp,   cp*sr,            cp*cr],
-        ], dtype=np.float64)
-
-    def _color_cb(self, msg):
-        try:
-            self._color_img = self._bridge.imgmsg_to_cv2(msg, 'bgr8')
-            self._color_received = True
-        except Exception:
-            pass
 
     def _depth_cb(self, msg):
         try:
@@ -138,7 +98,7 @@ class HandEyeCalibrationNode(Node):
     def _info_cb(self, msg):
         self._camera_info = msg
 
-    # ── Service ──────────────────────────────────────────────────────
+    # ── Service dispatch ──────────────────────────────────────────────
 
     def _calibrate_callback(self, request, response):
         cmd = request.command.lower().strip()
@@ -160,8 +120,6 @@ class HandEyeCalibrationNode(Node):
                     'Use: touch, collect, solve, clear, save')
         except Exception as e:
             self.get_logger().error(f'Command "{cmd}" failed: {e}')
-            import traceback
-            self.get_logger().error(traceback.format_exc())
             response.success = False
             response.message = str(e)
         return response
@@ -169,30 +127,23 @@ class HandEyeCalibrationNode(Node):
     # ── Touch ────────────────────────────────────────────────────────
 
     def _handle_touch(self, response):
-        """Record the marker position by touching it with the gripper tip."""
         if self._robot_pose is None:
             response.success = False
-            response.message = 'No robot state — wait for /duco_cobot/robot_state'
+            response.message = 'No robot state'
             return response
 
         T_W_E = self._robot_pose.copy()
-        # Approximate tool tip in flange frame (DH116 gripper)
-        # Fingertip is about 0.15m in flange +Z direction
-        p_tool = np.array([0.0, 0.0, 0.15])
+        p_tool = np.array([0.0, 0.0, 0.12])
         p_base = T_W_E[:3, :3] @ p_tool + T_W_E[:3, 3]
 
         with self._lock:
             self._touch_sample = (T_W_E, p_base)
 
         self.get_logger().info(
-            f'Touch recorded: marker_base=({p_base[0]:.4f},{p_base[1]:.4f},{p_base[2]:.4f}) '
-            f'flange=({self._robot_cart[0]:.3f},{self._robot_cart[1]:.3f},{self._robot_cart[2]:.3f})')
-
+            f'Touch: marker_base=({p_base[0]:.4f},{p_base[1]:.4f},{p_base[2]:.4f})')
         response.success = True
-        response.sample_count = 1
-        response.message = (
-            f'Marker touched at base=({p_base[0]:.4f},{p_base[1]:.4f},{p_base[2]:.4f})m. '
-            f'Now move camera to see the dot and click "collect".')
+        response.sample_count = len(self._samples)
+        response.message = 'Touch recorded'
         return response
 
     # ── Collect ──────────────────────────────────────────────────────
@@ -200,7 +151,7 @@ class HandEyeCalibrationNode(Node):
     def _handle_collect(self, request, response):
         if self._robot_pose is None:
             response.success = False
-            response.message = 'No robot state yet'
+            response.message = 'No robot state'
             return response
 
         with self._lock:
@@ -215,17 +166,30 @@ class HandEyeCalibrationNode(Node):
         u, v = request.select_u, request.select_v
         if u < 0 or v < 0:
             response.success = False
-            response.message = (
-                'Click the marker dot in the camera view first to get pixel (u,v). '
-                'The calibration UI captures your click coordinates.')
+            response.message = 'Click the marker dot on the video stream first'
             return response
 
-        # Depth → 3D in camera frame
-        p_cam = self._pixel_to_camera(u, v, depth_img, camera_info)
-        if p_cam is None:
+        u, v = int(round(u)), int(round(v))
+        h, w = depth_img.shape
+        if u < 0 or v < 0 or u >= w or v >= h:
             response.success = False
-            response.message = f'No valid depth at pixel ({u:.0f}, {v:.0f})'
+            response.message = 'Pixel out of bounds'
             return response
+
+        r = 8
+        roi = depth_img[max(0, v-r):min(h, v+r),
+                        max(0, u-r):min(w, u+r)].astype(np.float64)
+        valid = roi[(roi > 100) & (roi < 5000)]
+        if len(valid) < 5:
+            response.success = False
+            response.message = f'No valid depth at ({u}, {v})'
+            return response
+
+        depth_m = float(np.median(valid)) / 1000.0
+        K = np.array(camera_info.k).reshape(3, 3)
+        x = (u - K[0, 2]) * depth_m / K[0, 0]
+        y = (v - K[1, 2]) * depth_m / K[1, 1]
+        p_cam = np.array([x, y, depth_m])
 
         T_W_E = self._robot_pose.copy()
         with self._lock:
@@ -233,182 +197,96 @@ class HandEyeCalibrationNode(Node):
             n = len(self._samples)
 
         self.get_logger().info(
-            f'Camera sample {n}: pixel=({u:.0f},{v:.0f}) '
-            f'cam_3D=({p_cam[0]:.4f},{p_cam[1]:.4f},{p_cam[2]:.4f}) '
+            f'Sample {n}: pixel=({u},{v}) cam=({x:.4f},{y:.4f},{depth_m:.4f}) '
             f'flange=({self._robot_cart[0]:.3f},{self._robot_cart[1]:.3f},{self._robot_cart[2]:.3f})')
 
         response.success = True
         response.sample_count = n
-        response.message = f'Camera sample {n} recorded'
+        response.message = f'Sample {n} recorded'
         return response
 
-    def _pixel_to_camera(self, u, v, depth_img, camera_info):
-        """Convert pixel + depth image → 3D point in camera optical frame."""
-        u, v = int(round(u)), int(round(v))
-        h, w = depth_img.shape
-        if u < 0 or v < 0 or u >= w or v >= h:
-            return None
-
-        r = 8
-        roi = depth_img[max(0, v-r):min(h, v+r),
-                        max(0, u-r):min(w, u+r)].astype(np.float64)
-        valid = roi[(roi > 100) & (roi < 5000)]
-        if len(valid) < 5:
-            return None
-
-        depth_m = float(np.median(valid)) / 1000.0
-        K = np.array(camera_info.k).reshape(3, 3)
-        x = (u - K[0, 2]) * depth_m / K[0, 0]
-        y = (v - K[1, 2]) * depth_m / K[1, 1]
-        return np.array([x, y, depth_m])
-
-    # ── Solve ────────────────────────────────────────────────────────
+    # ── Solve ─────────────────────────────────────────────────────────
 
     def _handle_solve(self, response):
         with self._lock:
             if self._touch_sample is None:
                 response.success = False
-                response.message = 'Run "touch" first to record the marker position.'
+                response.message = 'Run "touch" first'
                 return response
             if len(self._samples) < 3:
                 response.success = False
                 response.message = (
-                    f'Need at least 3 camera samples, have {len(self._samples)}.')
+                    f'Need at least 3 samples, have {len(self._samples)}')
                 return response
-
             _, p_base = self._touch_sample
-            samples = list(self._samples)  # list of (T_W_E, p_cam)
+            samples = list(self._samples)
 
         T_W_E_list = [s[0] for s in samples]
         p_cam_list = [s[1] for s in samples]
 
-        X, err = self._optimize_hand_eye(T_W_E_list, p_cam_list, p_base)
-
-        with self._lock:
-            self._solved_X = X
-
-        # Project all camera points to base using solved X and compare to touch p_base
-        errors = []
-        for T_W_E, p_cam in samples:
-            proj = T_W_E[:3, :3] @ (X[:3, :3] @ p_cam + X[:3, 3]) + T_W_E[:3, 3]
-            err_mm = np.linalg.norm(proj - p_base) * 1000.0
-            errors.append(err_mm)
-
-        mean_err = np.mean(errors)
-        max_err = np.max(errors)
-
-        t = X[:3, 3]
-        rx, ry, rz = self._rpy_deg(X[:3, :3])
-
-        response.success = True
-        response.sample_count = len(samples)
-        response.residual_rot_deg = 0.0
-        response.residual_pos_mm = float(mean_err)
-
-        kval = 'PASS' if mean_err < 5.0 else 'MARGINAL' if mean_err < 15.0 else 'FAIL'
-        response.message = (
-            f'Solved X: t=({t[0]:.4f},{t[1]:.4f},{t[2]:.4f})m '
-            f'rpy=({rx:.1f},{ry:.1f},{rz:.1f})° | '
-            f'Projection error: mean={mean_err:.1f}mm max={max_err:.1f}mm | {kval}')
-
-        self.get_logger().info(response.message)
-        for i, e in enumerate(errors):
-            self.get_logger().info(f'  Sample {i+1}: error={e:.1f}mm')
-        return response
-
-    def _optimize_hand_eye(self, T_W_E_list, p_cam_list, p_base):
-        """Solve for camera translation only (rotation fixed from placeholder).
-
-        For each sample: p_base = R_W_E * (R_X * p_cam + t_X) + t_W_E
-        t_X = R_W_E^T * (p_base - t_W_E) - R_X * p_cam
-
-        Solves t_X and refines p_base alternately (closed-form linear LS).
-        """
         import yaml as _yaml
-        try:
-            from ament_index_python.packages import get_package_share_directory
-            pkg_share = get_package_share_directory('vision_grasp')
-            yaml_path = os.path.join(pkg_share, 'config', 'hand_eye.yaml')
-        except Exception:
-            here = os.path.dirname(os.path.abspath(__file__))
-            yaml_path = os.path.join(here, '..', '..', '..', '..',
-                                     'src', 'vision_grasp', 'config', 'hand_eye.yaml')
-            yaml_path = os.path.abspath(yaml_path)
-
+        yaml_path = self._find_yaml_path()
         with open(yaml_path) as f:
             cfg = _yaml.safe_load(f)
         he = cfg.get('hand_eye', {})
-        qx, qy = he.get('qx', 0), he.get('qy', 0)
-        qz, qw = he.get('qz', 0.7071), he.get('qw', 0.7071)
-        R_X = quaternion_to_rotation_matrix([qx, qy, qz, qw])
+        R_X = quaternion_to_rotation_matrix([
+            he.get('qx', 0.0), he.get('qy', 0.0),
+            he.get('qz', 0.0), he.get('qw', 1.0),
+        ])
 
         n = len(T_W_E_list)
         cur_p_base = p_base.copy()
 
-        # Alternating: solve t_X → solve p_base
-        for iteration in range(10):
-            # Solve t_X from current p_base
+        for _ in range(10):
             t_ests = []
             for i in range(n):
                 R_W_E = T_W_E_list[i][:3, :3]
                 t_W_E = T_W_E_list[i][:3, 3]
-                p_cam = p_cam_list[i]
-                t_i = R_W_E.T @ (cur_p_base - t_W_E) - R_X @ p_cam
-                t_ests.append(t_i)
+                t_ests.append(R_W_E.T @ (cur_p_base - t_W_E) - R_X @ p_cam_list[i])
             t_X = np.mean(t_ests, axis=0)
-            t_std = np.std(t_ests, axis=0)
 
-            # Solve p_base from current t_X
             p_ests = []
             for i in range(n):
                 R_W_E = T_W_E_list[i][:3, :3]
                 t_W_E = T_W_E_list[i][:3, 3]
-                p_cam = p_cam_list[i]
-                p_i = R_W_E @ (R_X @ p_cam + t_X) + t_W_E
-                p_ests.append(p_i)
+                p_ests.append(R_W_E @ (R_X @ p_cam_list[i] + t_X) + t_W_E)
             new_p_base = np.mean(p_ests, axis=0)
 
-            shift = np.linalg.norm(new_p_base - cur_p_base)
-            cur_p_base = new_p_base
-            if shift < 1e-6:
-                self.get_logger().info(f'Translation solver converged after {iteration+1} iters')
+            if np.linalg.norm(new_p_base - cur_p_base) < 1e-6:
                 break
+            cur_p_base = new_p_base
 
-        # Final error
         errors = []
         for i in range(n):
             R_W_E = T_W_E_list[i][:3, :3]
             t_W_E = T_W_E_list[i][:3, 3]
-            p_cam = p_cam_list[i]
-            proj = R_W_E @ (R_X @ p_cam + t_X) + t_W_E
+            proj = R_W_E @ (R_X @ p_cam_list[i] + t_X) + t_W_E
             errors.append(np.linalg.norm(proj - cur_p_base) * 1000.0)
         mean_err = float(np.mean(errors))
 
-        self.get_logger().info(
-            f'Translation: t=({t_X[0]:.4f},{t_X[1]:.4f},{t_X[2]:.4f})m '
-            f'(std: {np.linalg.norm(t_std)*1000:.1f}mm)')
-        self.get_logger().info(
-            f'Refined marker_base=({cur_p_base[0]:.4f},{cur_p_base[1]:.4f},{cur_p_base[2]:.4f}) '
-            f'(shift from touch: {np.linalg.norm(cur_p_base-p_base)*1000:.1f}mm)')
-        self.get_logger().info(
-            f'Mean projection error: {mean_err:.1f}mm')
-
         X = compose_4x4(R_X, t_X)
-        return X, mean_err
 
-    def _rpy_deg(self, R):
-        """3x3 rotation → roll, pitch, yaw in degrees."""
-        import math
-        sy = math.sqrt(R[0, 0]**2 + R[1, 0]**2)
-        if sy > 1e-6:
-            rx = math.atan2(R[2, 1], R[2, 2])
-            ry = math.atan2(-R[2, 0], sy)
-            rz = math.atan2(R[1, 0], R[0, 0])
-        else:
-            rx = math.atan2(-R[1, 2], R[1, 1])
-            ry = math.atan2(-R[2, 0], sy)
-            rz = 0.0
-        return math.degrees(rx), math.degrees(ry), math.degrees(rz)
+        with self._lock:
+            self._solved_X = X
+            self._refined_p_base = cur_p_base
+
+        t = X[:3, 3]
+        q = rotation_matrix_to_quaternion(X[:3, :3])
+        p_shift = np.linalg.norm(cur_p_base - p_base) * 1000.0
+        kval = 'PASS' if mean_err < 5.0 else 'MARGINAL' if mean_err < 15.0 else 'FAIL'
+
+        response.success = True
+        response.sample_count = n
+        response.residual_pos_mm = float(mean_err)
+        response.message = (
+            f'Solved: t=({t[0]:.4f},{t[1]:.4f},{t[2]:.4f})m '
+            f'q=({q[0]:.3f},{q[1]:.3f},{q[2]:.3f},{q[3]:.3f}) | '
+            f'err={mean_err:.1f}mm shift={p_shift:.1f}mm | {kval}')
+
+        self.get_logger().info(response.message)
+        for i, e in enumerate(errors):
+            self.get_logger().info(f'  Sample {i+1}: err={e:.1f}mm')
+        return response
 
     # ── Clear ────────────────────────────────────────────────────────
 
@@ -418,9 +296,10 @@ class HandEyeCalibrationNode(Node):
             self._samples.clear()
         self._touch_sample = None
         self._solved_X = None
+        self._refined_p_base = None
         response.success = True
         response.sample_count = 0
-        response.message = f'Cleared touch + {n} camera samples'
+        response.message = f'Cleared {n} samples'
         return response
 
     # ── Save ──────────────────────────────────────────────────────────
@@ -433,45 +312,29 @@ class HandEyeCalibrationNode(Node):
                 response.message = 'Run "solve" first'
                 return response
             X = self._solved_X.copy()
-
-        # Recompute projection error
-        with self._lock:
-            _, p_base = self._touch_sample
+            refined_p_base = (self._refined_p_base.copy()
+                              if self._refined_p_base is not None else None)
             samples = list(self._samples)
+
+        p_ref = refined_p_base if refined_p_base is not None else self._touch_sample[1]
         errors = []
         for T_W_E, p_cam in samples:
             proj = T_W_E[:3, :3] @ (X[:3, :3] @ p_cam + X[:3, 3]) + T_W_E[:3, 3]
-            errors.append(np.linalg.norm(proj - p_base) * 1000.0)
+            errors.append(np.linalg.norm(proj - p_ref) * 1000.0)
         mean_err = float(np.mean(errors))
 
-        # Quality gate
         if mean_err > 15.0:
             response.success = False
             response.residual_pos_mm = mean_err
-            response.message = (
-                f'REJECTED: mean projection error = {mean_err:.1f}mm > 15mm. '
-                f'Re-collect with more varied camera poses and ensure the '
-                f'dot is precisely clicked.')
-            self.get_logger().error(response.message)
+            response.message = f'REJECTED: mean_err={mean_err:.1f}mm > 15mm'
             return response
 
-        # Find yaml path
-        from ament_index_python.packages import get_package_share_directory
-        try:
-            pkg_share = get_package_share_directory('vision_grasp')
-            yaml_path = os.path.join(pkg_share, 'config', 'hand_eye.yaml')
-        except Exception:
-            here = os.path.dirname(os.path.abspath(__file__))
-            yaml_path = os.path.join(here, '..', '..', '..', '..',
-                                     'src', 'vision_grasp', 'config', 'hand_eye.yaml')
-            yaml_path = os.path.abspath(yaml_path)
-
+        yaml_path = self._find_yaml_path()
         residuals = {'rot_deg': 0, 'pos_mm': round(mean_err, 2)}
         report = save_calibration_to_yaml(X, yaml_path, residuals=residuals,
                                           yaml_obj=yaml)
         self.get_logger().info(report)
 
-        # Publish static TF
         t = X[:3, 3]
         q = rotation_matrix_to_quaternion(X[:3, :3])
         child_frame = self._get_camera_link_name()
@@ -487,10 +350,8 @@ class HandEyeCalibrationNode(Node):
         tf_msg.transform.rotation.y = float(q[1])
         tf_msg.transform.rotation.z = float(q[2])
         tf_msg.transform.rotation.w = float(q[3])
-
         self._tf_broadcaster.sendTransform(tf_msg)
-        self.get_logger().info(
-            f'Published static TF: {self.flange_frame} → {child_frame}')
+        self.get_logger().info(f'Published TF: {self.flange_frame} -> {child_frame}')
 
         response.success = True
         response.sample_count = len(samples)
@@ -498,6 +359,19 @@ class HandEyeCalibrationNode(Node):
         response.filepath = yaml_path
         response.message = report
         return response
+
+    # ── Helpers ──────────────────────────────────────────────────────
+
+    def _find_yaml_path(self):
+        try:
+            from ament_index_python.packages import get_package_share_directory
+            pkg_share = get_package_share_directory('vision_grasp')
+            return os.path.join(pkg_share, 'config', 'hand_eye.yaml')
+        except Exception:
+            here = os.path.dirname(os.path.abspath(__file__))
+            return os.path.abspath(os.path.join(
+                here, '..', '..', '..', '..',
+                'src', 'vision_grasp', 'config', 'hand_eye.yaml'))
 
     def _get_camera_link_name(self):
         if '_color_optical_frame' in self.camera_frame:

@@ -314,27 +314,23 @@ QWidget* AppWindow::createCalibrationTab() {
     main_layout->addWidget(offset_group);
 
     // ================================================================
-    // Hand-Eye Calibration Workflow (Touch-Point Method)
+    // Hand-Eye Calibration Workflow
     // ================================================================
     auto* calib_wf_group = new QGroupBox(
-        tr_ui("手眼标定流程 (触点法)", "Hand-Eye Calibration (Touch-Point)"));
+        tr_ui("手眼标定", "Hand-Eye Calibration"));
     auto* calib_wf_layout = new QVBoxLayout(calib_wf_group);
 
     auto* calib_wf_hint = new QLabel(tr_ui(
-        "步骤: 1) 工作面上画一个标记点(圆珠笔点即可), 保持固定\n"
-        "      2) 机器人指尖对准标记点 → 点\"触碰标记\"记录基准位置\n"
-        "      3) 移动机器人使相机能看到该点 → 在画面上点击标记位置\n"
-        "      4) 点\"拍照采点\" → 记录(机器人位姿, 相机3D坐标)\n"
-        "      5) 重复3-4, 至少4次不同视角, 位姿变化越大越好\n"
-        "      6) 点\"求解\" → 验证误差 < 5mm\n"
-        "      7) 点\"保存\" → 写入hand_eye.yaml并发布TF",
-        "Steps: 1) Draw a small dot on workspace, keep it FIXED\n"
-        "      2) Touch gripper tip to the dot → click \"Touch\"\n"
-        "      3) Move robot so camera sees the dot → click the dot on screen\n"
-        "      4) Click \"Collect\" → records (robot pose, camera 3D point)\n"
-        "      5) Repeat 3-4, at least 4 different viewpoints\n"
-        "      6) Click \"Solve\" → verify error < 5mm\n"
-        "      7) Click \"Save\" → writes hand_eye.yaml + publishes TF"));
+        "1) 工作面上画标记点, 保持固定\n"
+        "2) 机器人指尖对准标记点 → 点\"触碰标记\"\n"
+        "3) 移动机器人使相机能看到该点 → 在画面上点击标记位置\n"
+        "4) 点\"拍照采点\" → 重复3-4至少4次不同视角\n"
+        "5) 点\"求解\" → 点\"保存\"",
+        "1) Draw a dot on workspace, keep it FIXED\n"
+        "2) Touch gripper tip to dot → click \"Touch\"\n"
+        "3) Move robot so camera sees dot → click dot on video\n"
+        "4) Click \"Collect\" → repeat 3-4 at least 4 times\n"
+        "5) Click \"Solve\" → Click \"Save\""));
     calib_wf_hint->setStyleSheet("color: #888; font-size: 11px;");
     calib_wf_hint->setWordWrap(true);
     calib_wf_layout->addWidget(calib_wf_hint);

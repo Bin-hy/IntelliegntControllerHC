@@ -58,6 +58,9 @@ class GraspCoordinatorNode(Node):
         self.declare_parameter('grasp_offset_x', 0.0)
         self.declare_parameter('grasp_offset_y', 0.0)
         self.declare_parameter('grasp_offset_z', 0.0)
+        self.declare_parameter('fingertip_x', 0.0)
+        self.declare_parameter('fingertip_y', 0.0)
+        self.declare_parameter('fingertip_z', 0.12)
         self._load_params()
 
         # --- Safety filter ---
@@ -127,6 +130,9 @@ class GraspCoordinatorNode(Node):
         self.grasp_offset_x = self.get_parameter('grasp_offset_x').value
         self.grasp_offset_y = self.get_parameter('grasp_offset_y').value
         self.grasp_offset_z = self.get_parameter('grasp_offset_z').value
+        self.fingertip_x = self.get_parameter('fingertip_x').value
+        self.fingertip_y = self.get_parameter('fingertip_y').value
+        self.fingertip_z = self.get_parameter('fingertip_z').value
 
     def _call_sync(self, client, request, timeout=30.0):
         if not client.wait_for_service(timeout_sec=10.0):
@@ -333,15 +339,23 @@ class GraspCoordinatorNode(Node):
     def _transform_to_base(self, x_cam, y_cam, z_cam):
         p = PointStamped()
         p.header.frame_id = self.camera_frame
-        # Use time=0 to request the latest available transform instead of
-        # current clock time, which avoids "extrapolation into the future"
-        # errors caused by small clock/TF publish skew (~10-20ms).
         p.header.stamp = rclpy.time.Time().to_msg()
         p.point.x = x_cam
         p.point.y = y_cam
         p.point.z = z_cam
         p_base = self.tf_buffer.transform(
             p, self.base_frame, timeout=rclpy.duration.Duration(seconds=2.0))
+
+        # Debug: also transform to L_base_link (hand flange) to see intermediate
+        try:
+            p_flange = self.tf_buffer.transform(
+                p, 'L_base_link', timeout=rclpy.duration.Duration(seconds=2.0))
+            self.get_logger().info(
+                f'  [DEBUG TF] camera_opt→L_base_link: '
+                f'({p_flange.point.x:.3f}, {p_flange.point.y:.3f}, {p_flange.point.z:.3f})')
+        except Exception:
+            pass
+
         return p_base.point.x, p_base.point.y, p_base.point.z
 
     def trigger_callback(self, request, response):
@@ -357,6 +371,13 @@ class GraspCoordinatorNode(Node):
 
     def _execute_grasp(self, select_u, select_v):
         self.get_logger().info(f'=== Grasp at pixel ({select_u:.0f}, {select_v:.0f}) ===')
+
+        # Debug: current robot cartesian pose
+        if len(self._current_cart) >= 6:
+            self.get_logger().info(
+                f'  [DEBUG] current L_base_link cart: '
+                f'pos=({self._current_cart[0]:.3f},{self._current_cart[1]:.3f},{self._current_cart[2]:.3f}) '
+                f'rpy=({self._current_cart[3]:.3f},{self._current_cart[4]:.3f},{self._current_cart[5]:.3f})')
 
         # Step 1: Detect FIRST while camera is still at the position user was looking from.
         # eye-in-hand: detection MUST happen before any robot motion.
@@ -374,6 +395,34 @@ class GraspCoordinatorNode(Node):
         # Step 2: Transform to base frame NOW (robot hasn't moved yet, TF is valid).
         self.get_logger().info('[2/7] Transforming to base frame...')
         bx, by, bz = self._transform_to_base(det_result.x, det_result.y, det_result.z)
+
+        # --- Fingertip offset compensation ---
+        # The robot moves the FLANGE (L_base_link) to the target, but we need
+        # the FINGERTIPS at the target. Fingertips are offset from flange in
+        # L_base_link frame (DH116: ~120mm in +Z direction from L_base_link).
+        ft_x = self.get_parameter('fingertip_x').value
+        ft_y = self.get_parameter('fingertip_y').value
+        ft_z = self.get_parameter('fingertip_z').value
+        if ft_x or ft_y or ft_z:
+            p_ft = PointStamped()
+            p_ft.header.frame_id = 'L_base_link'
+            p_ft.header.stamp = rclpy.time.Time().to_msg()
+            p_ft.point.x = float(ft_x)
+            p_ft.point.y = float(ft_y)
+            p_ft.point.z = float(ft_z)
+            try:
+                p_ft_base = self.tf_buffer.transform(
+                    p_ft, self.base_frame,
+                    timeout=rclpy.duration.Duration(seconds=2.0))
+                bx -= p_ft_base.point.x
+                by -= p_ft_base.point.y
+                bz -= p_ft_base.point.z
+                self.get_logger().info(
+                    f'  Fingertip offset L_base_link({ft_x:.3f},{ft_y:.3f},{ft_z:.3f})'
+                    f' → base({p_ft_base.point.x:.3f},{p_ft_base.point.y:.3f},{p_ft_base.point.z:.3f})')
+            except Exception as e:
+                self.get_logger().warn(f'Failed to transform fingertip offset: {e}')
+
         # Read offset parameters fresh each call so UI changes take effect immediately
         ox = self.get_parameter('grasp_offset_x').value
         oy = self.get_parameter('grasp_offset_y').value

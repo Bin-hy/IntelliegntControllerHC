@@ -67,7 +67,7 @@ def generate_launch_description():
     enable_calibration_arg = DeclareLaunchArgument(
         'enable_calibration',
         default_value='false',
-        description='Set true to launch hand-eye calibration node (requires printed ArUco marker)'
+        description='Set true to launch hand-eye calibration node (ArUco auto-detect + touch-point fallback)'
     )
 
     enable_grasp = PythonExpression([
