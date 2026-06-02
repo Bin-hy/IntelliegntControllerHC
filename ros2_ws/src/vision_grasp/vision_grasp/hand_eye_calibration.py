@@ -26,6 +26,39 @@ import numpy as np
 
 # ── Rotation conversions ──────────────────────────────────────────────
 
+def rpy_to_matrix(rpy):
+    """RPY Euler angles [rx, ry, rz] (rad) → 3x3 rotation matrix.
+
+    Fixed-axis XYZ convention (used by DUCO robots):
+    R = Rz(rz) * Ry(ry) * Rx(rx)
+    """
+    rx, ry, rz = np.asarray(rpy, dtype=np.float64).ravel()
+    cx, sx = math.cos(rx), math.sin(rx)
+    cy, sy = math.cos(ry), math.sin(ry)
+    cz, sz = math.cos(rz), math.sin(rz)
+    return np.array([
+        [cz*cy, cz*sy*sx - sz*cx, cz*sy*cx + sz*sx],
+        [sz*cy, sz*sy*sx + cz*cx, sz*sy*cx - cz*sx],
+        [-sy,   cy*sx,            cy*cx],
+    ], dtype=np.float64)
+
+
+def matrix_to_rpy(R):
+    """3x3 rotation matrix → RPY Euler angles [rx, ry, rz] in radians."""
+    R = np.asarray(R, dtype=np.float64)
+    sy = math.sqrt(R[0, 0]**2 + R[1, 0]**2)
+    singular = sy < 1e-6
+    if not singular:
+        rx = math.atan2(R[2, 1], R[2, 2])
+        ry = math.atan2(-R[2, 0], sy)
+        rz = math.atan2(R[1, 0], R[0, 0])
+    else:
+        rx = math.atan2(-R[1, 2], R[1, 1])
+        ry = math.atan2(-R[2, 0], sy)
+        rz = 0.0
+    return np.array([rx, ry, rz], dtype=np.float64)
+
+
 def rotation_vector_to_matrix(r):
     """Rodrigues rotation vector [rx, ry, rz] → 3x3 rotation matrix."""
     r = np.asarray(r, dtype=np.float64)

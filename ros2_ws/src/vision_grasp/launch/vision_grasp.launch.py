@@ -35,6 +35,7 @@ def _create_grasp_nodes(context):
         with open(yaml_path) as f:
             cfg = yaml.safe_load(f)
     he = cfg.get('hand_eye', {})
+    aruco_cfg = cfg.get('aruco', {})
     grasp = cfg.get('grasp', {})
     hand = cfg.get('hand', {})
     place = cfg.get('place', {})
@@ -121,6 +122,9 @@ def _create_grasp_nodes(context):
             'camera_frame': camera_optical_frame,
             'base_frame': 'base_link',
             'flange_frame': 'L_base_link',
+            'marker_size': aruco_cfg.get('marker_size', 0.05),
+            'aruco_dict_id': aruco_cfg.get('dict_id', 10),
+            'aruco_marker_id': aruco_cfg.get('marker_id', 0),
         }],
         condition=IfCondition(is_cal),
         output='screen',

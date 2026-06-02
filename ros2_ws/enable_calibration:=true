@@ -1,0 +1,271 @@
+[INFO] [launch]: All log files can be found below /home/hwtws/.ros/log/2026-05-14-17-48-43-034861-hwtws-O-E-M-395142
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [lhandpro_service-8]: process started with pid [395227]
+[INFO] [image_saver_node-1]: process started with pid [395220]
+[INFO] [depth_measure_node-2]: process started with pid [395221]
+[INFO] [earphone_inspector_node-3]: process started with pid [395222]
+[INFO] [DucoRobotStatus-4]: process started with pid [395223]
+[INFO] [DucoRobotControl-5]: process started with pid [395224]
+[INFO] [DucoDriver-6]: process started with pid [395225]
+[INFO] [robot_state_publisher-7]: process started with pid [395226]
+[INFO] [lhandpro_state_publisher-9]: process started with pid [395228]
+[INFO] [lift_server_node-10]: process started with pid [395229]
+[INFO] [system_controller_node-11]: process started with pid [395230]
+[INFO] [static_transform_publisher-12]: process started with pid [395231]
+[INFO] [bottle_detector_node-13]: process started with pid [395232]
+[INFO] [grasp_coordinator_node-14]: process started with pid [395233]
+[INFO] [component_container-15]: process started with pid [395569]
+[image_saver_node-1] [INFO] [1778752126.551528621] [image_saver.image_saver_node]: Image Saver ready. Save dir: /home/hwtws/.ros/task_photos
+[depth_measure_node-2] [INFO] [1778752126.534343139] [depth_measure.depth_measure_node]: Subscribed: /CV2R1610004H/depth/image_raw, /CV2R1610004H/depth/camera_info
+[depth_measure_node-2] [INFO] [1778752126.536958862] [depth_measure.depth_measure_node]: DepthMeasureNode started | camera=/CV2R1610004H | ROI=200x200 | depth range=[100, 5000]mm
+[earphone_inspector_node-3] [INFO] [1778752126.546155463] [earphone_inspector.earphone_inspector_node]: EarphoneInspectorNode started | camera=/CV2R1610004H | ROI=250x250 | diff=[2.0,50.0]mm | avg_frames=8 | aruco=on
+[DucoRobotStatus-4] [INFO] [1778752126.426558590] [duco_robot_status]: Duco Robot Status Init Done
+[DucoRobotStatus-4] [WARN] [1778752126.426707673] [rcl.logging_rosout]: Publisher already registered for node name: 'duco_robot_status'. If this is due to multiple nodes with the same name then all logs for the logger named 'duco_robot_status' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[DucoRobotStatus-4] [INFO] [1778752126.434165995] [duco_robot_status]: Duco Robot Status Init Done
+[DucoRobotStatus-4] [INFO] [1778752126.434860837] [duco_robot_status]: Switches to ros-controller successfully
+[DucoRobotControl-5] [INFO] [1778752126.411391054] [duco_robot_control]: Duco Robot Control Init Done
+[DucoRobotControl-5] [INFO] [1778752126.412006475] [duco_robot_control]: Switches to ros-controller successfully
+[DucoDriver-6] [INFO] [1778752126.418060672] [duco_driver]: DucoDriver::moveItPosCallback msg is empty 192.168.1.10
+[robot_state_publisher-7] [WARN] [1778752126.415567923] [kdl_parser]: The root link base_link has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[robot_state_publisher-7] [INFO] [1778752126.415780459] [robot_state_publisher]: Robot initialized
+[lift_server_node-10] [INFO] [1778752126.425662803] [lift_server]: Serial port opened OK
+[lift_server_node-10] [INFO] [1778752126.427198142] [lift_server]: Lift Server Node started.
+[system_controller_node-11] [INFO] [1778752126.430204063] [system_controller]: SystemController Node Started.
+[static_transform_publisher-12] [INFO] [1778752126.431211537] [hand_eye_tf]: Spinning until stopped - publishing transform
+[static_transform_publisher-12] translation: ('0.050000', '0.000000', '0.100000')
+[static_transform_publisher-12] rotation: ('0.000000', '0.000000', '0.000000', '1.000000')
+[static_transform_publisher-12] from 'L_base_link' to 'CV2R1610004H_link'
+[grasp_coordinator_node-14] [INFO] [1778752126.948341449] [grasp_coordinator]: GraspCoordinatorNode ready
+[lhandpro_service-8] [0m[INFO] [1778752126.406761480] [lhandpro_service.lhandpro_service]: LHandPro控制服务已创建[0m
+[lhandpro_service-8] [0m[INFO] [1778752126.410278801] [lhandpro_service.lhandpro_service]: 使用EtherCAT通道: 1, 手型: left[0m
+[lhandpro_service-8] [0m[INFO] [1778752126.410316424] [lhandpro_service.lhandpro_service]: 清理资源...[0m
+[lhandpro_service-8] [0m[INFO] [1778752126.410747481] [lhandpro_service.lhandpro_service]: 扫描到:0 --- enp2s0[0m
+[lhandpro_service-8] [0m[INFO] [1778752126.410768441] [lhandpro_service.lhandpro_service]: 扫描到:1 --- eno1[0m
+[lhandpro_service-8] [0m[INFO] [1778752126.410778467] [lhandpro_service.lhandpro_service]: 正在连接:1 --- eno1[0m
+[lhandpro_service-8] [0m[INFO] [1778752126.649396836] [lhandpro_service.lhandpro_service]: 连接成功，总自由度: 11，主动自由度: 6[0m
+[bottle_detector_node-13] [WARN] [1778752126.976363128] [bottle_detector]: ultralytics not installed — auto-detect disabled, user-selection only
+[bottle_detector_node-13] [INFO] [1778752127.011422421] [bottle_detector]: BottleDetectorNode ready
+[component_container-15] [INFO] [1778752127.300541716] [CV2R1610004H.camera_container]: Load Library: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/orbbec_camera/lib/liborbbec_camera.so
+[component_container-15] [INFO] [1778752127.420243448] [CV2R1610004H.camera_container]: Found class: rclcpp_components::NodeFactoryTemplate<orbbec_camera::OBCameraNodeDriver>
+[component_container-15] [INFO] [1778752127.420280107] [CV2R1610004H.camera_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<orbbec_camera::OBCameraNodeDriver>
+[component_container-15] [INFO] [1778752127.438509621] [CV2R1610004H.CV2R1610004H]: Device access mode: Default (4)
+[component_container-15] [INFO] [1778752127.439010340] [CV2R1610004H.CV2R1610004H]: setUvcBackendType:libuvc
+[INFO] [ui_app-16]: process started with pid [395619]
+[ui_app-16] [INFO] [1778752129.542990115] [ui_app]: UI Configured with Robot IP: 192.168.1.10
+[ui_app-16] [INFO] [1778752129.543077253] [ui_app]: Robot URDF Path: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/duco_support/share/duco_support/urdf/duco_gcr5_910_with_dh116_lhand.urdf
+[ui_app-16] [INFO] [1778752129.543083984] [ui_app]: Left Hand URDF: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/urdf/DH116-L000-A1.urdf
+[ui_app-16] [INFO] [1778752129.543088832] [ui_app]: Right Hand URDF: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_r000_a1/share/dh116_r000_a1/urdf/DH116-R000-A1.urdf
+[component_container-15] [INFO] [1778752130.526340688] [CV2R1610004H.CV2R1610004H]: startDevice called
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/CV2R1610004H/CV2R1610004H' in container '/CV2R1610004H/camera_container'
+[component_container-15] [INFO] [1778752131.026457513] [CV2R1610004H.CV2R1610004H]: Connecting to device with serial number: CV2R1610004H
+[component_container-15] [INFO] [1778752131.026516389] [CV2R1610004H.CV2R1610004H]: Before lock: Select device serial number: CV2R1610004H
+[component_container-15] [INFO] [1778752131.026525679] [CV2R1610004H.CV2R1610004H]: After lock: Select device serial number: CV2R1610004H
+[component_container-15] [INFO] [1778752131.026543240] [CV2R1610004H.CV2R1610004H]: Device serial number: CV2R1610004H
+[component_container-15] [INFO] [1778752131.026548483] [CV2R1610004H.CV2R1610004H]: Device serial number CV2R1610004H matched
+[component_container-15] [INFO] [1778752131.268417692] [CV2R1610004H.CV2R1610004H]: Select device cost 241 ms
+[component_container-15] [INFO] [1778752131.268556137] [CV2R1610004H.CV2R1610004H]: Try to connect device via USB3.2
+[component_container-15] [INFO] [1778752131.269178162] [CV2R1610004H.CV2R1610004H]: OBCameraNode: use_intra_process: OFF
+[component_container-15] [INFO] [1778752131.288642770] [CV2R1610004H.CV2R1610004H]: current time domain: global
+[component_container-15] [INFO] [1778752131.288672263] [CV2R1610004H.CV2R1610004H]: hdr_index1_laser_control_ 1 hdr_index1_depth_exposure_ 1 hdr_index1_depth_gain_ 16 hdr_index1_ir_brightness_ 30 hdr_index1_ir_ae_max_exposure_ 30458
+[component_container-15] 
+[component_container-15] [INFO] [1778752131.288681450] [CV2R1610004H.CV2R1610004H]: hdr_index0_laser_control_ 1 hdr_index0_depth_exposure_ 7500 hdr_index0_depth_gain_ 16 hdr_index0_ir_brightness_ 90 hdr_index0_ir_ae_max_exposure_ 30458
+[component_container-15] 
+[component_container-15] [INFO] [1778752131.288688013] [CV2R1610004H.CV2R1610004H]: laser_index1_laser_control_ 0 laser_index1_depth_exposure_ 3000 laser_index1_depth_gain_ 16 laser_index1_ir_brightness_ 60 laser_index1_ir_ae_max_exposure_ 7000
+[component_container-15] 
+[component_container-15] [INFO] [1778752131.288694149] [CV2R1610004H.CV2R1610004H]: laser_index0_laser_control_ 1 laser_index0_depth_exposure_ 3000 laser_index0_depth_gain_ 16 laser_index0_ir_brightness_ 60 laser_index0_ir_ae_max_exposure_ 17000
+[component_container-15] 
+[component_container-15] [INFO] [1778752131.288711110] [CV2R1610004H.CV2R1610004H]: Available presets:
+[component_container-15] [INFO] [1778752131.288744782] [CV2R1610004H.CV2R1610004H]: Preset 0: Default
+[component_container-15] [INFO] [1778752131.288752823] [CV2R1610004H.CV2R1610004H]: Preset 1: High Accuracy
+[component_container-15] [INFO] [1778752131.288758116] [CV2R1610004H.CV2R1610004H]: Preset 2: Close Range High Accuracy
+[component_container-15] [INFO] [1778752131.288763335] [CV2R1610004H.CV2R1610004H]: Preset 3: Factory Calib
+[component_container-15] [INFO] [1778752131.288768000] [CV2R1610004H.CV2R1610004H]: Preset 4: Dual Color Streams
+[component_container-15] [INFO] [1778752131.288772622] [CV2R1610004H.CV2R1610004H]: Preset 5: Custom
+[component_container-15] [INFO] [1778752131.288777215] [CV2R1610004H.CV2R1610004H]: Load device preset: Default
+[component_container-15] [INFO] [1778752131.288795794] [CV2R1610004H.CV2R1610004H]: Device preset Default loaded
+[component_container-15] [INFO] [1778752131.706145779] [CV2R1610004H.CV2R1610004H]: OB_STREAM_COLOR_LEFTsensor isn't supported by current device! -- Skipping...
+[component_container-15] [INFO] [1778752131.706179259] [CV2R1610004H.CV2R1610004H]: OB_STREAM_COLOR_RIGHTsensor isn't supported by current device! -- Skipping...
+[component_container-15] [INFO] [1778752131.706196131] [CV2R1610004H.CV2R1610004H]: Setting heartbeat to OFF
+[component_container-15] [INFO] [1778752131.706220151] [CV2R1610004H.CV2R1610004H]: Create align filter
+[component_container-15] [INFO] [1778752131.706424728] [CV2R1610004H.CV2R1610004H]: Depth process is HW
+[component_container-15] [INFO] [1778752131.706443616] [CV2R1610004H.CV2R1610004H]: Available presets:
+[component_container-15] [INFO] [1778752131.706451426] [CV2R1610004H.CV2R1610004H]: Preset 0: Default
+[component_container-15] [INFO] [1778752131.706454776] [CV2R1610004H.CV2R1610004H]: Preset 1: High Accuracy
+[component_container-15] [INFO] [1778752131.706457957] [CV2R1610004H.CV2R1610004H]: Preset 2: Close Range High Accuracy
+[component_container-15] [INFO] [1778752131.706461101] [CV2R1610004H.CV2R1610004H]: Preset 3: Factory Calib
+[component_container-15] [INFO] [1778752131.706480631] [CV2R1610004H.CV2R1610004H]: Preset 4: Dual Color Streams
+[component_container-15] [INFO] [1778752131.706485866] [CV2R1610004H.CV2R1610004H]: Preset 5: Custom
+[component_container-15] [INFO] [1778752131.706489272] [CV2R1610004H.CV2R1610004H]: Load device preset: Default
+[component_container-15] [INFO] [1778752131.706499151] [CV2R1610004H.CV2R1610004H]: Device preset Default loaded
+[component_container-15] [INFO] [1778752131.706508656] [CV2R1610004H.CV2R1610004H]: Current sync mode: OB_MULTI_DEVICE_SYNC_MODE_STANDALONE
+[component_container-15] [INFO] [1778752131.706517985] [CV2R1610004H.CV2R1610004H]: Set sync mode: OB_MULTI_DEVICE_SYNC_MODE_STANDALONE
+[component_container-15] [INFO] [1778752131.706524313] [CV2R1610004H.CV2R1610004H]: Setting color mirror to OFF
+[component_container-15] [INFO] [1778752131.706540128] [CV2R1610004H.CV2R1610004H]: Setting color flip to OFF
+[component_container-15] [INFO] [1778752131.706547464] [CV2R1610004H.CV2R1610004H]: Setting depth mirror to OFF
+[component_container-15] [INFO] [1778752131.706553013] [CV2R1610004H.CV2R1610004H]: Setting depth flip to OFF
+[component_container-15] [INFO] [1778752131.706558311] [CV2R1610004H.CV2R1610004H]: Setting left_ir mirror to OFF
+[component_container-15] [INFO] [1778752131.706569448] [CV2R1610004H.CV2R1610004H]: Setting left_ir flip to OFF
+[component_container-15] [INFO] [1778752131.706575697] [CV2R1610004H.CV2R1610004H]: Setting right_ir mirror to OFF
+[component_container-15] [INFO] [1778752131.706586827] [CV2R1610004H.CV2R1610004H]: Setting right_ir flip to OFF
+[component_container-15] [INFO] [1778752131.706595450] [CV2R1610004H.CV2R1610004H]: Setting noise removal filter:ON
+[component_container-15] [INFO] [1778752131.706599639] [CV2R1610004H.CV2R1610004H]: Setting color auto white balance to ON
+[component_container-15] [INFO] [1778752131.706871374] [CV2R1610004H.CV2R1610004H]: Setting color auto exposure priority to OFF
+[component_container-15] [INFO] [1778752131.707107785] [CV2R1610004H.CV2R1610004H]: Setting color auto exposure to ON
+[component_container-15] [INFO] [1778752131.709887400] [CV2R1610004H.CV2R1610004H]: Setting depth auto exposure priority to OFF
+[component_container-15] [INFO] [1778752131.710122828] [CV2R1610004H.CV2R1610004H]: Setting IR auto exposure to ON
+[component_container-15] [INFO] [1778752131.712905800] [CV2R1610004H.CV2R1610004H]: default noise removal filter min diff: 256
+[component_container-15] [INFO] [1778752131.712918356] [CV2R1610004H.CV2R1610004H]: default noise removal filter max size: 80
+[component_container-15] [INFO] [1778752131.713042626] [CV2R1610004H.CV2R1610004H]: Setting hardware noise removal filter:OFF
+[component_container-15] [INFO] [1778752131.713397906] [CV2R1610004H.CV2R1610004H]: Setting Sports Mode to OFF
+[component_container-15] [INFO] [1778752131.713538860] [CV2R1610004H.CV2R1610004H]: Setting AE Mode to depthbased
+[component_container-15] [INFO] [1778752131.713685516] [CV2R1610004H.CV2R1610004H]: Setting DecimationFilter......
+[component_container-15] [INFO] [1778752131.713696337] [CV2R1610004H.CV2R1610004H]: set DecimationFilter to false
+[component_container-15] [INFO] [1778752131.713708943] [CV2R1610004H.CV2R1610004H]: Skip setting filter: DecimationFilter
+[component_container-15] [INFO] [1778752131.713715324] [CV2R1610004H.CV2R1610004H]: Setting ThresholdFilter......
+[component_container-15] [INFO] [1778752131.713719361] [CV2R1610004H.CV2R1610004H]: set ThresholdFilter to false
+[component_container-15] [INFO] [1778752131.713723706] [CV2R1610004H.CV2R1610004H]: Skip setting filter: ThresholdFilter
+[component_container-15] [INFO] [1778752131.713728446] [CV2R1610004H.CV2R1610004H]: Setting HDRMerge......
+[component_container-15] [INFO] [1778752131.713732125] [CV2R1610004H.CV2R1610004H]: set HDRMerge to false
+[component_container-15] [INFO] [1778752131.713736072] [CV2R1610004H.CV2R1610004H]: Skip setting filter: HDRMerge
+[component_container-15] [INFO] [1778752131.713740433] [CV2R1610004H.CV2R1610004H]: Setting SequenceIdFilter......
+[component_container-15] [INFO] [1778752131.713743902] [CV2R1610004H.CV2R1610004H]: set SequenceIdFilter to false
+[component_container-15] [INFO] [1778752131.713747691] [CV2R1610004H.CV2R1610004H]: Skip setting filter: SequenceIdFilter
+[component_container-15] [INFO] [1778752131.713752186] [CV2R1610004H.CV2R1610004H]: Setting SpatialFastFilter......
+[component_container-15] [INFO] [1778752131.713755768] [CV2R1610004H.CV2R1610004H]: set SpatialFastFilter to false
+[component_container-15] [INFO] [1778752131.713759379] [CV2R1610004H.CV2R1610004H]: Skip setting filter: SpatialFastFilter
+[component_container-15] [INFO] [1778752131.713763435] [CV2R1610004H.CV2R1610004H]: Setting SpatialModerateFilter......
+[component_container-15] [INFO] [1778752131.713766578] [CV2R1610004H.CV2R1610004H]: set SpatialModerateFilter to false
+[component_container-15] [INFO] [1778752131.713772386] [CV2R1610004H.CV2R1610004H]: Skip setting filter: SpatialModerateFilter
+[component_container-15] [INFO] [1778752131.713777169] [CV2R1610004H.CV2R1610004H]: Setting SpatialAdvancedFilter......
+[component_container-15] [INFO] [1778752131.713789004] [CV2R1610004H.CV2R1610004H]: set SpatialAdvancedFilter to false
+[component_container-15] [INFO] [1778752131.713795192] [CV2R1610004H.CV2R1610004H]: Skip setting filter: SpatialAdvancedFilter
+[component_container-15] [INFO] [1778752131.713799462] [CV2R1610004H.CV2R1610004H]: Setting TemporalFilter......
+[component_container-15] [INFO] [1778752131.713802664] [CV2R1610004H.CV2R1610004H]: set TemporalFilter to false
+[component_container-15] [INFO] [1778752131.713806425] [CV2R1610004H.CV2R1610004H]: Skip setting filter: TemporalFilter
+[component_container-15] [INFO] [1778752131.713810523] [CV2R1610004H.CV2R1610004H]: Setting HoleFillingFilter......
+[component_container-15] [INFO] [1778752131.713813971] [CV2R1610004H.CV2R1610004H]: set HoleFillingFilter to false
+[component_container-15] [INFO] [1778752131.713824200] [CV2R1610004H.CV2R1610004H]: Skip setting filter: HoleFillingFilter
+[component_container-15] [INFO] [1778752131.713830269] [CV2R1610004H.CV2R1610004H]: Setting DisparityTransform......
+[component_container-15] [INFO] [1778752131.713833600] [CV2R1610004H.CV2R1610004H]: set DisparityTransform to true
+[component_container-15] [INFO] [1778752131.713837292] [CV2R1610004H.CV2R1610004H]: Skip setting filter: DisparityTransform
+[component_container-15] [INFO] [1778752131.714951925] [CV2R1610004H.CV2R1610004H]: Setting DecimationFilter......
+[component_container-15] [INFO] [1778752131.714966455] [CV2R1610004H.CV2R1610004H]: set color DecimationFilter to false
+[component_container-15] [ERROR] [1778752131.757169385] [CV2R1610004H.CV2R1610004H]: Failed to load plugin image_transport/compressed_pub, error string: According to the loaded plugin descriptions the class image_transport/compressed_pub with base class type image_transport::PublisherPlugin does not exist. Declared types are  image_transport/raw_pub
+[component_container-15] 
+[component_container-15] [ERROR] [1778752131.758401961] [CV2R1610004H.CV2R1610004H]: Failed to load plugin image_transport/theora_pub, error string: According to the loaded plugin descriptions the class image_transport/theora_pub with base class type image_transport::PublisherPlugin does not exist. Declared types are  image_transport/raw_pub
+[component_container-15] 
+[component_container-15] [ERROR] [1778752131.759528095] [CV2R1610004H.CV2R1610004H]: Failed to load plugin image_transport/compressedDepth_pub, error string: According to the loaded plugin descriptions the class image_transport/compressedDepth_pub with base class type image_transport::PublisherPlugin does not exist. Declared types are  image_transport/raw_pub
+[component_container-15] 
+[component_container-15] [ERROR] [1778752131.760724719] [CV2R1610004H.CV2R1610004H]: Failed to load plugin image_transport/compressed_pub, error string: According to the loaded plugin descriptions the class image_transport/compressed_pub with base class type image_transport::PublisherPlugin does not exist. Declared types are  image_transport/raw_pub
+[component_container-15] 
+[component_container-15] [ERROR] [1778752131.761087703] [CV2R1610004H.CV2R1610004H]: Failed to load plugin image_transport/theora_pub, error string: According to the loaded plugin descriptions the class image_transport/theora_pub with base class type image_transport::PublisherPlugin does not exist. Declared types are  image_transport/raw_pub
+[component_container-15] 
+[component_container-15] [ERROR] [1778752131.761864784] [CV2R1610004H.CV2R1610004H]: Failed to load plugin image_transport/compressed_pub, error string: According to the loaded plugin descriptions the class image_transport/compressed_pub with base class type image_transport::PublisherPlugin does not exist. Declared types are  image_transport/raw_pub
+[component_container-15] 
+[component_container-15] [ERROR] [1778752131.762222571] [CV2R1610004H.CV2R1610004H]: Failed to load plugin image_transport/theora_pub, error string: According to the loaded plugin descriptions the class image_transport/theora_pub with base class type image_transport::PublisherPlugin does not exist. Declared types are  image_transport/raw_pub
+[component_container-15] 
+[component_container-15] [INFO] [1778752131.763533729] [CV2R1610004H.CV2R1610004H]: Publish diagnostics every 1 seconds
+[component_container-15] [INFO] [1778752132.058248178] [CV2R1610004H.CV2R1610004H]: Device Orbbec Gemini 305 connected
+[component_container-15] [INFO] [1778752132.058374814] [CV2R1610004H.CV2R1610004H]: Serial number: CV2R1610004H
+[component_container-15] [INFO] [1778752132.058416223] [CV2R1610004H.CV2R1610004H]: Firmware version: 1.0.35
+[component_container-15] [INFO] [1778752132.058434998] [CV2R1610004H.CV2R1610004H]: ROS Wrapper version: 2.7.2
+[component_container-15] [INFO] [1778752132.058473112] [CV2R1610004H.CV2R1610004H]: SDK version: 2.7.6
+[component_container-15] [INFO] [1778752132.058496466] [CV2R1610004H.CV2R1610004H]: Hardware version: 0.1
+[component_container-15] [INFO] [1778752132.058512695] [CV2R1610004H.CV2R1610004H]: usb connect type: USB3.2
+[component_container-15] [INFO] [1778752132.058526193] [CV2R1610004H.CV2R1610004H]: device unique id: 2-3-3
+[component_container-15] [INFO] [1778752132.058546709] [CV2R1610004H.CV2R1610004H]: Current node pid: 395569
+[component_container-15] [INFO] [1778752132.058561848] [CV2R1610004H.CV2R1610004H]: Start device cost 1532 ms
+[component_container-15] [INFO] [1778752132.058684908] [CV2R1610004H.CV2R1610004H]: Enable color stream
+[component_container-15] [INFO] [1778752132.058736199] [CV2R1610004H.CV2R1610004H]: Enable depth stream
+[component_container-15] [INFO] [1778752132.058757758] [CV2R1610004H.CV2R1610004H]: Enable left_ir stream
+[component_container-15] [INFO] [1778752132.058774179] [CV2R1610004H.CV2R1610004H]: Enable right_ir stream
+[component_container-15] [INFO] [1778752132.122133290] [CV2R1610004H.CV2R1610004H]: Enable frame sync
+[component_container-15] [INFO] [1778752132.733398802] [CV2R1610004H.CV2R1610004H]: Publishing static transform from color to depth
+[component_container-15] [INFO] [1778752132.733489916] [CV2R1610004H.CV2R1610004H]: Translation -0, 0, 0
+[component_container-15] [INFO] [1778752132.733521819] [CV2R1610004H.CV2R1610004H]: Rotation -0.00714644, 0, -0.00137064, 0.999974
+[component_container-15] [INFO] [1778752132.733623571] [CV2R1610004H.CV2R1610004H]: Publishing static transform from depth to depth
+[component_container-15] [INFO] [1778752132.733651273] [CV2R1610004H.CV2R1610004H]: Translation 0, 0, 0
+[component_container-15] [INFO] [1778752132.733674147] [CV2R1610004H.CV2R1610004H]: Rotation 0, 0, 0, 1
+[component_container-15] [INFO] [1778752132.733857722] [CV2R1610004H.CV2R1610004H]: Publishing static transform from left_ir to depth
+[component_container-15] [INFO] [1778752132.733903184] [CV2R1610004H.CV2R1610004H]: Translation 0, 0, 0
+[component_container-15] [INFO] [1778752132.733953753] [CV2R1610004H.CV2R1610004H]: Rotation 0, 0, 0, 1
+[component_container-15] [INFO] [1778752132.734189302] [CV2R1610004H.CV2R1610004H]: Publishing static transform from right_ir to depth
+[component_container-15] [INFO] [1778752132.734233042] [CV2R1610004H.CV2R1610004H]: Translation 18.3364, 0, 0
+[component_container-15] [INFO] [1778752132.734282154] [CV2R1610004H.CV2R1610004H]: Rotation 0, 0, 0, 1
+[component_container-15] [INFO] [1778752132.735862858] [CV2R1610004H.CV2R1610004H]: Setting depth AE ROI to 0, 1279, 0, 799
+[component_container-15] [INFO] [1778752132.736710317] [CV2R1610004H.CV2R1610004H]: Depth Frame - Width: 1280 Height: 800 fps: 30 Format: Y16
+[component_container-15] [INFO] [1778752132.736781054] [CV2R1610004H.CV2R1610004H]: Left IR Frame - Width: 1280 Height: 800 fps: 30 Format: Y8
+[component_container-15] [INFO] [1778752132.736817424] [CV2R1610004H.CV2R1610004H]: Right IR Frame - Width: 1280 Height: 800 fps: 30 Format: Y8
+[component_container-15] [INFO] [1778752132.770670636] [CV2R1610004H.CV2R1610004H]: Setting color AE ROI to 0, 0, 0, 0
+[component_container-15] [INFO] [1778752132.770778441] [CV2R1610004H.CV2R1610004H]: Color Frame - Width: 1280 Height: 800 fps: 60 Format: MJPG
+[component_container-15] [INFO] [1778752133.122309412] [CV2R1610004H.CV2R1610004H]: Setting interleave mode to nothing
+[component_container-15] [INFO] [1778752133.122359465] [CV2R1610004H.CV2R1610004H]: current interleave_ae_mode_: hdr
+[component_container-15] [INFO] [1778752133.122694982] [CV2R1610004H.CV2R1610004H]: Enable enable_interleave_depth_frame to false
+[component_container-15] [INFO] [1778752133.122726415] [CV2R1610004H.CV2R1610004H]: Initialize device cost 1854 ms
+[component_container-15] [INFO] [1778752133.259549192] [CV2R1610004H.CV2R1610004H]: Enable color stream
+[component_container-15] [INFO] [1778752133.259660785] [CV2R1610004H.CV2R1610004H]: Enable depth stream
+[component_container-15] [INFO] [1778752133.259698154] [CV2R1610004H.CV2R1610004H]: Enable left_ir stream
+[component_container-15] [INFO] [1778752133.259726275] [CV2R1610004H.CV2R1610004H]: Enable right_ir stream
+[component_container-15] [INFO] [1778752133.317922679] [CV2R1610004H.CV2R1610004H]: Enable frame sync
+[component_container-15] [INFO] [1778752134.318098730] [CV2R1610004H.CV2R1610004H]: Setting interleave mode to nothing
+[component_container-15] [INFO] [1778752134.318193380] [CV2R1610004H.CV2R1610004H]: current interleave_ae_mode_: hdr
+[component_container-15] [INFO] [1778752134.318505787] [CV2R1610004H.CV2R1610004H]: Enable enable_interleave_depth_frame to false
+[ui_app-16] Loaded robot: gcr5_910
+[ui_app-16] Created Node: base_link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/duco_support/share/duco_support/meshes/GCR5_910/base_link.stl
+[ui_app-16]   Init Pose: 0, 0, 0
+[ui_app-16] Created Node: link_1 | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/duco_support/share/duco_support/meshes/GCR5_910/link_1.stl
+[ui_app-16]   Init Pose: 0, 0, 0.122
+[ui_app-16] Created Node: link_2 | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/duco_support/share/duco_support/meshes/GCR5_910/link_2.stl
+[ui_app-16]   Init Pose: 0, 0.1445, 0.122
+[ui_app-16] Created Node: link_3 | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/duco_support/share/duco_support/meshes/GCR5_910/link_3.stl
+[ui_app-16]   Init Pose: 1.54525e-06, 0.1445, 0.547
+[ui_app-16] Created Node: link_4 | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/duco_support/share/duco_support/meshes/GCR5_910/link_4.stl
+[ui_app-16]   Init Pose: 2.97052e-06, 0.1445, 0.939
+[ui_app-16] Created Node: link_5 | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/duco_support/share/duco_support/meshes/GCR5_910/link_5.stl
+[ui_app-16]   Init Pose: 3.70365e-06, 0.1445, 1.039
+[ui_app-16] Created Node: link_6 | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/duco_support/share/duco_support/meshes/GCR5_910/link_6.stl
+[ui_app-16]   Init Pose: 2.54271e-06, 0.2495, 1.039
+[ui_app-16] [INFO] [1778752151.468460446] [ui_app]: Scanning for cameras...
+[ui_app-16] [INFO] [1778752151.468521044] [ui_app]: Found potential camera topic: /CV2R1610004H/color/image_raw
+[ui_app-16] [INFO] [1778752151.732760713] [ui_app]: SetCurrentUser ok: user_context_updated
+[ui_app-16] Loaded robot: L_DH116-L000-A1
+[ui_app-16] Created Node: L_base_link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/base_link.STL
+[ui_app-16]   Init Pose: 0, 0, 0
+[ui_app-16] Created Node: L_finger11_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger11_Link.STL
+[ui_app-16]   Init Pose: 0.018, -0.021464, 0.040041
+[ui_app-16] Created Node: L_finger12_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger12_Link.STL
+[ui_app-16]   Init Pose: 0.036876, -0.0261771, 0.0372603
+[ui_app-16] Created Node: L_finger13_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger13_Link.STL
+[ui_app-16]   Init Pose: 0.0723259, -0.0376915, 0.0624739
+[ui_app-16] Created Node: L_finger14_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger14_Link.STL
+[ui_app-16]   Init Pose: 0.0723259, -0.0376915, 0.0624739
+[ui_app-16] Created Node: L_finger21_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger21_Link.STL
+[ui_app-16]   Init Pose: -0.011581, -0.031971, 0.10003
+[ui_app-16] Created Node: L_finger22_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger22_Link.STL
+[ui_app-16]   Init Pose: -0.00786415, -0.0337924, 0.134784
+[ui_app-16] Created Node: L_finger23_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger23_Link.STL
+[ui_app-16]   Init Pose: -0.00786415, -0.0337924, 0.134784
+[ui_app-16] Created Node: L_finger31_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger31_Link.STL
+[ui_app-16]   Init Pose: -0.013501, -0.0105, 0.10286
+[ui_app-16] Created Node: L_finger32_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger32_Link.STL
+[ui_app-16]   Init Pose: -0.00993231, -0.0105, 0.137678
+[ui_app-16] Created Node: L_finger33_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger33_Link.STL
+[ui_app-16]   Init Pose: -0.00993231, -0.0105, 0.137678
+[ui_app-16] Created Node: L_finger41_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger41_Link.STL
+[ui_app-16]   Init Pose: -0.015081, 0.010971, 0.10183
+[ui_app-16] Created Node: L_finger42_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger42_Link.STL
+[ui_app-16]   Init Pose: -0.0101389, 0.0127844, 0.136432
+[ui_app-16] Created Node: L_finger43_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger43_Link.STL
+[ui_app-16]   Init Pose: -0.0101389, 0.0127844, 0.136432
+[ui_app-16] Created Node: L_finger51_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger51_Link.STL
+[ui_app-16]   Init Pose: -0.013081, 0.032156, 0.097798
+[ui_app-16] Created Node: L_finger52_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger52_Link.STL
+[ui_app-16]   Init Pose: -0.0104957, 0.0348946, 0.132595
+[ui_app-16] Created Node: L_finger53_Link | Mesh: /home/hwtws/IntelliegntControllerHC/ros2_ws/install/dh116_l000_a1/share/dh116_l000_a1/meshes/finger53_Link.STL
+[ui_app-16]   Init Pose: -0.0104957, 0.0348946, 0.132595
+[ui_app-16] [INFO] [1778752159.938122176] [ui_app]: Scanning for cameras...
+[ui_app-16] [INFO] [1778752159.938208738] [ui_app]: Found potential camera topic: /CV2R1610004H/color/image_raw
+[ui_app-16] [INFO] [1778752159.939047488] [ui_app]: Scanning for point clouds...
+[ui_app-16] [INFO] [1778752159.939462365] [ui_app]: Collision camera set to: /CV2R1610004H (topic: /CV2R1610004H/depth/points)
+[ui_app-16] [INFO] [1778752159.941638969] [ui_app]: Subscribing to Color: /CV2R1610004H/color/image_raw
+[ui_app-16] [INFO] [1778752159.943768039] [ui_app]: Subscribing to Depth: /CV2R1610004H/depth/image_raw
